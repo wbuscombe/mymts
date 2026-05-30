@@ -27,36 +27,54 @@ import com.mymts.player.StreamSpec
  */
 object SoakFixtures {
 
+    // LIVE-pool composition is mixed-on-purpose for the gate soak: 2 actual
+    // live broadcasts give us steady-state playback, and 4 deliberately
+    // flaky/reconnect-prone streams ensure the reconnect path (where leaks
+    // hide) is exercised repeatedly across a multi-hour run. The mix was
+    // validated by HEAD probe just before the long soak — if any URL stops
+    // responding mid-run, replace it in a single commit and re-run; never
+    // silently drop a dead fixture from a result.
     val LIVE: List<StreamSpec> = listOf(
+        // Real live broadcasts — steady playback.
         StreamSpec(
             id = "nasa-public",
-            label = "NASA TV Public",
+            label = "NASA TV Public (live)",
             url = "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8",
         ),
         StreamSpec(
-            id = "nasa-media",
-            label = "NASA TV Media",
-            url = "https://ntv2.akamaized.net/hls/live/2037455/NASA-NTV2-HLS/master.m3u8",
-        ),
-        StreamSpec(
             id = "redbull-tv",
-            label = "Red Bull TV",
+            label = "Red Bull TV (live)",
             url = "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8",
         ),
+        // Long-running test stream — public, well-known, exercises buffer
+        // discipline over many hours.
         StreamSpec(
-            id = "ndr-info",
-            label = "NDR Info",
-            url = "https://ndr_fs-lh.akamaihd.net/i/ndrfs_nds@430212/master.m3u8",
+            id = "moctobpltc-eight",
+            label = "moctobpltc 'eight' (long-running test)",
+            url = "https://moctobpltc-i.akamaihd.net/hls/live/571329/eight/playlist.m3u8",
         ),
+        // Mux's PTS-shift test stream — deliberately introduces presentation-
+        // timestamp anomalies that drive periodic recovery. Exactly the path
+        // we want exercised for leak hunting.
         StreamSpec(
-            id = "tagesschau",
-            label = "Tagesschau 24",
-            url = "https://tagesschau-lh.akamaihd.net/i/tagesschau_1@119231/master.m3u8",
+            id = "mux-pts-shift",
+            label = "Mux PTS-shift (deliberate timing anomalies)",
+            url = "https://test-streams.mux.dev/pts_shift/master.m3u8",
         ),
+        // Multi-variant VOD packaged as HLS — long enough that loop boundary
+        // hits are spaced out, short enough that BEHIND_LIVE_WINDOW recoveries
+        // happen multiple times across a 33h run.
         StreamSpec(
-            id = "abc-news-au",
-            label = "ABC News Australia",
-            url = "https://abc-iview-mediapackagestreams-2.akamaized.net/out/v1/6e1cc6d25ec0480b9520177cc8127a06/index.m3u8",
+            id = "mux-x36xhzz",
+            label = "Mux x36xhzz (multi-variant test asset)",
+            url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        ),
+        // Long-form VOD treated as live — guarantees BEHIND_LIVE_WINDOW
+        // reconnect on finish, hammering the reconnect lifecycle.
+        StreamSpec(
+            id = "unified-tears",
+            label = "Unified Streaming 'Tears of Steel' (VOD as live)",
+            url = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
         ),
     )
 

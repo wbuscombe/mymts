@@ -24,7 +24,7 @@ The configurable grid default depends on this number. Per the Stage 1 prompt:
 
 `BuildConfig.DEFAULT_MAX_TILES` is already plumbed (`app/build.gradle.kts` reads `MYMTS_DEFAULT_MAX_TILES` from `gradle.properties`). Until the long-soak result is in, that property defaults to **6**. After the long soak, the property gets updated in a single commit; downstream stages consume `BuildConfig.DEFAULT_MAX_TILES`, never a literal.
 
-## Device facts (Onn 4K Streaming Box, <LAN_IP>)
+## Device facts (Onn 4K Streaming Box, <LAN_IP> and <LAN_IP>)
 
 | Field | Value |
 |---|---|
@@ -37,7 +37,13 @@ The configurable grid default depends on this number. Per the Stage 1 prompt:
 | `MemTotal` | ~1.97 GB |
 | Active hardware video decoder | `c2.amlogic.avc.decoder` (Codec2 AVC/H.264) |
 
-`.182` is identical hardware. The long soak should target one box; spot-checking the other for parity is enough.
+`.158` and `.182` are identical hardware (both `onn_4k_gtv`, both `armeabi-v7a`, both ~1.97 GB).
+
+### Panel-resolution caveat for the long-soak target (`.182`)
+
+`.182` is attached to a small panel reporting `wm size: 1280x720` (`wm density: 213`). **The Onn box itself is a 4K-capable SoC**, but the attached panel is HD. For a leak hunt this is acceptable: decode load is driven by *source* resolution (the HLS variant ExoPlayer selects), not by the panel — the SurfaceView still hands the decoder full-rate frames and the only thing that changes is the final downscale to panel pixels. PSS, decoder selection, dropped-frames, and reconnect behavior are all panel-agnostic.
+
+**What we should NOT conclude from this run, no matter how clean:** that 6 tiles holds at 4K-panel-attached. A separate, shorter confirmatory soak on a 4K panel (or routed through a 4K-capable display) is a future follow-up before the default ships to a box that drives a 4K TV in production. Logged as a Stage 1.x item in `docs/BACKLOG.md`.
 
 ## Method
 

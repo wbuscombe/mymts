@@ -27,6 +27,12 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 
 ---
 
+## Stage 1.x — confirmatory 4K-panel soak
+
+**What:** Re-run the tile-budget soak with the Onn box routed to a 4K-capable display.
+**Why-not-now:** The Stage 1 gate-clearing long soak runs against `.182` whose attached panel is 1280×720. Decode load is panel-agnostic so the leak number transfers, but final-stage downscale + Graphics surface composition at 4K is unverified.
+**Reconsider when:** Either `.182` is moved to a 4K panel, or `.158` (or another Onn box) is connected to one for a short confirmatory run. Before shipping the default to a box driving a 4K production TV.
+
 ## Ideas that surfaced during build (add as you find them)
 
 ```
