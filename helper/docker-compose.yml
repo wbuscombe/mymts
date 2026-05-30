@@ -1,0 +1,38 @@
+# Local-only stand-up for development. NOT the NAS deploy file — Stage 2 will
+# add the NAS-side compose with bind mounts and the operator's standard labels.
+#
+# Hard isolation choices (Trust Bar A2 / A4):
+#   - Container runs read-only (helper writes nothing to disk in v1; if a stage
+#     needs writes, it bind-mounts a specific path).
+#   - All capabilities dropped.
+#   - no-new-privileges so suid escalation cannot happen mid-flight.
+#   - cpus/memory caps so a runaway never starves the host.
+#   - unrelated host container is NEVER referenced or networked into — standing rule.
+
+services:
+  helper:
+    container_name: mymts-helper
+    build:
+      context: .
+      args:
+        BUILD_SHA: ${BUILD_SHA:-dev}
+        BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
+    image: mymts-helper:dev
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=8m,uid=10001,gid=10001
+    cpus: 0.5
+    mem_limit: 256m
+    environment:
+      PHANTOM_MODE: ${PHANTOM_MODE:-0}
+      PORT: 8091
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      # Local-dev only; the NAS compose binds to an internal network instead.
+      - "8091:8091"

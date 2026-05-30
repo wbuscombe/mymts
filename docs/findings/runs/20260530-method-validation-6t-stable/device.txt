@@ -1,0 +1,11 @@
+onn. 4K Streaming Box
+YOC
+armeabi-v7a
+14
+34
+amlogic
+AMLS905Y4
+Amlogic
+MemTotal:        1971912 kB
+MemFree:          178032 kB
+MemAvailable:     572420 kB

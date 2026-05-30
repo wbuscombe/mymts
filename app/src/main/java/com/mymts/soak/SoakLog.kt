@@ -1,0 +1,47 @@
+package com.mymts.soak
+
+import android.util.Log
+
+/**
+ * Single tagged logcat channel for the soak harness. The host-side script
+ * (`scripts/soak.sh`) tails this tag, parses pipe-delimited fields, and
+ * writes CSV. Keeping the format simple-and-pinned means the parser is a
+ * one-liner — and any drift in the line format is a CI-detectable
+ * regression (see tests/SoakLogFormatTest).
+ *
+ * Lines are pipe-delimited because pipes don't show up in HLS URLs or
+ * decoder names, but commas do (so CSV-quoting would be needed for some
+ * fields). The host-side parser does the CSV write.
+ *
+ * Field order is fixed; new fields go at the end of a line so old parsers
+ * don't break. Field types are pure ASCII.
+ */
+object SoakLog {
+    const val TAG = "MYMTS_SOAK"
+
+    fun start(tiles: Int, resolutionHint: String) =
+        Log.i(TAG, "EV=START|tiles=$tiles|resolution=$resolutionHint")
+
+    fun tileMount(id: String, url: String) =
+        Log.i(TAG, "EV=TILE_MOUNT|id=$id|url=$url")
+
+    fun tileReady(id: String) =
+        Log.i(TAG, "EV=TILE_READY|id=$id|ts_ms=${System.currentTimeMillis()}")
+
+    fun decoderInit(id: String, decoder: String, initMs: Long) =
+        Log.i(TAG, "EV=DECODER|id=$id|decoder=$decoder|init_ms=$initMs")
+
+    fun droppedFrames(id: String, dropped: Int, elapsedMs: Long) =
+        Log.w(TAG, "EV=DROPPED|id=$id|dropped=$dropped|elapsed_ms=$elapsedMs")
+
+    fun error(id: String, code: String, message: String) =
+        Log.w(TAG, "EV=ERROR|id=$id|code=$code|msg=${sanitize(message)}")
+
+    fun heartbeat(idx: Int, id: String, state: String, dropped: Int, lastFrameAtMs: Long) {
+        val age = if (lastFrameAtMs > 0) System.currentTimeMillis() - lastFrameAtMs else -1
+        Log.i(TAG, "EV=BEAT|idx=$idx|id=$id|state=$state|dropped=$dropped|last_frame_age_ms=$age")
+    }
+
+    private fun sanitize(s: String): String =
+        s.replace('|', '/').replace('\n', ' ')
+}

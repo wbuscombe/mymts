@@ -1,0 +1,10 @@
+{
+  "run_id": "20260530-method-validation-6t-stable",
+  "device": "<LAN_IP>:5555",
+  "tiles": 6,
+  "pool": "stable",
+  "resolution_hint": "auto",
+  "duration_seconds": 720,
+  "meminfo_interval_seconds": 30,
+  "started_at": "2026-05-30T20:23:31Z"
+}

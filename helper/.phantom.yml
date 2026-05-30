@@ -1,0 +1,29 @@
+# MyMTS Helper — Phantom (demo/offline) mode configuration.
+#
+# Activated by PHANTOM_MODE=1. The helper exposes synthetic responses for
+# every external dependency so CI and onboarding can run with zero outbound
+# traffic.
+#
+# Stage 1: there is only the /health endpoint, so phantom mode for now is a
+# wired-up no-op (it sets a `phantom: true` flag in /health). Real fixtures
+# (synthetic feed items, fake-resolved stream addresses) land in Stage 2
+# when the helper actually does aggregation + resolution.
+
+helper:
+  name: mymts-helper
+  package: mymts_helper
+
+env:
+  PHANTOM_MODE: "1"
+
+# Fixture inventory — populated stage-by-stage.
+fixtures:
+  # ---- Stage 2 (aggregation) ----
+  # - id: rss-fixture-bbc
+  #   description: "Synthetic BBC-shaped RSS feed; 10 items spanning 24h"
+  #   path: tests/fixtures/rss/bbc.xml
+  #
+  # ---- Stage 2 (resolution) ----
+  # - id: stream-fixture-hls
+  #   description: "Local-served sample HLS manifest + segments for grid validation"
+  #   path: tests/fixtures/hls/sample.m3u8

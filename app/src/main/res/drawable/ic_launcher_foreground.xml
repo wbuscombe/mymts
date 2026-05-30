@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Minimal placeholder banner glyph: a stylized "M" inside the safe area.
+         Real icon work happens in Stage 5 (first-run + branding); this just
+         gives the launcher a non-empty banner so the build doesn't refer to
+         a missing resource. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,32 L30,76 L40,76 L40,52 L54,76 L60,76 L74,52 L74,76 L84,76 L84,32 L72,32 L57,58 L42,32 Z" />
+</vector>
