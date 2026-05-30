@@ -1,0 +1,73 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Editor / IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+
+# Android / Gradle
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+release/
+debug/
+proguard/
+*.keystore
+*.jks
+keystore.properties
+
+# Java / Kotlin
+*.log
+hs_err_pid*
+
+# Node (helper toolchain, just in case)
+node_modules/
+dist/
+.npm/
+
+# Python (helper)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local env / secrets — placeholder; real .env never enters the repo
+.env
+.env.*
+!.env.example
+*.local
+
+# Local archive — keeps source zips and reference material outside the repo tree
+.archive/
+
+# Build/release artifacts
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Coverage / test artifacts
+coverage/
+*.lcov
+htmlcov/
+.coverage

@@ -1,0 +1,25 @@
+* text=auto eol=lf
+
+*.md       text diff=markdown
+*.kt       text diff=java
+*.kts      text diff=java
+*.java     text diff=java
+*.py       text diff=python
+*.sh       text eol=lf
+*.yml      text
+*.yaml     text
+*.toml     text
+*.json     text
+
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.webp     binary
+*.gif      binary
+*.svg      text
+*.pdf      binary
+*.zip      binary
+*.apk      binary
+*.aab      binary
+*.keystore binary
+*.jks      binary
