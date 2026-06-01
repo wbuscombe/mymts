@@ -82,4 +82,11 @@ Both already in `docs/BACKLOG.md`; mentioned here as cross-references.
 - The first-run wizard (Stage 5).
 - Anything in `docs/foundation/04-TECHNICAL-APPROACH.md §5` ("explicitly deferred").
 
-When the Stage 2 prompt arrives, it will sequence A → B → C with B.1 prioritized as the work that unblocks the capacity re-soak. Items in D stay here as cross-references; they belong to Stages 6/7.
+## Sequencing — **A → B → C** (corrected by Stage 2 prompt)
+
+This doc originally proposed sequencing the player fix (B.1) ahead of the helper (A) because B.1 is what unblocks the capacity re-soak. **The Stage 2 prompt overrode that ordering and the correct sequence is A → B → C.** Two reasons recorded here so the rationale lives with the plan:
+
+1. **Helper-first is what the architecture says.** The helper is the project's security boundary — the shield that does the two dangerous jobs the TV must not (`04-TECHNICAL-APPROACH.md §2 "Piece 2"`). Sequencing the player fix ahead of it because the player fix unblocks one soak inverts what-serves-how: the *measurement* is downstream of the *shield*, not the other way around.
+2. **B.1 should be tested against the real streams the helper resolves, not the VOD-as-live fixtures from Stage 1.** Recovery logic exercised against streams that were always going to die after a few minutes is a weak test — it confirms recovery in conditions the production wall will not actually see. Test B.1's STALE-detection and re-init behavior against the helper's real resolved-channel stream, which is what runs in production.
+
+So Stage 2 is **A → B → C**. Items in D stay here as cross-references; they belong to Stages 6/7.

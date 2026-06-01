@@ -164,11 +164,68 @@ helper/
 
 The boundary is enforced by code (`StreamSpec` rejects non-http schemes), by test (`StreamSpecTest`), and by review discipline: if a future change finds itself reaching into `~/code/_reference/wyzegrid/app/.../api/Frigate*` or `.../weather/*`, that change is on the wrong side of the boundary.
 
-## 7. What this document deliberately does NOT specify yet
+## 7. Stage 2 — helper internals + the TV↔helper contract
+
+The Stage 1 helper was a hardcoded `/health` skeleton. Stage 2 made the helper do its two real jobs (per `docs/foundation/04-TECHNICAL-APPROACH.md §2 "Piece 2"`).
+
+### Modules
+
+```
+helper/src/mymts_helper/
+├── app.py                  # FastAPI factory + lifespan (start pollers, seed channels)
+├── config.py               # env-driven Config (no file config)
+├── log.py                  # structured JSON + paranoid redaction (from Stage 1)
+├── db.py                   # sqlite WAL + numbered SQL migrations
+├── migrations/
+│   └── 001_initial.sql     # sources, feed_items, channels, meta
+├── fetcher.py              # SSRF-safe outbound HTTP (shared by feeds + channels)
+├── health.py               # /health (schema_version: 1, additive feeds + channels)
+├── phantom.py              # PHANTOM_MODE: fixtures + no-network resolver
+├── feeds/
+│   ├── parser.py           # feedparser + defusedxml + HTML-strip
+│   ├── store.py            # sqlite CRUD + dedup + retention
+│   ├── poller.py           # async task: 5-min poll + 14-day retention sweep
+│   └── api.py              # /api/feed[/sources]
+└── channels/
+    ├── registry.py         # structured URL validation + seed loader
+    ├── prober.py           # async task: 30-min reachability probe
+    ├── api.py              # /api/channels
+    └── seed.json           # operator-curated channel list (ships with image)
+```
+
+### TV ↔ helper contract (pinned)
+
+All response envelopes carry `schema_version: 1`. Adding fields is backward-compatible; removing or renaming is a bump that requires a coordinated TV update.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{schema_version, ok, ready, phantom, build_sha, version, uptime_seconds, feeds:{sources_count, items_count, stale_sources, last_poll_at}, channels:{channels_count, live_count, unavailable_count, last_probe_at}}` |
+| `GET /api/feed?limit=200&since=<iso>` | `{schema_version, items:[{id, guid, source, source_url, title, summary, link, published_at, fetched_at}]}` — summary is **plain text** (HTML stripped) |
+| `GET /api/feed/sources` | `{schema_version, sources:[{id, url, label, enabled, last_fetch_at, last_success_at, last_error, error_count}]}` |
+| `GET /api/channels` | `{schema_version, channels:[{slug, label, kind, current_url, status, enabled, last_check_at, last_success_at, last_error, error_count}]}` — `current_url` is `null` when `status != "live"` (Trust Bar C3: never expose a stale URL labelled live) |
+
+Contract tests pin every field name and the C3 invariant ("non-live channels expose `current_url: null`"). Located in `helper/tests/test_api.py` and `helper/tests/test_health.py`.
+
+### Boundary mechanics (Stage 2 commitments)
+
+- **SSRF-safe fetcher** (`fetcher.py`) is the only outbound primitive. Both the RSS poller and the channel prober use it. It enforces: https-only, DNS lookup up-front, rejection of RFC1918 / loopback / link-local / CGNAT / IPv6 ULA / IPv6 loopback before opening a socket, bounded body size, bounded total time, redirect re-validation.
+- **Hostile-input quarantine**: feed bodies go through `feedparser` (which auto-loads `defusedxml` because we declare it as a runtime dep — neutralises XXE / entity-bomb / DOCTYPE attacks before our code sees the parse tree). Item titles + summaries are stripped to plain text via an `html.parser.HTMLParser` subclass that drops `script`/`style`/`iframe`/`object`/`embed` contents entirely. The TV is told the truth: this is plain text and only plain text.
+- **Channel URL validation** is structured (not regex over the URL string): scheme + IDNA hostname + no userinfo + port {None, 443} + path that looks like an `.m3u8`. Rejects `rtsp://`, `file://`, ports we don't expect, etc.
+- **Per-source error isolation**: one bad/500ing RSS source records its failure on its own row; the poller continues to the next. Same for channels and the prober.
+- **Phantom mode** (`PHANTOM_MODE=1`) replaces the fetcher's resolver with one that raises on every hostname lookup, and preloads synthetic fixtures into the DB. A CI contract test asserts that a complete app boot + `/api/feed` + `/api/channels` request makes zero outbound calls.
+
+### Stage 2 NAS deploy
+
+- Image pinned by digest (`python:3.13.1-slim-bookworm@sha256:031ebf3cde…`). Tag stays in `FROM` for human readability; digest is the source of truth.
+- Container runs non-root (uid 10001), `read_only: true` rootfs, `cap_drop: [ALL]`, `no-new-privileges`, tmpfs `/tmp`, explicit `cpus`/`mem_limit`, no `docker.sock`.
+- State lives in a **named volume** (`mymts-helper-data`) — fresh volumes inherit ownership from the in-image `/data` (uid 10001), so no host-side privileged step is needed.
+- Helper listens on host port `8091` (NAS LAN). The TV reaches it at `http://<nas-lan-ip>:8091/api/...`.
+- Deploy script `scripts/deploy-helper.sh` does the full `pull → rebuild → restart → /health verify` cycle and refuses to declare success until `/health.build_sha` matches the deployed SHA.
+- The unrelated host container is **never** referenced or networked into. The helper's compose declares its own dedicated bridge network (`mymts-net`) with no upstream link.
+
+## 8. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
-- API shape between TV and helper — pinned in Stage 2 with a contract test.
 - Update mechanism details — chosen in Stage 6.
-- Helper deployment to the NAS — Stage 2 once the helper does real upstream work; the Stage 1 helper is local-Docker-only by design.
-
-Each will be filled in when its stage lands, with rationale traced back to a foundation doc.
+- yt-dlp channel resolution (`channels.kind = 'youtube'`) — a future migration extends the CHECK constraint when the yt-dlp sidecar pattern lands.
+- Operator-driven add/remove of channels and RSS sources via API — Stage 5 (settings UI). For Stage 2, `seed.json` is the operator-curated list; the helper upserts on every boot so edits flow in without a redeploy.

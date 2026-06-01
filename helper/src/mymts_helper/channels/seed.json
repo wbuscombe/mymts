@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "redbull-tv",
+    "label": "Red Bull TV",
+    "kind": "hls",
+    "source_url": "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8"
+  },
+  {
+    "slug": "dw-news-en",
+    "label": "DW News English",
+    "kind": "hls",
+    "source_url": "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8"
+  }
+]

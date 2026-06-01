@@ -126,8 +126,116 @@ adb -s <LAN_IP>:5555 shell am start -n com.wyzegrid/.MainActivity
 
 The deeper finding — that two foreground TV apps cannot coexist on a 2 GB Onn box and MyMTS will need its own foreground-service kiosk story when it goes to production — is in `docs/STAGE-2-PLAN.md` (the production-deployment concerns section) and `docs/BACKLOG.md`.
 
-## Backup + restore placeholder (Stage 6 will write this)
+## Helper on the NAS (Stage 2 deploy reality)
+
+### Layout
 
 ```
-# placeholder — backup goes to <NAS bind-mount>, restore is documented end-to-end
+/srv/docker/mymts-helper/
+├── _src/              # rsynced helper/ tree (source for `docker compose build`)
+├── compose.yml        # symlinked/copied from helper/deploy/docker-compose.nas.yml
+└── .env               # BUILD_SHA, BUILD_VERSION, PHANTOM_MODE, LOG_LEVEL, intervals
 ```
+
+Persistent state lives in the **Docker named volume** `mymts-helper-data`:
+
+```
+/var/lib/docker/volumes/mymts-helper-data/_data/
+└── mymts-helper.db    # sqlite WAL (+ -wal + -shm files)
+```
+
+Logs: Docker `json-file` driver, 10 MB × 3 rotations per the compose. Accessible via `docker logs mymts-helper`.
+
+### Single-command operations
+
+```bash
+# Deploy from the dev machine (rsync + build + up + /health verify)
+./scripts/deploy-helper.sh                           # uses ssh alias `<HOST>`
+./scripts/deploy-helper.sh --host cargo@<LAN_IP>
+
+# On the NAS:
+ssh <HOST> "cd /srv/docker/mymts-helper && docker compose ps"
+ssh <HOST> "docker logs --tail 100 -f mymts-helper"
+ssh <HOST> "curl -fsS http://127.0.0.1:8091/health | jq ."
+
+# From a LAN host (Onn box, dev Mac):
+curl -fsS http://<LAN_IP>:8091/health | jq .
+curl -fsS http://<LAN_IP>:8091/api/channels | jq .
+curl -fsS "http://<LAN_IP>:8091/api/feed?limit=5" | jq .
+```
+
+### Helper backup / restore
+
+State is small (channels + sources + feed_items). Backup the volume to a tarball:
+
+```bash
+# Backup (on the NAS):
+docker run --rm \
+    -v mymts-helper-data:/data \
+    -v "$PWD":/backup \
+    alpine tar -czf /backup/mymts-helper-data-$(date +%Y%m%d).tgz -C / data
+
+# Restore (on the NAS, with the helper stopped):
+docker compose -f /srv/docker/mymts-helper/compose.yml down
+docker run --rm \
+    -v mymts-helper-data:/data \
+    -v "$PWD":/backup \
+    alpine sh -c 'rm -rf /data/* && tar -xzf /backup/mymts-helper-data-YYYYMMDD.tgz -C /'
+docker compose -f /srv/docker/mymts-helper/compose.yml up -d
+```
+
+A nightly automated backup lands in Stage 6 (Op Bar C5 — backups are not optional).
+
+### Image digest pinning policy
+
+The runtime base image is pinned by digest in `helper/Dockerfile`:
+
+```
+ARG PYTHON_IMAGE=python:3.13.1-slim-bookworm@sha256:031ebf3cde…
+```
+
+To refresh (Stage 6 cadence target: monthly, on advisory):
+
+```bash
+TOKEN=$(curl -s 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/python:pull' | jq -r .token)
+curl -sI -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json" \
+    "https://registry-1.docker.io/v2/library/python/manifests/3.13.1-slim-bookworm" \
+    | grep -i docker-content-digest
+```
+
+Update the `PYTHON_IMAGE` ARG in `Dockerfile`, commit, deploy, verify `/health` reports the new SHA.
+
+### claude-status-bot contract
+
+The bot consumes `GET /health` from the NAS LAN (`http://<LAN_IP>:8091/health`). Pinned shape:
+
+```
+{
+  "schema_version": 1,        // bot alerts on unknown values
+  "ok": true,
+  "ready": true,
+  "phantom": false,
+  "build_sha": "<short-git-sha>",
+  "version": "<semver>",
+  "uptime_seconds": <float>,
+  "feeds": {
+    "sources_count": <int>,
+    "items_count": <int>,
+    "stale_sources": [<label>, ...],   // empty when healthy
+    "last_poll_at": "<iso utc>" | null
+  },
+  "channels": {
+    "channels_count": <int>,
+    "live_count": <int>,
+    "unavailable_count": <int>,
+    "last_probe_at": "<iso utc>" | null
+  }
+}
+```
+
+Schema bumps require a coordinated update in the bot. Adding fields is backward-compatible.
+
+## Backup + restore placeholder (Stage 6 will write the full automation)
+
+The Stage 2 helper backup recipe lives above. Stage 6 will add nightly automation + retention + restore verification + the TV-side data backup (lineup/presets, once Stage 5 introduces them).

@@ -1,0 +1,93 @@
+# MyMTS Helper — NAS deploy.
+#
+# Layout (operator standard):
+#   /srv/docker/mymts-helper/
+#     compose.yml          (symlink to or copy of this file)
+#     data/                (sqlite + future state — bind-mounted)
+#     .env                 (PHANTOM_MODE/BUILD_SHA/BUILD_VERSION/LOG_LEVEL)
+#
+# Hardening (Trust Bar A2/A4/A7 + Op Bar B/C):
+#   - non-root container (uid 10001 set by image),
+#   - read-only rootfs with tmpfs for /tmp,
+#   - all capabilities dropped, no-new-privileges,
+#   - CPU + memory caps,
+#   - internal Docker network — never published to a host port; the TV
+#     reaches the helper through the NAS network, not the public internet,
+#   - secrets injected at runtime via .env (never baked into the image).
+#
+# unrelated host container is NEVER referenced or networked into. Standing rule.
+
+services:
+  helper:
+    container_name: mymts-helper
+    image: mymts-helper:${BUILD_VERSION:-0.0.0-dev}
+    build:
+      # On the NAS this resolves to /srv/docker/mymts-helper/_src/
+      # which is the rsynced helper/ tree from the dev machine.
+      context: ./_src
+      args:
+        BUILD_SHA: ${BUILD_SHA:-dev}
+        BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=8m,uid=10001,gid=10001
+    cpus: 1.0
+    mem_limit: 384m
+    environment:
+      PHANTOM_MODE: ${PHANTOM_MODE:-0}
+      PORT: 8091
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /data
+      BUILD_SHA: ${BUILD_SHA:-dev}
+      BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
+      FEED_POLL_INTERVAL_SECONDS: ${FEED_POLL_INTERVAL_SECONDS:-300}
+      FEED_RETENTION_DAYS: ${FEED_RETENTION_DAYS:-14}
+      CHANNEL_PROBE_INTERVAL_SECONDS: ${CHANNEL_PROBE_INTERVAL_SECONDS:-1800}
+    volumes:
+      # Named volume (Docker-managed) avoids host-side permission churn
+      # for the non-root container user. State lives at
+      # /var/lib/docker/volumes/mymts-helper-data/_data on the NAS;
+      # backup/restore commands are documented in
+      # docs/OPERATIONS.md "Helper backup/restore".
+      - mymts-helper-data:/data:rw
+    networks:
+      - mymts-net
+    # The TV on the LAN reaches /api/feed + /api/channels at
+    # http://<nas-lan-ip>:8091. Exposing the port is the v1 contract; a
+    # Stage 6 hardening pass adds a reverse-proxy/auth layer if/when the
+    # operator wants something tighter. The container is still non-root
+    # + cap-dropped + read-only-rootfs, so the port surface is narrow.
+    ports:
+      - "8091:8091"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      # Container HEALTHCHECK lives in the Dockerfile too; this is the
+      # compose-side declaration so `docker compose ps` reflects health.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  mymts-net:
+    name: mymts-net
+    driver: bridge
+    # NOT internal — the poller + prober need outbound HTTP to reach RSS
+    # sources and HLS upstreams. Bounded egress (a Squid-style allowlist)
+    # is a Stage 6 hardening item; for v1 the SSRF guard in the fetcher
+    # prevents the poller from being turned into a pivot.
+
+volumes:
+  mymts-helper-data:
+    name: mymts-helper-data
