@@ -232,4 +232,62 @@ Stage 2 (the helper's real aggregation + resolution) can begin **only once** the
 
 ## Final
 
-_(Empty pending the operator's long soak. Once the long soak completes, the parser output goes here, the interim default in `gradle.properties` is updated if needed, the CHANGELOG gets a "Stage 1 gate cleared" entry, and Stage 2 is unblocked.)_
+**Closing position, decided 2026-06-01:** the leak question is answered (no leak). The capacity question is not yet answered, because three soaks have shown the 6-tile load can't be sustained from the current fixture pool + the current player code. The capacity re-soak is deferred into Stage 2 — running it again now would just produce a fourth degenerate run.
+
+The configurable default stays **6**, annotated as a *target to be validated in Stage 2*, not a measured-safe number. `MYMTS_DEFAULT_MAX_TILES` in `gradle.properties` is unchanged. `BuildConfig.DEFAULT_MAX_TILES` continues to be config-driven so raising/lowering it later is a property change, not a code change.
+
+### Leak behavior — **PASS**
+
+Best evidence: v3 (`long-soak-6t-live-upstairs-v3-20260531-2229`), the longest clean capture.
+
+- Duration: **11.64 h** (started `2026-05-31 22:29:10 PDT`, terminated cleanly `2026-06-01 10:07:36 PDT` by operator decision).
+- Samples: **691 meminfo samples** at 60 s cadence (`-t 30` dumpsys timeout + 3× retry + `pidof` liveness fallback, per `scripts/soak.sh` after commit `a4619af`).
+- Post-warmup samples (≥10 min in): **681** over 11.5 h.
+
+| metric | first | last | min | max | median |
+|---|---|---|---|---|---|
+| PSS post-warmup | 123.7 MB | 123.8 MB | 114.3 MB | 142.0 MB | 124.0 MB |
+
+**PSS slope post-warmup: −15.97 KB/min over 688 min**, well within the ±50 KB/min threshold. The slope is mildly *negative*, not positive — no upward creep over 11+ hours. Per-hour median PSS settles in the 120–124 MB band by hour 3 and stays there. No OOM kill, no decoder-init failure, no process restart (`pidof` returned 25273 for the entire run).
+
+**Verdict on leak behavior: the app does not leak memory over long uptime at this workload.**
+
+### 6-tile sustained capacity — **NOT YET MEASURED**
+
+The leak number above is real, but it is measured against a **degenerate load**: five of six tiles fell over within 5–8 minutes of v3's launch and stayed dead for the remaining ~11.5 hours. The PSS budget being held by the surviving load is therefore much closer to "1 active tile + 4 frozen + 1 honestly-reconnecting" than the 6-active-tile workload the gate requires.
+
+Per-tile evidence (v3, full run):
+
+| Tile | First `TILE_READY` | Last `TILE_READY` | Time to silent death | Final state |
+|---|---|---|---|---|
+| `redbull-tv-0` | `22:29:20` | `22:34:15` | **~5 min** | `RECONNECTING` (honest — `ERROR_CODE_BEHIND_LIVE_WINDOW` × 1; never recovered) |
+| `apple-bipbop-adv-2` | `22:29:22` | `22:34:55` | **~6 min** | `state=LIVE`, `playing=false`, no frames for 10.1 h (silent stall) |
+| `akamai-bbb-3` | `22:29:20` | `22:35:21` | **~6 min** | `state=LIVE`, `playing=false`, no frames for 10.1 h (silent stall) |
+| `mux-x36xhzz-4` | `22:29:19` | `22:35:21` | **~6 min** | `state=LIVE`, `playing=false`, no frames for 10.1 h (silent stall, dropped counter frozen at 7131) |
+| `unified-tears-5` | `22:29:24` | `22:37:04` | **~8 min** | `state=LIVE`, `playing=false`, no frames for 10.1 h (silent stall) |
+| `dw-news-en-1` | `22:29:46` | `06-01 10:08:01` | **still rendering at termination** | `state=LIVE`, `playing=true`, fresh frames; cumulative `TILE_READY` = 341,634 (~8.2/s sustained — pathological rebuffer/variant-switch churn worth understanding in Stage 2) |
+
+Three soaks in a row showed this same shape (v1: 87 min until WyzeGrid-displaced kill — 1 active + 5 broken; v2: 1 min false-start from a host-side dumpsys timeout; v3: 11.5 h — 1 active + 4 silently stale + 1 honestly reconnecting). This is a pattern, not a streak of bad luck.
+
+### Why the capacity number can't be obtained yet — two upstream blockers
+
+1. **Fixtures.** The validated pool was still mostly VOD-as-live test assets (`apple-bipbop-adv`, `akamai-bbb`, `mux-x36xhzz`, `unified-tears`) that fall off the live window under concurrent load and never re-enter. Of the real news streams probed on `.182`, only Red Bull TV and DW News English play, and Red Bull went `BEHIND_LIVE_WINDOW` 5 min in. **The work of curating real, sustained streams is the helper's job in Stage 2** (`04-TECHNICAL-APPROACH.md §2 Piece 2`), not the TV app's. Until the helper exists, there is no honest fixture pool to soak against.
+
+2. **Player non-recovery + Trust Bar C3 dishonesty.** When a tile stumbled into `BEHIND_LIVE_WINDOW`/dropout territory, `StreamPlayer` did not genuinely recover, and reported `state=LIVE` while no frames rendered for **10+ hours**. This is a direct violation of Trust Bar **C3** ("staleness is never silent") and is what allowed the four stalled tiles to "look fine" to the harness state machine. **The fix is required Stage 2 work** — see `docs/STAGE-2-PLAN.md §"Player robustness (required)"`.
+
+Both blockers are Stage 2 work that is already named in the architecture and is now the entry point for that stage. The capacity re-soak runs once both are in place; it is item C in that plan.
+
+### What was actually validated in Stage 1
+
+- Toolchain pinned and reproducible; both skeletons build, install, and run.
+- Soak harness (in-app telemetry + host-side runner + parser) works end-to-end across three runs.
+- WyzeGrid coexistence is a real production-deployment concern, characterized, and recorded.
+- Memory behavior of the app over long uptime: clean.
+- The `state=LIVE` surface-honesty bug is reproducible and load-bearing on the capacity measurement.
+- Fixture validation method (`scripts/validate-fixture.sh` + on-device beats with `playing` + `pos_ms`) catches what HEAD-probes miss.
+
+### Run-artifact retention policy (decided here)
+
+`docs/findings/runs/**/events.log` files are large (v3's was 33.8 MB) and **regenerable from the harness**. Going forward they are gitignored. The per-run record is kept by committing the small files: `meta.json`, `end.json`, `runner.log`, `meminfo.csv`, `device.txt`. The finding doc carries the parsed summary (decoder + per-tile counts + slope) — that's the durable evidence.
+
+The v3 run directory is retained on this commit (small files only). The v1 (`long-soak-6t-live-upstairs-20260530/`) and v2 (`…-v2-…`) directories are discarded — they were superseded and adding them would add cruft without telling the story any better than the prose above already does.

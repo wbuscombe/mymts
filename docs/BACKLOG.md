@@ -33,13 +33,9 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 **Why-not-now:** The Stage 1 gate-clearing long soak runs against `.182` whose attached panel is 1280×720. Decode load is panel-agnostic so the leak number transfers, but final-stage downscale + Graphics surface composition at 4K is unverified.
 **Reconsider when:** Either `.182` is moved to a 4K panel, or `.158` (or another Onn box) is connected to one for a short confirmatory run. Before shipping the default to a box driving a 4K production TV.
 
-## Stage 2 / production — `StreamPlayer.state` must be frame-age-aware
+## ~~Stage 2 / production — `StreamPlayer.state` must be frame-age-aware~~
 
-**What:** Make `StreamPlayer.state` reflect "the surface is actually rendering" rather than just ExoPlayer's `playWhenReady`/`playbackState`. Right now a player can report `state=LIVE` while `lastFrameAtMs` is many minutes old (observed in the first long soak: three Mux/Unified tiles all reported `LIVE` while `last_frame_age_ms ≈ 5,000,000`, i.e. ~84 min since the last frame).
-**Why-not-now:** Stage 1 is the budget gate, not a code-quality stage. Recording it here so it doesn't get lost.
-**Why it matters:** This is a direct Trust Bar **C3** violation ("staleness is never silent"). The wall would show a frozen tile with a "LIVE" label, which is exactly the surface-honesty failure C3 forbids.
-**Fix sketch:** add a `STALE` state derived from `now() - lastFrameAtMs > THRESHOLD` regardless of ExoPlayer's reported state; surface it to the same heartbeat + UI badge as a dead tile. Pick a threshold that's tight enough to be honest (~10–30 s for live HLS) but loose enough to absorb ordinary buffering.
-**Reconsider when:** Stage 2 (the helper does real upstream work, so the wall starts displaying actual content) or earlier if another soak's results get distorted by stale-but-LIVE tiles.
+**Promoted to a required Stage 2 fix.** See `docs/STAGE-2-PLAN.md §B.1`. Stage 1 reproduced this surface-honesty failure in all three soaks (the v3 run had four of six tiles reporting `state=LIVE` for 10+ hours after their last frame); it is now the entry point of Stage 2 because it is a direct violation of locked Trust Bar **C3** and it is the proximate cause of why the 6-tile capacity number could not be measured in Stage 1.
 
 ## Production deployment — app-vs-app foreground conflict on the Onn box
 

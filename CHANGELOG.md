@@ -38,9 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/OPERATIONS.md` — toolchain versions, single-command runners, soak instructions.
 - `docs/THREAT-MODEL.md` — unchanged; still skeleton.
 
-### Gate status
-- **Preliminary.** Method validated, apparatus committed, interim default = 6.
-- **Pending:** the operator's multi-hour (≥ 4 h) LIVE-pool soak per `docs/findings/01-onn4k-tile-budget.md`. Until that run is recorded in the `## Final` section of that file, **Stage 2 (helper aggregation + resolution) is blocked.**
+### Gate status — Stage 1 closed 2026-06-01
+
+- **Leak behavior: PASS.** v3 captured 681 post-warmup samples over 11.5 h; PSS slope −15.97 KB/min, median 124.0 MB (band 114.3–142.0 MB). No leak.
+- **6-tile sustained capacity: NOT YET MEASURED, deferred to Stage 2.** Three soaks degenerated to ~1 active tile within 5–8 min because (a) the validated fixture pool was still mostly VOD-as-live test assets that fall off the live window and never re-enter, and (b) `StreamPlayer` does not recover stalled tiles and dishonestly continues to report `state=LIVE` over a frozen surface (a direct Trust Bar **C3** violation, observed in all three soaks). Both fixes are Stage 2 work; the capacity re-soak runs after both land. See `docs/STAGE-2-PLAN.md`.
+- **Configurable default:** `MYMTS_DEFAULT_MAX_TILES=6` unchanged; annotated as a *target to be validated in Stage 2*, not a measured-safe number.
+- **Stage 2 unblocked.** Entry point is `docs/STAGE-2-PLAN.md §B.1` (player robustness) → §A (the helper) → §C (the capacity re-soak).
+
+### Closing housekeeping
+- WyzeGrid re-enabled on `.182` and verified back to normal operation (foreground, watchdog service active).
+- `docs/findings/runs/**/events.log` is gitignored going forward (raw captures are 30+ MB and regenerable; the small files + the parsed summary in the finding doc are the durable record).
+- The v1 and v2 run directories were removed (superseded). The v3 directory is retained as the closing record.
 
 ### Known limitations carried forward
 - `SoakFixtures.LIVE` URLs are public broadcaster HLS endpoints and decay over time. The first long-soak run may need updated URLs before it produces useful data; the rule is to edit the fixture file in a single commit, never silently drop dead fixtures from a result.

@@ -1,0 +1,10 @@
+{
+  "run_id": "long-soak-6t-live-upstairs-v3-20260531-2229",
+  "device": "<LAN_IP>:5555",
+  "tiles": 6,
+  "pool": "live",
+  "resolution_hint": "auto",
+  "duration_seconds": 118800,
+  "meminfo_interval_seconds": 60,
+  "started_at": "2026-06-01T03:29:09Z"
+}

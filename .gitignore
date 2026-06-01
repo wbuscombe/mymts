@@ -71,3 +71,14 @@ coverage/
 *.lcov
 htmlcov/
 .coverage
+
+# Soak-run raw event captures. These can grow tens-to-hundreds of MB per
+# run and are regenerable from the harness. The committed per-run record is
+# the small files (meta.json, end.json, runner.log, meminfo.csv, device.txt)
+# plus the parsed summary in the finding doc.
+docs/findings/runs/**/events.log
+
+# Re-include runner.log inside run directories — it's small, captures the
+# host-side timeline, and the broader *.log rule above would otherwise
+# exclude it.
+!docs/findings/runs/**/runner.log
