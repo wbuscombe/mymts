@@ -1,0 +1,17 @@
+id,duration_s,tile_ready,decoder,dropped,errors,last_frame_age_ms,state,playing,pos_advance_ms
+redbull-tv,75,2,c2.amlogic.avc.decoder,0,0,57304,LIVE,true,-12005
+dw-news-en,75,2,c2.amlogic.avc.decoder,0,0,55458,LIVE,true,7
+france24-en,60,0,-,0,1,-1,RECONNECTING,false,0
+france24-en-alt,75,0,-,0,1,-1,RECONNECTING,false,0
+nhk-world,75,0,-,0,1,-1,RECONNECTING,false,0
+al-jazeera-en,75,0,-,0,1,-1,RECONNECTING,false,0
+sky-news,75,0,-,0,1,-1,RECONNECTING,false,0
+tv5monde,75,0,-,0,1,-1,RECONNECTING,false,0
+apple-bipbop-adv,75,2,c2.amlogic.avc.decoder,0,0,57382,LIVE,true,30006
+mux-test-stream,75,2,c2.amlogic.avc.decoder,0,0,56583,LIVE,true,17
+akamai-bbb,75,2,c2.amlogic.avc.decoder,0,0,56979,LIVE,true,30008
+mux-x36xhzz,75,2,c2.amlogic.avc.decoder,0,0,58023,LIVE,true,30006
+mux-pts-shift,75,2,c2.amlogic.avc.decoder,0,0,57630,LIVE,true,30012
+unified-tears,75,2,c2.amlogic.avc.decoder,0,0,56504,LIVE,true,30008
+moctobpltc-eight,75,0,-,0,1,-1,RECONNECTING,false,0
+nasa-public,75,0,-,0,1,-1,RECONNECTING,false,0

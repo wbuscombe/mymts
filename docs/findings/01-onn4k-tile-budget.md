@@ -75,10 +75,48 @@ The configurable grid default depends on this number. Per the Stage 1 prompt:
 
 `SoakFixtures.kt` ships two pools:
 
-- **`live`** — actual public live HLS broadcasts. Used for the gate-clearing soak: the failure modes here are the ones the production wall will see.
-- **`stable`** — Apple / Mux / test-streams.mux.dev test HLS. Used for method validation when LIVE-pool fixtures are dead or geo-restricted. Useful for the apparatus, **not** for the gate number.
+- **`live`** — fixtures validated to actually play on `.182`. Composition is 5 stable + 1 reconnect exerciser (inverts the first-attempt pool's mostly-flaky ratio, which produced "1 active + 5 stale" load on the box and contaminated the slope).
+- **`stable`** — Apple / Mux / test-streams.mux.dev test HLS. Useful for apparatus validation.
 
-Note: the LIVE-pool URLs are public broadcasters' HLS endpoints; they decay. If a long-soak run starts with `EV=ERROR ERROR_CODE_IO_BAD_HTTP_STATUS` on all tiles, update `SoakFixtures.LIVE` and re-run — do **not** silently drop dead fixtures from the result. (The operator can also swap in their own real channel URLs for the run that will set the production default.)
+### Fixture validation (the lesson from the first attempt)
+
+The first long soak burned 24 h on a pool where 3 of 6 URLs HEAD'd 200 from the Mac but **never produced a frame on `.182`**. A HEAD probe from a developer machine is not sufficient — geo, ISP path, CDN-tier policy, ExoPlayer's actual handshake, and the box's userspace can all reject what `curl -I` accepts.
+
+For Stage 1 (and any future fixture change), use the validator on the box:
+
+```
+scripts/validate-fixture.sh --device <LAN_IP>:5555 \
+    --id <id> --label "<label>" --url "<url>" --duration <s>
+```
+
+It launches a single-tile soak with that URL (via `--es url`/`label`/`id` intent extras the harness reads as an ad-hoc fixture override), sleeps `<s>`, parses `MYMTS_SOAK` telemetry, and prints one CSV row:
+
+```
+id,duration_s,tile_ready,decoder,dropped,errors,last_frame_age_ms,state,playing,pos_advance_ms
+```
+
+The real liveness signal is `playing=true AND (pos_advance_ms > 0 OR a live HLS at the live edge)`. `state=LIVE` alone is **not enough** — the underlying `StreamPlayer.state` reports ExoPlayer's `playWhenReady`/`playbackState`, which can be `LIVE` with no frames actually rendering (the C3 bug filed in `docs/BACKLOG.md`).
+
+For each new candidate: 60–90 s smoke first, then a 5+ min sustained re-check on survivors. Anything that fails the smoke or decays in the sustained run does not go in the pool.
+
+### Validation results (2026-05-31, `.182`)
+
+`docs/findings/validation/candidates-20260531-1743.csv` + `sustained-20260531-2159.csv`.
+
+**Passed both smoke (75 s) and sustained (5 min) on `.182`:**
+
+| id | source | composition role |
+|---|---|---|
+| `redbull-tv` | https://rbmn-live.akamaized.net/.../master.m3u8 | live broadcast |
+| `dw-news-en` | https://dwamdstream102.akamaized.net/.../index.m3u8 | live broadcast |
+| `apple-bipbop-adv` | https://devstreaming-cdn.apple.com/.../master.m3u8 | multi-variant VOD (sustained) |
+| `akamai-bbb` | https://test-streams.mux.dev/test_001/stream.m3u8 | single-variant VOD |
+| `mux-x36xhzz` | https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8 | multi-variant VOD (drop counter climbed continuously in prior 87-min partial soak) |
+| `unified-tears` | https://demo.unified-streaming.com/.../tears-of-steel.ism/.m3u8 | ~12 min VOD-as-live (reconnect exerciser) |
+
+**Failed smoke on `.182` (`ERROR_CODE_IO_BAD_HTTP_STATUS`, do not silently re-add):**
+
+`nasa-public` (`ntv1.akamaized.net`), `nasa-media` (`ntv2`), `moctobpltc-eight`, `france24-en` (two URLs), `nhk-world`, `al-jazeera-en`, `sky-news`, `tv5monde`, `abc-news-au`. Almost certainly geo-restricted to non-US networks or auth-tier on this CDN path.
 
 ### Pass criteria for the long soak (proposed)
 
