@@ -158,7 +158,28 @@ trap cleanup EXIT INT TERM
     echo "timestamp,total_pss_kb,java_heap_kb,native_heap_kb,graphics_kb,code_kb,stack_kb,system_kb" > "$RUNDIR/meminfo.csv"
     while true; do
         TS="$(date '+%Y-%m-%d %H:%M:%S')"
-        MEM="$(adb -s "$DEVICE" shell dumpsys meminfo "$PACKAGE" 2>/dev/null || true)"
+        # Retry dumpsys up to 3 times. Under heavy decoder load (6 active
+        # ExoPlayers + Surface composition on a 2GB Amlogic box), dumpsys's
+        # default 10s timeout can be exceeded — that doesn't mean the app
+        # died, it just means binder/system_server is contended. We use
+        # `dumpsys -t 30` to extend the per-call timeout and retry on a
+        # short backoff before deciding we have nothing.
+        MEM=""
+        for attempt in 1 2 3; do
+            MEM="$(adb -s "$DEVICE" shell dumpsys -t 30 meminfo "$PACKAGE" 2>/dev/null || true)"
+            if echo "$MEM" | grep -q "TOTAL PSS"; then break; fi
+            sleep 2
+        done
+        # Liveness fallback: even if dumpsys consistently times out, check
+        # whether the process is genuinely gone before logging "app died".
+        if ! echo "$MEM" | grep -q "TOTAL PSS"; then
+            ALIVE="$(adb -s "$DEVICE" shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+            if [[ -n "$ALIVE" ]]; then
+                echo "[$TS] meminfo timed out 3× (pid $ALIVE still alive); sample skipped"
+                sleep "$INTERVAL"
+                continue
+            fi
+        fi
         if echo "$MEM" | grep -q "TOTAL PSS"; then
             PSS=$(echo "$MEM" | grep "TOTAL PSS:" | awk '{print $3}')
             JAVA=$(echo "$MEM" | grep "Java Heap:" | awk '{print $3}' | head -1)
