@@ -27,53 +27,66 @@ import com.mymts.player.StreamSpec
  */
 object SoakFixtures {
 
-    // LIVE-pool composition is mixed-on-purpose for the gate soak: 2 actual
-    // live broadcasts give us steady-state playback, and 4 deliberately
-    // flaky/reconnect-prone streams ensure the reconnect path (where leaks
-    // hide) is exercised repeatedly across a multi-hour run. The mix was
-    // validated by HEAD probe just before the long soak — if any URL stops
-    // responding mid-run, replace it in a single commit and re-run; never
-    // silently drop a dead fixture from a result.
+    // LIVE-pool composition for the gate-clearing soak: 5 streams that
+    // sustained playback in solo validation on .182 + 1 deliberate reconnect
+    // exerciser. Inverts the prior pool's mostly-flaky ratio — the first
+    // gate-clearing attempt's PSS data measured "1 active tile + 5 stale"
+    // because nearly every fixture was flaky.
+    //
+    // Validation method (scripts/validate-fixture.sh) — see
+    // docs/findings/validation/. Each fixture below has:
+    //   - TILE_READY > 0
+    //   - state=LIVE, playing=true at 75s and 5 min in solo runs
+    //   - 0 errors over the validation window
+    //
+    // International broadcasters tried but failing on .182 with
+    // ERROR_CODE_IO_BAD_HTTP_STATUS (likely geo-restriction or auth):
+    // NASA TV Public/Media (4xx mid-validation), France 24, NHK, Al Jazeera,
+    // Sky News, TV5MONDE, moctobpltc 'eight', ABC Australia. Do not silently
+    // re-add without revalidation on the same network.
     val LIVE: List<StreamSpec> = listOf(
-        // Real live broadcasts — steady playback.
-        StreamSpec(
-            id = "nasa-public",
-            label = "NASA TV Public (live)",
-            url = "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8",
-        ),
+        // ---- 5 stable ----
+        // Real live broadcasts (validated solo on .182, sustained 5 min LIVE).
         StreamSpec(
             id = "redbull-tv",
             label = "Red Bull TV (live)",
             url = "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8",
         ),
-        // Long-running test stream — public, well-known, exercises buffer
-        // discipline over many hours.
         StreamSpec(
-            id = "moctobpltc-eight",
-            label = "moctobpltc 'eight' (long-running test)",
-            url = "https://moctobpltc-i.akamaihd.net/hls/live/571329/eight/playlist.m3u8",
+            id = "dw-news-en",
+            label = "DW News English (live)",
+            url = "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8",
         ),
-        // Mux's PTS-shift test stream — deliberately introduces presentation-
-        // timestamp anomalies that drive periodic recovery. Exactly the path
-        // we want exercised for leak hunting.
+        // Multi-variant VOD HLS — advanced multi-variant test asset; the
+        // multi-variant path exercises variant switching without ending. In
+        // the 87-min partial-soak it kept producing dropped-frame events
+        // throughout, meaning the decoder stayed engaged.
         StreamSpec(
-            id = "mux-pts-shift",
-            label = "Mux PTS-shift (deliberate timing anomalies)",
-            url = "https://test-streams.mux.dev/pts_shift/master.m3u8",
+            id = "apple-bipbop-adv",
+            label = "Apple BipBop advanced (multi-variant VOD)",
+            url = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8",
         ),
-        // Multi-variant VOD packaged as HLS — long enough that loop boundary
-        // hits are spaced out, short enough that BEHIND_LIVE_WINDOW recoveries
-        // happen multiple times across a 33h run.
+        // Single-variant VOD HLS (Big Buck Bunny on test-streams.mux.dev) —
+        // validated solo at real-time position advance (240s over 240s wall).
+        StreamSpec(
+            id = "akamai-bbb",
+            label = "Big Buck Bunny (VOD as live)",
+            url = "https://test-streams.mux.dev/test_001/stream.m3u8",
+        ),
+        // Multi-variant VOD; in the prior 87-min soak its drop counter
+        // climbed from 0 to 2953, confirming continuous decode activity.
         StreamSpec(
             id = "mux-x36xhzz",
-            label = "Mux x36xhzz (multi-variant test asset)",
+            label = "Mux x36xhzz (multi-variant VOD)",
             url = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
         ),
-        // Long-form VOD treated as live — guarantees BEHIND_LIVE_WINDOW
-        // reconnect on finish, hammering the reconnect lifecycle.
+        // ---- 1 reconnect exerciser ----
+        // Long-form VOD treated as live — ~12 min runtime → BEHIND_LIVE_WINDOW
+        // reconnect once per loop. Hammers the reconnect lifecycle without
+        // dominating the run.
         StreamSpec(
             id = "unified-tears",
-            label = "Unified Streaming 'Tears of Steel' (VOD as live)",
+            label = "Unified Streaming Tears of Steel (reconnect exerciser)",
             url = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
         ),
     )

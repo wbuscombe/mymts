@@ -37,9 +37,28 @@ object SoakLog {
     fun error(id: String, code: String, message: String) =
         Log.w(TAG, "EV=ERROR|id=$id|code=$code|msg=${sanitize(message)}")
 
-    fun heartbeat(idx: Int, id: String, state: String, dropped: Int, lastFrameAtMs: Long) {
+    fun heartbeat(
+        idx: Int,
+        id: String,
+        state: String,
+        isPlaying: Boolean,
+        positionMs: Long,
+        dropped: Int,
+        lastFrameAtMs: Long,
+    ) {
+        // last_frame_age_ms is misleading on its own: ExoPlayer's
+        // onRenderedFirstFrame only fires on initial render and after variant
+        // switches, not on every frame. So a large value can mean "the player
+        // has been steadily rendering a single variant for a while" rather
+        // than "the surface is stale." Pair with isPlaying + position_ms (the
+        // current playback head) to know whether the surface is actually
+        // advancing.
         val age = if (lastFrameAtMs > 0) System.currentTimeMillis() - lastFrameAtMs else -1
-        Log.i(TAG, "EV=BEAT|idx=$idx|id=$id|state=$state|dropped=$dropped|last_frame_age_ms=$age")
+        Log.i(
+            TAG,
+            "EV=BEAT|idx=$idx|id=$id|state=$state|playing=$isPlaying|" +
+                "pos_ms=$positionMs|dropped=$dropped|last_frame_age_ms=$age",
+        )
     }
 
     private fun sanitize(s: String): String =

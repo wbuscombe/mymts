@@ -46,8 +46,13 @@ fun SoakHarness(spec: SoakSpec) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val pool = if (spec.pool == "stable") SoakFixtures.STABLE else SoakFixtures.LIVE
-    val specs = remember(spec.tiles, spec.pool) { SoakFixtures.pick(spec.tiles, pool) }
+    val specs = remember(spec.tiles, spec.pool, spec.adhocFixtures) {
+        spec.adhocFixtures
+            ?: SoakFixtures.pick(
+                tiles = spec.tiles,
+                pool = if (spec.pool == "stable") SoakFixtures.STABLE else SoakFixtures.LIVE,
+            )
+    }
 
     val manager = remember(specs) { StreamPlayerManager(context, specs) }
 
@@ -67,10 +72,13 @@ fun SoakHarness(spec: SoakSpec) {
         while (true) {
             delay(spec.heartbeatIntervalMs)
             manager.players.forEach { (idx, player) ->
+                val exo = player.getPlayer()
                 SoakLog.heartbeat(
                     idx = idx,
                     id = player.specId,
                     state = player.state.value.name,
+                    isPlaying = exo?.isPlaying ?: false,
+                    positionMs = exo?.currentPosition ?: -1L,
                     dropped = player.droppedFrames,
                     lastFrameAtMs = player.lastFrameAtMs,
                 )

@@ -106,6 +106,28 @@ The soak harness lives in `scripts/soak.sh`. It installs the debug APK, starts t
 
 Stage 1 deploys are dev-sideloads via `adb install`. The production signed-install update path (Op Bar B1/B2 — never bricks, always a way back) lands in Stage 6.
 
+## Active operator state — RE-ENABLE BEFORE LEAVING STAGE 1
+
+**WyzeGrid is currently `disable-user` on `.182`** for the gate-clearing soak window.
+
+Background: WyzeGrid runs a persistent `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdog with `SYSTEM_ALLOW_LISTED` priority that reclaimed the foreground from the first soak attempt around 80 minutes in; the now-backgrounded `com.mymts` was then evicted by Android on the 2 GB box. To make the relaunch survive, WyzeGrid was disabled:
+
+```
+adb -s <LAN_IP>:5555 shell am force-stop com.wyzegrid
+adb -s <LAN_IP>:5555 shell pm disable-user --user 0 com.wyzegrid
+```
+
+**Required cleanup after the soak completes (or aborts):**
+
+```
+adb -s <LAN_IP>:5555 shell pm enable com.wyzegrid
+adb -s <LAN_IP>:5555 shell am start -n com.wyzegrid/.MainActivity
+```
+
+If the soak is aborted before completion, run the re-enable steps anyway — leaving WyzeGrid disabled is not acceptable past the soak.
+
+(This contention is not a bug in either app; it's a real finding for the eventual production deployment that two foreground TV apps cannot coexist on a 2 GB box. Filed in `docs/BACKLOG.md`.)
+
 ## Backup + restore placeholder (Stage 6 will write this)
 
 ```
