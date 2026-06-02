@@ -24,26 +24,64 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Wraps a single ExoPlayer instance. HLS only.
  *
- * Adapted from WyzeGrid's StreamPlayer pattern — same player-lifecycle
- * discipline (surface cleanup before release, listener removal before release,
- * frame watchdog) — but with the camera/RTSP wiring removed per the
- * technical-approach hard boundary.
+ * Stage 2 Part B rewrite: the player's surface state is now driven by
+ * [LivenessTracker] — a frame-age-aware state machine that honors Trust
+ * Bar **C3** ("staleness is never silent") and **C2** ("a dead feed is a
+ * non-event"). The Stage 1 player reported `LIVE` while the surface was
+ * frozen for 10+ hours; this version transitions to `STALE` within a
+ * tight window, runs a bounded recovery ladder (prepare → re-init), and
+ * settles into `DEAD` rather than thrashing forever.
  *
- * Reconnect policy is light in Stage 1: log the failure, set state, let
- * the manager decide. Stage 6 will add the auto-recovery + exponential
- * backoff loop once the dead-tile budget for C2 is measured.
+ * Frame-arrival signals fed into the tracker:
+ *   - `Player.Listener.onRenderedFirstFrame` (initial render + variant switches)
+ *   - `AnalyticsListener.onDroppedVideoFrames` (any callback = decoder is alive,
+ *      even when zero frames were actually dropped)
+ *
+ * Tick cadence: every 2 s on the main thread. That's fast enough to catch
+ * a 15-s threshold violation inside the threshold window, slow enough that
+ * 6 concurrent tickers cost essentially nothing on the Onn box.
  */
 @OptIn(UnstableApi::class)
 class StreamPlayer(
     private val context: Context,
     private val spec: StreamSpec,
+    /** Override for tests / Stage 6 hardening. Default per `ARCHITECTURE.md`. */
+    staleThresholdMs: Long = 15_000L,
+    maxRecoveryAttempts: Int = 3,
+    backoffMs: List<Long> = listOf(2_000L, 8_000L, 30_000L),
+    private val tickIntervalMs: Long = 2_000L,
 ) {
-    enum class State { CONNECTING, LIVE, RECONNECTING, OFFLINE }
+    /** Re-exported so callers (SoakHarness, future grid UI) work in one type. */
+    enum class State {
+        CONNECTING, LIVE, STALE, RECOVERING, DEAD, OFFLINE;
+
+        companion object {
+            fun from(s: LivenessTracker.State): State = when (s) {
+                LivenessTracker.State.CONNECTING -> CONNECTING
+                LivenessTracker.State.LIVE -> LIVE
+                LivenessTracker.State.STALE -> STALE
+                LivenessTracker.State.RECOVERING -> RECOVERING
+                LivenessTracker.State.DEAD -> DEAD
+                LivenessTracker.State.OFFLINE -> OFFLINE
+            }
+        }
+    }
 
     private var player: ExoPlayer? = null
     private var listener: Player.Listener? = null
     private var analyticsListener: AnalyticsListener? = null
     private val handler = Handler(Looper.getMainLooper())
+
+    private val tracker = LivenessTracker(
+        staleThresholdMs = staleThresholdMs,
+        maxRecoveryAttempts = maxRecoveryAttempts,
+        backoffMs = backoffMs,
+        onTransition = { from, to ->
+            // Re-publish into our StateFlow + the soak log in one place.
+            _state.value = State.from(to)
+            SoakLog.stateChange(spec.id, from.name, to.name)
+        },
+    )
 
     private val _state = MutableStateFlow(State.CONNECTING)
     val state: StateFlow<State> = _state.asStateFlow()
@@ -52,19 +90,54 @@ class StreamPlayer(
     @Volatile var droppedFrames: Int = 0
         private set
 
-    /** Wall-clock ms of last rendered frame; 0 until first frame. */
-    @Volatile var lastFrameAtMs: Long = 0L
-        private set
+    /** Wall-clock ms of last frame-arrival signal; NO_FRAME until the first. */
+    val lastFrameAtMs: Long get() = tracker.lastFrameAtMs
+
+    val recoveryAttempts: Int get() = tracker.recoveryAttempts
 
     /** The id from the StreamSpec — exposed so the harness can attribute beats correctly. */
     val specId: String get() = spec.id
 
+    private val tickRunnable: Runnable = object : Runnable {
+        override fun run() {
+            val action = tracker.onTick()
+            when (action) {
+                LivenessTracker.TickAction.NONE -> Unit
+                LivenessTracker.TickAction.ATTEMPT_PREPARE -> {
+                    Log.i(TAG, "[${spec.label}] recovery strike PREPARE")
+                    SoakLog.recoveryStrike(spec.id, tracker.recoveryAttempts, "prepare")
+                    try {
+                        player?.prepare()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "[${spec.label}] prepare() threw: $e")
+                    }
+                }
+                LivenessTracker.TickAction.ATTEMPT_REINIT -> {
+                    Log.i(TAG, "[${spec.label}] recovery strike REINIT")
+                    SoakLog.recoveryStrike(spec.id, tracker.recoveryAttempts, "reinit")
+                    releaseInternal()
+                    createPlayer()
+                }
+                LivenessTracker.TickAction.SETTLE_DEAD -> {
+                    Log.w(TAG, "[${spec.label}] settling DEAD after exhausting recovery")
+                    SoakLog.settledDead(spec.id, tracker.recoveryAttempts)
+                    releaseInternal()
+                    // Do not re-schedule the tick — anti-loop. The tile shows
+                    // an honest dead indicator and consumes no further CPU.
+                    return
+                }
+            }
+            handler.postDelayed(this, tickIntervalMs)
+        }
+    }
+
     fun initialize() {
         release()
-        droppedFrames = 0
-        lastFrameAtMs = 0L
+        tracker.reset()
         _state.value = State.CONNECTING
+        droppedFrames = 0
         createPlayer()
+        handler.postDelayed(tickRunnable, tickIntervalMs)
     }
 
     private fun createPlayer() {
@@ -84,25 +157,16 @@ class StreamPlayer(
             .build()
 
         val pl = object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                when (state) {
-                    Player.STATE_READY -> _state.value = State.LIVE
-                    Player.STATE_BUFFERING -> if (_state.value == State.LIVE) {
-                        _state.value = State.RECONNECTING
-                    }
-                    Player.STATE_ENDED, Player.STATE_IDLE -> Unit
-                }
-            }
-
             override fun onPlayerError(error: PlaybackException) {
                 Log.w(TAG, "[${spec.label}] error ${error.errorCodeName}: ${error.message}")
                 SoakLog.error(spec.id, error.errorCodeName, error.message ?: "")
-                _state.value = State.RECONNECTING
+                // The error itself doesn't transition state — the tracker
+                // decides based on actual frame age. The error is data on
+                // the wire for the soak harness.
             }
 
             override fun onRenderedFirstFrame() {
-                lastFrameAtMs = System.currentTimeMillis()
-                _state.value = State.LIVE
+                tracker.onFrameRendered()
                 SoakLog.tileReady(spec.id)
             }
         }
@@ -117,6 +181,10 @@ class StreamPlayer(
             ) {
                 this@StreamPlayer.droppedFrames += droppedFrames
                 SoakLog.droppedFrames(spec.id, droppedFrames, elapsedMs)
+                // Decoder fired its dropped-frames callback — frames are
+                // being processed (with some dropped). Treat as a positive
+                // liveness signal alongside onRenderedFirstFrame.
+                tracker.onFrameRendered()
             }
 
             override fun onVideoDecoderInitialized(
@@ -144,8 +212,12 @@ class StreamPlayer(
 
     fun getPlayer(): ExoPlayer? = player
 
-    fun release() {
-        handler.removeCallbacksAndMessages(null)
+    /**
+     * Detach the player but DO NOT touch the tracker state machine — used
+     * internally by the recovery ladder when we need a fresh ExoPlayer
+     * without resetting the tracker's strike count.
+     */
+    private fun releaseInternal() {
         player?.let { p ->
             listener?.let { p.removeListener(it) }
             analyticsListener?.let { p.removeAnalyticsListener(it) }
@@ -156,6 +228,11 @@ class StreamPlayer(
         listener = null
         analyticsListener = null
         player = null
+    }
+
+    fun release() {
+        handler.removeCallbacksAndMessages(null)
+        releaseInternal()
         _state.value = State.OFFLINE
     }
 

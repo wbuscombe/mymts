@@ -87,7 +87,7 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 - **T-A1: Malicious or buggy app sideload on the Onn box.** Stage 6.
 - **T-A2: Update mechanism bricking the TV or being subverted.** Stage 6.
 - **T-O1: Backup mechanism becoming the source of the failures it's meant to prevent.** Stage 6.
-- **T-T1: TV-side surface honesty (frozen tile labelled "LIVE").** Stage 2 player fix (B.1), already-promoted required.
+- **T-T1: TV-side surface honesty (frozen tile labelled "LIVE").** **Closed in Stage 2 Part B.** Mechanism: `com.mymts.player.LivenessTracker` derives liveness from actual frame arrival via `onRenderedFirstFrame` + `onDroppedVideoFrames`, transitions to `STALE` when `last_frame_age_ms > 15 s`, runs a bounded recovery ladder (PREPARE → REINIT × 2 with 2 s/8 s/30 s backoff), and settles into `DEAD` after 3 strikes. Demonstrated on `.182`: an unreachable URL (`httpbin.org/status/404`) completed the lifecycle to `DEAD` in ~120 s, the same Stage 1 v3 failure-shape that left nasa-public-0 in `RECONNECTING` for 10 h. The C3 contract is now enforced **at both ends** — helper API masks `current_url → null` when not live (Part A); player surfaces honest `STALE`/`DEAD` to the UI (Part B). Details + on-device evidence in `docs/findings/02-player-state-machine.md`.
 - **T-S1: A friend's sideloaded instance compromised → ranked above operator data loss; isolation by construction is the defence.** Stage 7 portability pass.
 
 Each will be filled in with **likelihood**, **impact**, **mitigation**, **residual risk**, and a **back-trace** to the Trust Bar principle when the relevant stage lands.

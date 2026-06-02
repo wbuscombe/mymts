@@ -37,6 +37,18 @@ object SoakLog {
     fun error(id: String, code: String, message: String) =
         Log.w(TAG, "EV=ERROR|id=$id|code=$code|msg=${sanitize(message)}")
 
+    /** State machine transition. `from` and `to` are LivenessTracker.State names. */
+    fun stateChange(id: String, from: String, to: String) =
+        Log.i(TAG, "EV=STATE|id=$id|from=$from|to=$to|ts_ms=${System.currentTimeMillis()}")
+
+    /** A recovery strike is starting. `kind` is "prepare" or "reinit". */
+    fun recoveryStrike(id: String, attempt: Int, kind: String) =
+        Log.w(TAG, "EV=RECOVERY|id=$id|attempt=$attempt|kind=$kind|ts_ms=${System.currentTimeMillis()}")
+
+    /** Recovery exhausted; tile is now in honest DEAD state. */
+    fun settledDead(id: String, attempts: Int) =
+        Log.w(TAG, "EV=DEAD|id=$id|attempts=$attempts|ts_ms=${System.currentTimeMillis()}")
+
     fun heartbeat(
         idx: Int,
         id: String,

@@ -151,10 +151,12 @@ private fun TileBox(player: StreamPlayer?, label: String) {
                 Text(
                     text = state.name,
                     color = when (state) {
-                        StreamPlayer.State.LIVE -> Color(0xFF66BB6A)
-                        StreamPlayer.State.CONNECTING -> Color(0xFFFFEE58)
-                        StreamPlayer.State.RECONNECTING -> Color(0xFFFFCC80)
-                        StreamPlayer.State.OFFLINE -> Color(0xFFEF5350)
+                        StreamPlayer.State.LIVE -> Color(0xFF66BB6A)         // green
+                        StreamPlayer.State.CONNECTING -> Color(0xFFFFEE58)   // amber
+                        StreamPlayer.State.STALE -> Color(0xFFFFCC80)        // pale orange
+                        StreamPlayer.State.RECOVERING -> Color(0xFFFFA726)   // orange
+                        StreamPlayer.State.DEAD -> Color(0xFFEF5350)         // red
+                        StreamPlayer.State.OFFLINE -> Color(0xFF9E9E9E)      // grey
                     },
                     fontSize = 11.sp,
                 )

@@ -81,6 +81,48 @@ Per the Stage 2 prompt's `A → B → C` sequencing override (recorded in `docs/
 - **Part B — player robustness:** next session per the Stage 2 prompt's checkpoint instruction.
 - **Part C — capacity probe:** after B.
 
+## Stage 2 Part B — player robustness (Trust Bar C3 fix)
+
+Full details + on-device evidence in `docs/findings/02-player-state-machine.md`.
+
+### Added
+- **`com.mymts.player.LivenessTracker`** — pure Kotlin state machine that derives liveness from actual frame arrival, not ExoPlayer's reported `playWhenReady`/`playbackState`. States: `CONNECTING / LIVE / STALE / RECOVERING / DEAD / OFFLINE`. Configurable thresholds + recovery-ladder shape + backoff schedule, injectable clock for tests.
+- **17 unit tests** in `app/src/test/java/com/mymts/LivenessTrackerTest.kt` covering: threshold boundaries, the recovery ladder (PREPARE → REINIT × 2 → SETTLE_DEAD), anti-loop discipline (DEAD is absorbing; late frames don't silently revive), the never-connected path (CONNECTING → DEAD via the 30 s connecting timeout), configurable thresholds.
+- **`StreamPlayer` rewrite** — drives the tracker via a 2 s handler tick. Feeds the tracker from both `onRenderedFirstFrame` and `onDroppedVideoFrames` (any decoder callback = liveness signal). Emits `EV=STATE`/`EV=RECOVERY`/`EV=DEAD` on transitions. Widens `state` over `{CONNECTING, LIVE, STALE, RECOVERING, DEAD, OFFLINE}`. SoakHarness tile UI updated with color mappings for the new states.
+- **`scripts/parse-soak-log.py`** counts state transitions, recovery strikes (by kind), and DEAD settlements per tile.
+
+### Chosen values (with reasoning in the finding doc)
+- `staleThresholdMs = 15 s`
+- `connectingThresholdMs = 30 s`
+- `maxRecoveryAttempts = 3`
+- `backoffMs = [2 s, 8 s, 30 s]`
+- `tickIntervalMs = 2 s`
+
+### On-device demonstration (`.182`, helper at `<LAN_IP>:8091`)
+- **Healthy stream (helper-resolved `redbull-tv`, 75 s):** stayed `LIVE`; one transition `CONNECTING → LIVE`; no spurious `STALE`.
+- **Unreachable URL (`httpbin.org/status/404`, 150 s):** full recovery lifecycle captured — `CONNECTING → STALE → PREPARE → STALE → REINIT → STALE → REINIT → DEAD` in ~120 s. After `DEAD`, no further events fire for the tile. This is the Stage 1 v3 silent-staleness failure shape, now caught and surfaced honestly within a bounded window.
+
+### B.2 — dw-news-en investigation
+- Stage 2 measurement (180 s solo, WyzeGrid disabled): **0.12 callbacks/s** (down ~70× from Stage 1's 8.2 / s under 6-tile contention).
+- 21 STATE transitions over 180 s, all `LIVE ↔ STALE` oscillations with median recovery of ~75 ms — well before strike 1's 2 s backoff fires. The state machine handles bursty streams correctly.
+- **Buffer-sizing change deferred to Part C** per the Part B prompt — the loosen-vs-keep decision interacts with memory-per-tile, which directly affects the capacity ceiling Part C measures.
+
+### Trust Bar C3 now enforced at both ends
+- Helper API masks `current_url → null` whenever `status != "live"` (Part A).
+- TV player surfaces `STALE`/`DEAD` to the UI; the wall **cannot** show a `LIVE` badge over a frozen surface (Part B).
+- T-T1 in `docs/THREAT-MODEL.md` closed with this evidence.
+
+### Standards held
+- All app unit tests green (17 LivenessTracker + 5 SoakFixtures + 4 StreamSpec).
+- WyzeGrid was disabled on `.182` for the integration runs and **re-enabled afterward** per the documented recipe.
+- unrelated host services untouched.
+- No secrets / absolute paths in history.
+
+### Stage 2 progress
+- **Part A — helper: DONE.**
+- **Part B — player robustness: DONE** (this entry).
+- **Part C — capacity probe: next**. Now unblocked: the helper resolves real streams (A) and the player is honest about staleness (B), so Part C can measure the true sustainable tile ceiling on this hardware.
+
 ### Known limitations carried forward
 - `SoakFixtures.LIVE` URLs are public broadcaster HLS endpoints and decay over time. The first long-soak run may need updated URLs before it produces useful data; the rule is to edit the fixture file in a single commit, never silently drop dead fixtures from a result.
 - Helper Dockerfile pins by tag (`python:3.13.1-slim-bookworm`), not by digest. Digest pinning lands in Stage 6 hardening.

@@ -223,9 +223,84 @@ Contract tests pin every field name and the C3 invariant ("non-live channels exp
 - Deploy script `scripts/deploy-helper.sh` does the full `pull → rebuild → restart → /health verify` cycle and refuses to declare success until `/health.build_sha` matches the deployed SHA.
 - The unrelated host container is **never** referenced or networked into. The helper's compose declares its own dedicated bridge network (`mymts-net`) with no upstream link.
 
-## 8. What this document deliberately does NOT specify yet
+## 8. Stage 2 Part B — `StreamPlayer` state machine + recovery
+
+Per Trust Bar **C3** (*staleness is never silent*) and **C2** (*a dead feed is a non-event*). The Stage 1 player reported `state=LIVE` while the surface received zero frames for 10+ hours on four of six tiles in v3 — Stage 2 Part B replaces the ad-hoc state with a frame-age-aware state machine.
+
+### The state machine (`com.mymts.player.LivenessTracker`)
+
+```
+                       ┌─────────────┐
+                  ┌───▶│ CONNECTING  │── 30s without frame ──┐
+                  │    └─────────────┘                       │
+                  │           │                              │
+                  │      onFrameRendered                     │
+                  │           │                              ▼
+                  │           ▼                       ┌──────────┐
+              onFrame─────▶ ┌─────┐ ── 15s ──▶───────▶│  STALE   │
+                            │LIVE │                   └──────────┘
+                            └─────┘                         │
+                              ▲                       backoff elapsed
+                              │                             │
+                              │                             ▼
+                              │                       ┌────────────┐
+                              └──── onFrameRendered ──┤ RECOVERING │
+                                                      └────────────┘
+                                                            │
+                                            no frame in 15s window
+                                                            │
+                                                ┌───────────┴───────┐
+                                            attempts < 3     attempts ≥ 3
+                                                │                   │
+                                                ▼                   ▼
+                                              STALE              ┌──────┐
+                                                                 │ DEAD │
+                                                                 └──────┘
+                                                            (release decoder,
+                                                             anti-loop holds)
+```
+
+States in detail are documented in `docs/findings/02-player-state-machine.md`. Key invariants:
+
+- A tile reports `state=LIVE` **only** when `last_frame_age_ms < staleThresholdMs`. ExoPlayer's `STATE_READY` alone is not sufficient — that was Stage 1's bug.
+- A tile that cannot recover settles into `DEAD` and stops consuming CPU. The recovery ladder runs at most three times before this happens (`maxRecoveryAttempts = 3`).
+- A tile that has never produced a frame (DNS dead, 4xx, manifest invalid) follows the same ladder via the `connectingThresholdMs = 30 s` timeout — it does not hang in CONNECTING forever.
+
+### Chosen values
+
+| Knob | Value | One-line reason |
+|---|---|---|
+| `staleThresholdMs` | 15 s | Tighter than 30 s honors C3 aggressively; covers normal buffer drain + brief hiccup. |
+| `connectingThresholdMs` | 30 s | Longer because initial manifest fetch + buffer can take 10–15 s on the Onn box. |
+| `maxRecoveryAttempts` | 3 | PREPARE, then two REINITs. More burns decoder slots without adding signal. |
+| `backoffMs` | [2 000, 8 000, 30 000] | Exponential with a soft cap. Anti-loop: a dead stream settles into DEAD within ~115 s. |
+| `tickIntervalMs` | 2 000 | Fast enough to catch threshold violations inside the threshold window. |
+
+Rationale + on-device evidence are in the finding doc; the state machine is asserted by 17 unit tests in `app/src/test/java/com/mymts/LivenessTrackerTest.kt`.
+
+### Telemetry the harness sees
+
+`SoakLog` emits these on every transition:
+
+- `EV=STATE|id=…|from=<state>|to=<state>|ts_ms=…`
+- `EV=RECOVERY|id=…|attempt=<n>|kind=prepare|reinit|ts_ms=…`
+- `EV=DEAD|id=…|attempts=<n>|ts_ms=…`
+
+Beats (`EV=BEAT`) now include `state` over the wider {LIVE, STALE, RECOVERING, DEAD} set. `scripts/parse-soak-log.py` counts state transitions, recovery strikes, and DEAD settlements per tile — what Part C will use to read the capacity probe.
+
+### Where the C3 contract is now enforced
+
+Both ends of the TV ↔ helper chain honor "staleness is never silent":
+
+| Layer | Mechanism |
+|---|---|
+| Helper API boundary (Part A) | `/api/channels` masks `current_url → null` whenever `status != "live"`. |
+| TV player (Part B) | `StreamPlayer.state` derives from actual frame arrival; `STALE`/`DEAD` are surfaced honestly to the UI; the wall **cannot** show a `LIVE` badge over a frozen surface. |
+
+## 9. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.
 - yt-dlp channel resolution (`channels.kind = 'youtube'`) — a future migration extends the CHECK constraint when the yt-dlp sidecar pattern lands.
 - Operator-driven add/remove of channels and RSS sources via API — Stage 5 (settings UI). For Stage 2, `seed.json` is the operator-curated list; the helper upserts on every boot so edits flow in without a redeploy.
+- Buffer-sizing changes for naturally-bursty streams like dw-news-en — flagged in `docs/findings/02-player-state-machine.md §"Buffer-sizing trade-off"`, decision deferred to Part C under real 6-tile load.

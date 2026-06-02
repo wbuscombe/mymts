@@ -20,7 +20,11 @@ This is what the helper exists to do. Per `04-TECHNICAL-APPROACH.md` and `02-TRU
 
 ---
 
-## B. Player robustness — REQUIRED, not deferred
+## ✅ B (DONE 2026-06-01). Player robustness — DONE
+
+Full details + on-device evidence in `docs/findings/02-player-state-machine.md`. Summary below.
+
+## ~~B. Player robustness — REQUIRED, not deferred~~
 
 This was logged in `BACKLOG.md` as a "Stage 2 / production" item. Stage 1 promoted it to required because it appeared in all three soaks and is the direct reason the 6-tile capacity number could not be measured. It is also a direct violation of a *locked* foundation principle.
 
@@ -50,6 +54,16 @@ Plausible causes:
 - An upstream peculiarity (DW packaging segment timings).
 
 **Required:** characterize before declaring `dw-news-en` a stable fixture. Reproduce with verbose `AnalyticsListener` capture (load, dropped, decoder-counters); decide whether to (a) loosen the buffer floor, (b) keep the fixture and document the cost, or (c) replace it. Until characterized, treat its Stage 1 numbers as suspect when reasoning about the capacity re-soak's fixture pool.
+
+### What B delivered (DONE 2026-06-01)
+
+- **`LivenessTracker`** — pure Kotlin state machine with frame-age-aware liveness, recovery ladder (PREPARE → REINIT × 2), and DEAD anti-loop. 17 unit tests. Configurable thresholds; chosen values + reasoning in `docs/findings/02-player-state-machine.md`.
+- **`StreamPlayer` rewrite** — wired to the tracker, handler-based 2 s tick, frame signals from both `onRenderedFirstFrame` and `onDroppedVideoFrames`. On-device demonstration (`.182`, helper at `<LAN_IP>:8091`):
+    - Real helper-resolved stream (`redbull-tv`, 75 s) → stayed `LIVE`; one transition `CONNECTING → LIVE`; no spurious `STALE`.
+    - Unreachable URL (`httpbin.org/status/404`, 150 s) → `CONNECTING → STALE → PREPARE → STALE → REINIT → STALE → REINIT → DEAD` in ~120 s. After `DEAD`, no further events ever fire for the tile. Anti-loop holds.
+- **B.2 dw-news-en** — solo 180 s on `.182`: **0.12 callbacks/s** (down ~70× from Stage 1's 8.2/s under 6-tile contention). 21 STATE transitions, all `LIVE↔STALE` oscillations that self-resolve within ~75 ms (no real recovery strike fires). Real load test in Part C will decide whether the Stage 1 pathological rate was a contention effect; the suggested buffer-floor tuning is deferred to Part C per the Part B prompt.
+- **Telemetry** — new `EV=STATE`/`EV=RECOVERY`/`EV=DEAD` event types; `scripts/parse-soak-log.py` updated to count and timeline these per-tile.
+- **C3 contract now enforced at both ends.** Helper masks `current_url → null` when not live (Part A); player surfaces `STALE`/`DEAD` honestly (Part B). The wall cannot show a `LIVE` badge over a frozen surface.
 
 ---
 

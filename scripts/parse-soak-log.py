@@ -39,6 +39,10 @@ def summarize_events(events_path: Path) -> dict:
     decoder_by_tile: dict[str, str] = {}
     first_ready: dict[str, int] = {}
     start_ts_ms: int | None = None
+    # Stage 2 Part B additions: lifecycle counts per tile.
+    state_transitions_by_tile: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    recovery_strikes_by_tile: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    dead_by_tile: dict[str, int] = {}   # attempts taken before settling DEAD
 
     with events_path.open() as f:
         for line in f:
@@ -48,7 +52,6 @@ def summarize_events(events_path: Path) -> dict:
             name, fields = parsed
             counts[name] += 1
             if name == "START":
-                # logcat timestamp parsing skipped — start_ts is the first event in the file.
                 pass
             elif name == "TILE_READY":
                 tid = fields.get("id", "?")
@@ -65,6 +68,17 @@ def summarize_events(events_path: Path) -> dict:
             elif name == "DECODER":
                 tid = fields.get("id", "?")
                 decoder_by_tile[tid] = fields.get("decoder", "?")
+            elif name == "STATE":
+                tid = fields.get("id", "?")
+                to = fields.get("to", "?")
+                state_transitions_by_tile[tid][to] += 1
+            elif name == "RECOVERY":
+                tid = fields.get("id", "?")
+                kind = fields.get("kind", "?")
+                recovery_strikes_by_tile[tid][kind] += 1
+            elif name == "DEAD":
+                tid = fields.get("id", "?")
+                dead_by_tile[tid] = int(fields.get("attempts", "0"))
 
     return {
         "counts": dict(counts),
@@ -73,6 +87,9 @@ def summarize_events(events_path: Path) -> dict:
         "decoder_by_tile": decoder_by_tile,
         "first_ready_ts_ms": first_ready,
         "earliest_ready_ts_ms": start_ts_ms,
+        "state_transitions_by_tile": {k: dict(v) for k, v in state_transitions_by_tile.items()},
+        "recovery_strikes_by_tile": {k: dict(v) for k, v in recovery_strikes_by_tile.items()},
+        "dead_by_tile": dead_by_tile,
     }
 
 
@@ -194,6 +211,33 @@ def main() -> int:
         print("## Decoders selected\n")
         for tid, dec in sorted(events["decoder_by_tile"].items()):
             print(f"- `{tid}`: `{dec}`")
+        print()
+
+    if events.get("state_transitions_by_tile"):
+        print("## State machine — transitions reached per tile\n")
+        print("| tile | LIVE | STALE | RECOVERING | DEAD | other |")
+        print("|---|---|---|---|---|---|")
+        for tid, transitions in sorted(events["state_transitions_by_tile"].items()):
+            live = transitions.get("LIVE", 0)
+            stale = transitions.get("STALE", 0)
+            recovering = transitions.get("RECOVERING", 0)
+            dead = transitions.get("DEAD", 0)
+            other = sum(v for k, v in transitions.items()
+                        if k not in {"LIVE", "STALE", "RECOVERING", "DEAD"})
+            print(f"| `{tid}` | {live} | {stale} | {recovering} | {dead} | {other} |")
+        print()
+
+    if events.get("recovery_strikes_by_tile"):
+        print("## Recovery strikes by tile\n")
+        for tid, strikes in sorted(events["recovery_strikes_by_tile"].items()):
+            tally = ", ".join(f"{k}×{v}" for k, v in strikes.items())
+            print(f"- `{tid}`: {tally}")
+        print()
+
+    if events.get("dead_by_tile"):
+        print("## Tiles that settled DEAD\n")
+        for tid, attempts in sorted(events["dead_by_tile"].items()):
+            print(f"- `{tid}`: after {attempts} recovery attempts")
         print()
 
     return 0
