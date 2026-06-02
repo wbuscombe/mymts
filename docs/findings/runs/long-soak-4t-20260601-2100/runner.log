@@ -1,0 +1,6 @@
+==> probe: tiles=4 duration=21600s device=<LAN_IP>:5555 helper=http://<LAN_IP>:8091
+==> fetching helper-resolved live channels
+    helper has 2 live channel(s); cycling to fill 4 tile(s)
+==> capturing device facts
+==> stopping prior instance + clearing logcat
+==> launching probe: 4 tile(s)

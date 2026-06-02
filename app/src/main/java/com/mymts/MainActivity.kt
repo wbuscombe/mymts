@@ -40,20 +40,42 @@ class MainActivity : ComponentActivity() {
         val resolution = intent?.getStringExtra("resolution") ?: "auto"
         val pool = intent?.getStringExtra("pool")?.lowercase() ?: "live"
 
-        // Ad-hoc single-fixture override for the host-side fixture validator.
-        // Lets `scripts/validate-fixture.sh` solo-test a URL on the box without
-        // a rebuild. If `url` + `label` are both present, the soak harness
-        // ignores the named pool entirely and runs that single stream at
-        // tiles=1.
-        val adhocUrl = intent?.getStringExtra("url")
-        val adhocLabel = intent?.getStringExtra("label")
-        val adhocId = intent?.getStringExtra("id")
-        val adhocFixtures: List<StreamSpec>? =
-            if (adhocUrl != null && adhocLabel != null) {
-                listOf(StreamSpec(id = adhocId ?: "adhoc", label = adhocLabel, url = adhocUrl))
-            } else {
-                null
+        // Ad-hoc fixture override(s). Two shapes:
+        //
+        //   1. Single fixture (Stage 1 validate-fixture.sh path):
+        //        --es url U --es label L [--es id ID]    → tiles=1, one StreamSpec
+        //
+        //   2. Multi-fixture (Stage 2 Part C capacity probe):
+        //        --es urls "U1,U2,U3" --es labels "L1,L2,L3" [--es ids "A,B,C"]
+        //        → tiles=N, N StreamSpecs in order; missing ids are auto-named
+        //
+        // When the multi-fixture form is used, the harness's `tiles` param is
+        // implicitly the length of the list.
+        val adhocSingleUrl = intent?.getStringExtra("url")
+        val adhocSingleLabel = intent?.getStringExtra("label")
+        val adhocSingleId = intent?.getStringExtra("id")
+        val adhocMultiUrls = intent?.getStringExtra("urls")?.takeIf { it.isNotEmpty() }
+        val adhocMultiLabels = intent?.getStringExtra("labels")?.takeIf { it.isNotEmpty() }
+        val adhocMultiIds = intent?.getStringExtra("ids")
+
+        val adhocFixtures: List<StreamSpec>? = when {
+            adhocMultiUrls != null -> {
+                val urls = adhocMultiUrls.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                val labels = adhocMultiLabels?.split(',')?.map { it.trim() } ?: urls.indices.map { "Tile $it" }
+                val ids = adhocMultiIds?.split(',')?.map { it.trim() } ?: urls.indices.map { "adhoc-$it" }
+                urls.mapIndexed { i, u ->
+                    StreamSpec(
+                        id = ids.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: "adhoc-$i",
+                        label = labels.getOrNull(i)?.takeIf { it.isNotEmpty() } ?: "Tile $i",
+                        url = u,
+                    )
+                }
             }
+            adhocSingleUrl != null && adhocSingleLabel != null -> listOf(
+                StreamSpec(id = adhocSingleId ?: "adhoc", label = adhocSingleLabel, url = adhocSingleUrl)
+            )
+            else -> null
+        }
 
         setContent {
             MyMtsTheme {

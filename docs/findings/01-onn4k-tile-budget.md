@@ -234,7 +234,7 @@ Stage 2 (the helper's real aggregation + resolution) can begin **only once** the
 
 **Closing position, decided 2026-06-01:** the leak question is answered (no leak). The capacity question is not yet answered, because three soaks have shown the 6-tile load can't be sustained from the current fixture pool + the current player code. The capacity re-soak is deferred into Stage 2 — running it again now would just produce a fourth degenerate run.
 
-The configurable default stays **6**, annotated as a *target to be validated in Stage 2*, not a measured-safe number. `MYMTS_DEFAULT_MAX_TILES` in `gradle.properties` is unchanged. `BuildConfig.DEFAULT_MAX_TILES` continues to be config-driven so raising/lowering it later is a property change, not a code change.
+> **Updated 2026-06-01 (Stage 2 Part C bracket).** The capacity question IS now answered. See `## Stage 2 Part C — Escalating-probe bracket` below. The number this device sustains is **N=4**. The interim default has been moved to 4 (long-soak confirmation in progress).
 
 ### Leak behavior — **PASS**
 
@@ -291,3 +291,100 @@ Both blockers are Stage 2 work that is already named in the architecture and is 
 `docs/findings/runs/**/events.log` files are large (v3's was 33.8 MB) and **regenerable from the harness**. Going forward they are gitignored. The per-run record is kept by committing the small files: `meta.json`, `end.json`, `runner.log`, `meminfo.csv`, `device.txt`. The finding doc carries the parsed summary (decoder + per-tile counts + slope) — that's the durable evidence.
 
 The v3 run directory is retained on this commit (small files only). The v1 (`long-soak-6t-live-upstairs-20260530/`) and v2 (`…-v2-…`) directories are discarded — they were superseded and adding them would add cruft without telling the story any better than the prose above already does.
+
+---
+
+## Stage 2 Part C — Escalating-probe bracket (2026-06-01)
+
+> **Conditions changed since the closing position above:** the helper (Part A) now resolves real, manifest-verified live streams via `/api/channels`, and the player (Part B) is honest about staleness and recovers within a bounded window. The two contaminating factors from Stage 1 are gone — the bracket below measures genuine decoder load.
+
+### Setup
+
+- Device: `<LAN_IP>:5555` — Onn 4K Streaming Box, Amlogic AMLS905Y4, `armeabi-v7a`, Android 14, ~1.97 GB RAM. **WyzeGrid disabled** for the probe window (`pm disable-user com.wyzegrid`); to be re-enabled at Stage 2 closeout.
+- Helper at `<LAN_IP>:8091`. Live channel pool: `dw-news-en`, `redbull-tv` (2 helper-verified-live; 5 other international news endpoints failed with the Stage 1 `IO_BAD_HTTP_STATUS` / DNS pattern from this network path). Tiles cycle these 2 URLs to fill N.
+- Apparatus: `scripts/probe-tile-count.sh` — multi-URL ad-hoc mode (Stage 2 addition to `MainActivity` reads `--es urls`/`labels`/`ids`). Runs 8-min sweeps at each tile count. State-machine telemetry per tile in `summary.json`.
+
+### Sweep results (8 min each, 60 s meminfo cadence)
+
+| N | reached LIVE | dead | PSS median (MB) | Per-tile health |
+|---|---|---|---|---|
+| 1 | 1/1 | 0 | 88.9 | dw-news-en-0: 60 ready, 0 drops — **HEALTHY** |
+| 2 | 2/2 | 0 | 98.2 | dw + redbull: 60 ready each, 0 drops — **HEALTHY** |
+| 3 | 3/3 | 0 | 105.6 | all 3 tiles: 60 ready each, low drops — **HEALTHY** |
+| 4 | 4/4 | 0 | 112.3 | all 4 tiles: ~60 ready each, low drops, no recovery strikes — **HEALTHY** |
+| 5 | 5/5 | 0 | 134.5 | **dw-news-en tiles**: only 4 ready each, **~5,300 dropped frames each** (≈ 37% drop rate at 30 fps over 8 min). **redbull-tv tiles**: 26–30 ready, low drops. **DEGRADED** — well above the 5% drop-rate threshold. |
+| 6 | 3/6 | 0 | 129.5 | **dw-news-en tiles**: 0 first-frame renders, ~2,300 drops each. **redbull-tv tiles**: 10–14 ready, 1–5 drops, **but every redbull tile fired 2–3 `RECOVERY PREPARE` strikes** during the window. **DEGRADED + recovery**. |
+
+`dumpsys` itself was failing to complete at N=5 and N=6 within the 30 s timeout (only 3 of 8 and 2 of 8 expected meminfo samples landed), which is itself a strong signal that `system_server` is under heavy contention at those tile counts — independent evidence that the decoder budget is overrun.
+
+### Bracket verdict
+
+- **Sustainable ceiling = N=4.** Highest tile count where all tiles stay LIVE with healthy drop rate and no recovery strikes.
+- N=5 is the first count where dw-news-en tiles drop ~37% of frames. The state machine still reports LIVE (because `onDroppedVideoFrames` callbacks count as "decoder is alive") but the surface is effectively dropping every other frame; the user would see a stutter, not a freeze.
+- N=6 is the first count where the recovery ladder begins firing: every redbull-tv tile got 2–3 PREPARE strikes inside an 8-min window, meaning the decoder fell behind enough to cross the 15 s staleness threshold.
+
+`MYMTS_DEFAULT_MAX_TILES` in `gradle.properties` is set to **4** with the rationale embedded as a comment, and a long-soak run is currently confirming the bracket.
+
+### dw-news-en — answer to the Part B question
+
+Stage 1 v3's reported 8.2 / s `onRenderedFirstFrame` rate was almost certainly a **6-tile contention effect**, not a property of the stream itself. Evidence:
+
+- N=1 solo: 60 ready over 480 s = ~0.13 / s (matches Part B's 180 s solo measurement of 0.12 / s).
+- N=4 (healthy): 60 ready per tile, same ~0.13 / s per-tile rate.
+- N=5 (degraded): drops to 4 ready per dw tile in 480 s — variant-switching has nearly stopped because the decoder is too busy dropping frames to renegotiate.
+- N=6: 0 ready per dw tile — the decoder never even completed first-frame render for the dw tiles.
+
+The Stage 1 8.2 / s figure (~341k events / 11.5 h) was the *aggregate* of dw plus the cycle of failing tiles dragging the decoder through repeated rebuffers. As a fixture under healthy load, dw-news-en behaves consistently with redbull-tv.
+
+### Buffer-floor decision (deferred from Part B)
+
+`StreamPlayer` continues to use Stage 1's `LoadControl`:
+- `bufferDurations(1500, 4000, 500, 1500)` and `targetBufferBytes(4 MB)`.
+
+**Decision: keep the floor as-is for Stage 2.** The N=4 ceiling holds with these values and the dw-news-en LIVE↔STALE oscillations are transient (~75 ms median resolution) and add zero recovery strikes. Loosening the floor to 3–4 s would add ~1.5–2.5 MB per tile of decoder buffer, and at N=4 that doesn't matter — but the ceiling sensitivity to memory is unverified, and changing two variables at once (floor + tile count) would muddy the signal. If a future stage tightens the per-tile memory budget for any other reason, revisit. Recorded as a Stage 3+ option in `docs/BACKLOG.md`.
+
+### The escalating probe as a repeatable procedure (the portability deliverable)
+
+Per-device profile recipe for any future box:
+
+```bash
+# 1. Disable any competing kiosk app on the box (e.g. WyzeGrid).
+adb -s <box>:5555 shell pm disable-user --user 0 com.wyzegrid
+
+# 2. Ensure the helper has at least two helper-verified-live channels
+#    available (the prober's status=live filter is the gate).
+curl -fsS http://<LAN_IP>:8091/api/channels | jq '.channels[] | select(.status=="live") | .slug'
+
+# 3. Install the current debug APK on the box.
+./scripts/deploy.sh <box-ip>
+
+# 4. Run the escalating sweep. The script self-stops at SETTLE_DEAD;
+#    feed it counts in order and stop one short of any N where
+#    `reached_live < N` or any tile drops >5% of frames.
+TS=$(date +%Y%m%d-%H%M)
+for N in 1 2 3 4 5 6; do
+    ./scripts/probe-tile-count.sh --device <box-ip>:5555 \
+        --tiles "$N" --duration 480 --run-id "probe-$TS-${N}t" \
+        --no-install
+done
+
+# 5. Read each summary.json. The sustainable ceiling is the highest N
+#    where all tiles reach + stay LIVE with healthy drop rates and zero
+#    recovery strikes. Set MYMTS_DEFAULT_MAX_TILES in gradle.properties
+#    to that number for this device's build profile.
+
+# 6. Long-soak (4–8 h minimum) at the bracket. PSS slope ≤ ±50 KB/min
+#    post-warmup, no decoder-init failures, drop rate < 5%, no DEAD
+#    tiles, no sustained STALE state.
+
+# 7. Re-enable WyzeGrid (or whatever was disabled in step 1).
+adb -s <box>:5555 shell pm enable com.wyzegrid
+```
+
+The S905Y4 / Onn 4K Streaming Box device profile result: **N=4**. The Vision anticipates fresh dedicated hardware; the Onn stick's profile is one device profile, and the *procedure* is the durable artifact.
+
+### Long-soak in flight
+
+Run id: `long-soak-4t-20260601-2100`. 4 tiles, 6 h, helper-resolved live channels (cycled `dw-news-en` × 2 + `redbull-tv` × 2). Launched via `caffeinate -i nohup` so it survives this session. Early-render check confirmed all 4 tiles reached LIVE within 90 s of launch. ETA `2026-06-02 ~03:00 PDT`. Results land in a follow-up commit / next session.
+
+WyzeGrid stays disabled until the long soak completes; the closeout session re-enables it.

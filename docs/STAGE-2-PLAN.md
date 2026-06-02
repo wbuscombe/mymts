@@ -67,7 +67,19 @@ Plausible causes:
 
 ---
 
-## C. Capacity re-soak (this is what completes the Stage 1 gate)
+## ✅ C (BRACKETED 2026-06-01, long-soak in flight). Capacity probe — DONE up to bracket; long soak running
+
+Bracket result + method + dw-news-en answer + buffer decision are in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C"`.
+
+Highlights:
+- **Sustainable ceiling on this device (Onn 4K / Amlogic S905Y4) = N=4.** N=5 degrades dw-news-en tiles to ~37% drop rate; N=6 begins firing recovery PREPARE strikes.
+- `MYMTS_DEFAULT_MAX_TILES = 4` in `gradle.properties`, with the bracket evidence embedded as a comment.
+- dw-news-en's Stage 1 8.2/s callback rate WAS a contention effect (solo + healthy N≤4: 0.13/s).
+- Buffer floor kept at Stage 1 values; rationale in the finding doc.
+- The escalating-probe procedure is committed as `scripts/probe-tile-count.sh` + recipe in the finding doc — that's the portability deliverable.
+- Long soak (4 tiles, 6 h) launched via `caffeinate -i nohup`, ETA `2026-06-02 ~03:00 PDT`. WyzeGrid stays disabled on `.182` until that completes; closeout session re-enables.
+
+## ~~C. Capacity re-soak (this is what completes the Stage 1 gate)~~
 
 Once A and B.1 are in place:
 

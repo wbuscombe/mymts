@@ -1,0 +1,96 @@
+{
+  "verdict": {
+    "tiles_requested": 5,
+    "tiles_mounted": 0,
+    "tiles_with_first_ready": 5,
+    "tiles_live_at_end": 5,
+    "tiles_dead_at_end": 0,
+    "all_reached_live": true,
+    "all_live_at_end": true
+  },
+  "memory": {
+    "samples": 3,
+    "pss_first_mb": 134.5,
+    "pss_last_mb": 121.9,
+    "pss_min_mb": 121.9,
+    "pss_max_mb": 136.1,
+    "pss_median_mb": 134.5
+  },
+  "per_tile": {
+    "dw-news-en-0": {
+      "decoder": null,
+      "tile_ready_count": 4,
+      "dropped_total": 5338,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 2,
+        "LIVE": 2
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 670
+    },
+    "dw-news-en-2": {
+      "decoder": null,
+      "tile_ready_count": 4,
+      "dropped_total": 5330,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 2,
+        "LIVE": 2
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 226
+    },
+    "dw-news-en-4": {
+      "decoder": null,
+      "tile_ready_count": 4,
+      "dropped_total": 5356,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 2,
+        "LIVE": 2
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 511
+    },
+    "redbull-tv-1": {
+      "decoder": null,
+      "tile_ready_count": 26,
+      "dropped_total": 13,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 13,
+        "LIVE": 13
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 907
+    },
+    "redbull-tv-3": {
+      "decoder": null,
+      "tile_ready_count": 30,
+      "dropped_total": 8,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 15,
+        "LIVE": 15
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 7828
+    }
+  }
+}

@@ -1,0 +1,6 @@
+onn. 4K Streaming Box
+armeabi-v7a
+14
+MemTotal:        1971588 kB
+MemFree:          437904 kB
+MemAvailable:     988708 kB

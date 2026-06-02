@@ -1,0 +1,9 @@
+{
+  "run_id": "probe-20260601-2007-4t",
+  "device": "<LAN_IP>:5555",
+  "tiles": 4,
+  "duration_seconds": 480,
+  "helper": "http://<LAN_IP>:8091",
+  "live_channels_in_pool": 2,
+  "started_at": "2026-06-02T01:32:13Z"
+}

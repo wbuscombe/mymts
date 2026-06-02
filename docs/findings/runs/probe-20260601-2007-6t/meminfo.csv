@@ -1,0 +1,3 @@
+timestamp,total_pss_kb,java_heap_kb,native_heap_kb,graphics_kb
+2026-06-01 20:55:33,132662,38632,25500,4748
+2026-06-01 20:56:35,132621,35964,27720,4752

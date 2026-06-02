@@ -123,6 +123,46 @@ Full details + on-device evidence in `docs/findings/02-player-state-machine.md`.
 - **Part B — player robustness: DONE** (this entry).
 - **Part C — capacity probe: next**. Now unblocked: the helper resolves real streams (A) and the player is honest about staleness (B), so Part C can measure the true sustainable tile ceiling on this hardware.
 
+## Stage 2 Part C — capacity probe bracket (long soak in flight)
+
+Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Escalating-probe bracket"`.
+
+### Bracketed
+- **Sustainable ceiling on Onn 4K (Amlogic S905Y4) = N=4** based on an escalating 1→6 sweep at 8 min each on `.182` with WyzeGrid disabled, helper-resolved real live channels.
+    - N=1..4 — all tiles LIVE, low drops, no recovery strikes (HEALTHY)
+    - N=5 — dw-news-en tiles drop ~37% of frames; `dumpsys` itself starts timing out under system_server contention (DEGRADED)
+    - N=6 — every redbull-tv tile fires 2–3 RECOVERY PREPARE strikes inside the window; dw-news-en tiles never produce a first frame (DEGRADED)
+
+### Added
+- `scripts/probe-tile-count.sh` — host-side escalating-probe runner. Pulls live channels from the helper's `/api/channels`, cycles them across N tiles, runs an 8 min sweep, captures `MYMTS_SOAK` events + `dumpsys meminfo`, emits a per-tile `summary.json`. The Part C procedure is itself the **per-device portability deliverable**: re-homing to fresh hardware is "run the probe, record that box's number, set the config."
+- Multi-URL ad-hoc mode in `MainActivity` (`--es urls "U1,U2" --es labels "L1,L2" --es ids "I1,I2"`) so the soak harness can be driven against arbitrary URL lists without rebuilding.
+- Expanded helper seed (`france24-en`, `al-jazeera-en`, `sky-news`, `cgtn-en`, `trt-world`) — same Stage 1 finding reproduced (those 5 are blocked from this network path). The 2 helper-verified-live channels (`dw-news-en`, `redbull-tv`) cycle across N tiles for the probe.
+- Helper Dockerfile dependency-pinning fix (hatchling 1.30 rejects the duplicate-path `force-include` directive 1.27 tolerated).
+
+### Changed
+- `MYMTS_DEFAULT_MAX_TILES = 4` in `gradle.properties` with bracket-evidence rationale embedded as a comment. The number is no longer "validation-pending"; it's the measured-safe ceiling for this device profile.
+
+### dw-news-en — answered
+- Stage 1 v3's 8.2 / s `onRenderedFirstFrame` rate was a **6-tile contention effect**. Solo measurement at N=1 produced 0.13 / s; healthy N=4 produced the same ~0.13 / s per tile. The stream is fine as a fixture under healthy load.
+
+### Buffer floor — decision
+- Kept at Stage 1 values (min=1.5 s / max=4 s / playback=0.5 s / 4 MB target). Rationale in the finding doc — changing two variables at once (floor + tile count) would muddy the bracket signal, and the ceiling at N=4 holds cleanly. Re-visit if/when memory budgets tighten for unrelated reasons.
+
+### Long soak — in flight
+- Run id: `long-soak-4t-20260601-2100`. 4 tiles, 6 h, helper-resolved live channels (cycled `dw-news-en` × 2 + `redbull-tv` × 2). `caffeinate -i nohup`. Early-render check passed (all 4 tiles reached LIVE within 90 s of launch). ETA `2026-06-02 ~03:00 PDT`. Results in a follow-up commit; the closeout session re-enables WyzeGrid on `.182`.
+
+### Standards held
+- 17 LivenessTracker tests + 9 prior app tests still green.
+- Helper 115 tests green.
+- WyzeGrid is disabled on `.182` for the long soak window; re-enable command documented and queued for closeout.
+- unrelated host services untouched.
+
+### Stage 2 status
+- ✅ Part A — helper.
+- ✅ Part B — player robustness.
+- 🟡 Part C — bracket done; long soak unattended.
+- Stage 2 closes when the long soak ends and the closeout session re-enables WyzeGrid + commits the long-soak result.
+
 ### Known limitations carried forward
 - `SoakFixtures.LIVE` URLs are public broadcaster HLS endpoints and decay over time. The first long-soak run may need updated URLs before it produces useful data; the rule is to edit the fixture file in a single commit, never silently drop dead fixtures from a result.
 - Helper Dockerfile pins by tag (`python:3.13.1-slim-bookworm`), not by digest. Digest pinning lands in Stage 6 hardening.

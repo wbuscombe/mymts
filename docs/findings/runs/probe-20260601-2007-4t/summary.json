@@ -1,0 +1,81 @@
+{
+  "verdict": {
+    "tiles_requested": 4,
+    "tiles_mounted": 0,
+    "tiles_with_first_ready": 4,
+    "tiles_live_at_end": 4,
+    "tiles_dead_at_end": 0,
+    "all_reached_live": true,
+    "all_live_at_end": true
+  },
+  "memory": {
+    "samples": 7,
+    "pss_first_mb": 108.9,
+    "pss_last_mb": 109.7,
+    "pss_min_mb": 108.3,
+    "pss_max_mb": 119.2,
+    "pss_median_mb": 112.3
+  },
+  "per_tile": {
+    "dw-news-en-0": {
+      "decoder": null,
+      "tile_ready_count": 44,
+      "dropped_total": 400,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 22,
+        "LIVE": 22
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 13014
+    },
+    "dw-news-en-2": {
+      "decoder": null,
+      "tile_ready_count": 44,
+      "dropped_total": 368,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 22,
+        "LIVE": 22
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 12196
+    },
+    "redbull-tv-1": {
+      "decoder": null,
+      "tile_ready_count": 52,
+      "dropped_total": 0,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 26,
+        "LIVE": 26
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 12657
+    },
+    "redbull-tv-3": {
+      "decoder": null,
+      "tile_ready_count": 50,
+      "dropped_total": 1,
+      "errors": {},
+      "state_transitions": {
+        "STALE": 25,
+        "LIVE": 25
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 1869
+    }
+  }
+}

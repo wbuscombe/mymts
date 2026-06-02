@@ -10,5 +10,36 @@
     "label": "DW News English",
     "kind": "hls",
     "source_url": "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8"
+  },
+  {
+    "slug": "france24-en",
+    "label": "France 24 English",
+    "kind": "hls",
+    "source_url": "https://f24hls-i.akamaihd.net/hls/live/221147/F24_EN_HI_HLS/master.m3u8"
+  },
+  {
+    "slug": "al-jazeera-en",
+    "label": "Al Jazeera English",
+    "kind": "hls",
+    "source_url": "https://live-hls-web-aje.getaj.net/AJE/01.m3u8"
+  },
+  {
+    "slug": "sky-news",
+    "label": "Sky News",
+    "kind": "hls",
+    "source_url": "https://skynews2-plutolive-vo.akamaized.net/cdnAkamaiLive_201/playlist.m3u8"
+  },
+  {
+    "slug": "cgtn-en",
+    "label": "CGTN English",
+    "kind": "hls",
+    "source_url": "https://livecgtnen.v.kcdnvip.com/livecgtnen/cgtn-en-news_4.m3u8"
+  },
+  {
+    "slug": "trt-world",
+    "label": "TRT World",
+    "kind": "hls",
+    "source_url": "https://tv-trtworld.live.trt.com.tr/master.m3u8"
   }
 ]
+

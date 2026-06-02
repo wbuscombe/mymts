@@ -1,0 +1,36 @@
+{
+  "verdict": {
+    "tiles_requested": 1,
+    "tiles_mounted": 1,
+    "tiles_with_first_ready": 1,
+    "tiles_live_at_end": 1,
+    "tiles_dead_at_end": 0,
+    "all_reached_live": true,
+    "all_live_at_end": true
+  },
+  "memory": {
+    "samples": 7,
+    "pss_first_mb": 84.2,
+    "pss_last_mb": 86.6,
+    "pss_min_mb": 84.2,
+    "pss_max_mb": 91.3,
+    "pss_median_mb": 88.9
+  },
+  "per_tile": {
+    "dw-news-en-0": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 60,
+      "dropped_total": 0,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 30,
+        "STALE": 29
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 12339
+    }
+  }
+}
