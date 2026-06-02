@@ -383,8 +383,78 @@ adb -s <box>:5555 shell pm enable com.wyzegrid
 
 The S905Y4 / Onn 4K Streaming Box device profile result: **N=4**. The Vision anticipates fresh dedicated hardware; the Onn stick's profile is one device profile, and the *procedure* is the durable artifact.
 
-### Long-soak in flight
+### Long-soak — first attempt (`long-soak-4t-20260601-2100`) — INVALIDATED
 
-Run id: `long-soak-4t-20260601-2100`. 4 tiles, 6 h, helper-resolved live channels (cycled `dw-news-en` × 2 + `redbull-tv` × 2). Launched via `caffeinate -i nohup` so it survives this session. Early-render check confirmed all 4 tiles reached LIVE within 90 s of launch. ETA `2026-06-02 ~03:00 PDT`. Results land in a follow-up commit / next session.
+The first long soak completed with a clean memory trace but **zero per-tile telemetry** (empty `events.log`, `summary.json.per_tile = {}`). Root cause was a harness bug, not an app bug: `scripts/probe-tile-count.sh` captured logcat as a one-shot `adb logcat -d -s MYMTS_SOAK > events.log` at the END of the 6 h sleep. Over 6 hours the Android logcat ring buffer wrapped many times over; every `MYMTS_SOAK` event was overwritten before the dump fired. (Secondary bug: the meminfo sampler subshell inherited the parent's `set -euo pipefail` and exited on a transient `dumpsys` reply ~114 min in, ending sampling for the rest of the run.)
 
-WyzeGrid stays disabled until the long soak completes; the closeout session re-enables it.
+Fix landed in commit `3c101c7`:
+- Pre-set Android logcat buffer to 16 M with `adb shell logcat -G 16M`.
+- Replace one-shot end-of-run dump with a **continuous background `adb logcat -s MYMTS_SOAK` stream** appending to `events.log` throughout the run, with a supervisor loop that re-launches the stream if `adb` blips.
+- `set +e` inside both background subshells so individual `grep`/`awk`/`dumpsys` hiccups never end sampling.
+- `pkill -TERM -P` at end-of-run to actually tear down the supervisor's `adb` children (a bare `kill` left them running).
+
+Proof-of-fix at 18 min, N=4 (`probe-fixproof-20260602-0838-4t`): `all_reached_live=true`, `all_live_at_end=true`, `dead=0`, `events.log` grew from 5.8 KB at +1 min → 32 KB at +5 min → 76 KB at +11 min; meminfo accumulated 17 samples; 270 `EV=STATE` transitions captured per-tile.
+
+### Long-soak — second attempt (`long-soak-4t-v2-20260602-0857`) — 5.13 h HEALTHY then synchronized external-event DEAD
+
+Re-launched 2026-06-02 08:57 CDT after the harness fix. 4 tiles, 6 h target, helper-resolved cycled (`dw-news-en` × 2 + `redbull-tv` × 2). `caffeinate -i nohup ... & disown`. WyzeGrid `disable-user` on `.182` for the window.
+
+#### Per-tile lifecycle (now verifiable — that's the whole point of the v2 re-run)
+
+| Tile | tile_ready | dropped | RECOVERING | DEAD | final | last frame age |
+|---|---|---|---|---|---|---|
+| `dw-news-en-0` | 2,272 | 1,201 | 3 | **1** | DEAD | 3,090 s |
+| `dw-news-en-2` | 2,282 | 1,091 | 3 | **1** | DEAD | 3,091 s |
+| `redbull-tv-1` | 2,296 | 242 | 3 | **1** | DEAD | 3,093 s |
+| `redbull-tv-3` | 2,294 | 253 | 3 | **1** | DEAD | 3,099 s |
+
+State transitions per tile: ~1,140 `LIVE` and ~1,140 `STALE` over the 6 h (one bursty-stream oscillation every ~19 s, exactly the dw-news-en pattern characterized in Part B — these are NOT recovery strikes, they are the C3-honest accounting of frame-burst gaps that recovered in ~75 ms before backoff fired).
+
+#### Time-of-death — synchronized across all 4 tiles within 13 s
+
+| Tile | last frame at | DEAD at | elapsed at DEAD |
+|---|---|---|---|
+| `dw-news-en-0` | 14:04:47 | 14:06:49 | 5.16 h |
+| `dw-news-en-2` | 14:04:59 | 14:06:48 | 5.16 h |
+| `redbull-tv-1` | 14:04:57 | 14:06:46 | 5.16 h |
+| `redbull-tv-3` | 14:04:51 | 14:06:36 | 5.16 h |
+
+All 4 tiles lost frames within a **12-second window** (14:04:47 → 14:04:59); all settled `DEAD` within a **13-second window** (14:06:36 → 14:06:49). The 12 s frame-loss span and the 13 s settle span are nearly identical — confirming the state machine ran the same 3-strike ladder on each tile, offset only by when each entered `STALE`. **This is an external network event, not a per-tile capacity failure.** It hit two distinct CDN origins (Akamai `rbmn-live.akamaized.net` and Akamai `dwamdstream102.akamaized.net`) simultaneously, ruling out a single-stream issue.
+
+#### PSS analysis
+
+5.97 h captured (352 samples at 60 s cadence).
+
+- **First sample (cold)**: 101.1 MB
+- **Mature steady state (minutes 120 → 305, i.e. h2 → h5.08)**: 181 samples, median **128.2 MB**, range 124.6–132.8 MB, **slope −9.53 KB/min over 184 min — PASS the ±50 KB/min threshold**.
+- **Post-DEAD (last ~50 min)**: PSS drops to 82.4 MB as the state machine releases the 4 decoders on settle-DEAD — independent confirmation that the `releaseInternal()` path on `SETTLE_DEAD` actually frees the decoder, not just stops rendering.
+- The aggregate slope across the full healthy window (+74 KB/min over 4.9 h) is misleading: it's dominated by a one-time settling step ~h1.5 (112 → 127 MB) — caches and connection pools reaching mature steady state. Per-hour median: h0=112, h1=113, h2=129, h3=128, h4=127 — clearly a step, not a leak.
+
+#### What the v2 run proves
+
+- The harness telemetry fix held over a 6 h run (`events.log` grew monotonically; `meminfo.csv` had 352 samples with no gaps).
+- The state machine is honest under sustained real load — ~1,140 `LIVE↔STALE` oscillations per tile over 5 h, every one self-resolving in ~75 ms, **zero false LIVE labels over a frozen surface**.
+- The recovery ladder + anti-loop discipline behave correctly under a real network outage: each tile fires PREPARE + REINIT + REINIT then settles `DEAD`. After `DEAD`, no further events, no CPU burn — exactly the C2 "a dead feed is a non-event" intent.
+- PSS in the mature steady state is flat — no memory leak under sustained 4-tile load.
+
+#### What the v2 run does NOT prove
+
+- **6 h of continuous 4-tile LIVE.** We have 5.13 h of continuous 4-tile LIVE followed by ~50 min of all tiles in `DEAD` state. The Stage 1 gate criterion of "Duration ≥ 4 h" is met by the healthy window alone, but the strict "tiles LIVE for the bulk of the run" reading is only met if "bulk" allows ~14% of the run to be tiles-DEAD-due-to-external-event.
+
+### Stage 2 closeout — status: **open pending operator decision**
+
+The verifiable evidence supports `N=4` as the sustainable ceiling on the Onn 4K / Amlogic S905Y4:
+- Bracket sweep (Stage 2 Part C bracket): N=1..4 clean; N=5 degrades; N=6 triggers recovery.
+- 5.13 h continuous N=4 LIVE in v2 with `−9.53 KB/min` PSS slope in the mature steady state (no leak).
+- The state machine + recovery + anti-loop behave correctly even under a real-world adverse event.
+
+The 47-min tail of all-tiles-DEAD is **not capacity-driven** (zero memory creep, simultaneous failure across two distinct CDN origins, all 4 tiles fail within 13 s — signature of a network event between `.182` and Akamai). When the network recovers, a production wall would refresh the tiles back to LIVE; that refresh action is Stage 5 (operator settings) scope, not Stage 2.
+
+**Two paths from here, operator's call:**
+
+1. **Re-run** the long soak (4 tiles, 6 h, helper-resolved cycled). If a fresh run achieves 6 h of continuous LIVE with no synchronized DEAD, the gate is unambiguously closed. Cost: another ~6 h of unattended run + a session to verify. Risk: network blips happen; a re-run could land in the same shape.
+2. **Close with the 5.13 h evidence and the caveat documented above.** N=4 is bracket-evidenced + 5.13-h-healthy-evidenced; the state machine handled the external event per design. Cost: zero further runs. Risk: future re-readers see "DEAD at h5.13" without reading the caveat.
+
+`MYMTS_DEFAULT_MAX_TILES = 4` stays either way — the bracket + 5.13 h healthy window are sufficient to set the default; the 47-min DEAD tail does not undermine that number.
+
+WyzeGrid was disabled on `.182` for the v2 window and **re-enabled at the end of this session** per the standing rule. Foregrounded; `WatchdogService` running. The next long-soak attempt (if the operator chooses path 1) will disable it again per the documented recipe.

@@ -110,7 +110,7 @@ Stage 1 deploys are dev-sideloads via `adb install`. The production signed-insta
 
 During the Stage 1 gate-clearing soak window, WyzeGrid was disabled-user on `.182` because its persistent `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdog (`SYSTEM_ALLOW_LISTED`) reclaimed the foreground from MyMTS around 80 minutes into the first attempt; backgrounded MyMTS was then evicted on the 2 GB box.
 
-**Current state: WyzeGrid is re-enabled on `.182` and back to its normal operating state** (foreground, watchdog service running). The disable was a temporary, surgical step bound to the Stage 1 soak; it is not part of the steady-state plan.
+**Current state: WyzeGrid is re-enabled on `.182` and back to its normal operating state** (foreground, watchdog service running). The disable has been a recurring, surgical step bound to each soak window (Stage 1 long soak; Stage 2 Part C bracket sweep; Stage 2 Part C long soaks v1 + v2). After each window closes, the recipe below is executed and verified.
 
 If a future soak needs the same window, the recipe is:
 

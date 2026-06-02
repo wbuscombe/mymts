@@ -77,7 +77,16 @@ Highlights:
 - dw-news-en's Stage 1 8.2/s callback rate WAS a contention effect (solo + healthy N≤4: 0.13/s).
 - Buffer floor kept at Stage 1 values; rationale in the finding doc.
 - The escalating-probe procedure is committed as `scripts/probe-tile-count.sh` + recipe in the finding doc — that's the portability deliverable.
-- Long soak (4 tiles, 6 h) launched via `caffeinate -i nohup`, ETA `2026-06-02 ~03:00 PDT`. WyzeGrid stays disabled on `.182` until that completes; closeout session re-enables.
+
+### Long-soak status (2026-06-02) — open pending operator decision
+
+- Attempt 1 (`long-soak-4t-20260601-2100`): INVALIDATED by a harness bug (one-shot end-of-run logcat dump lost everything to ring-buffer wrap). Fix landed in `3c101c7`.
+- Attempt 2 (`long-soak-4t-v2-20260602-0857`): 5.13 h of clean N=4 LIVE evidence (state machine honest, PSS slope `−9.53 KB/min` in mature steady state), then a synchronized external network event hit both CDN origins simultaneously at h5.13. State machine + recovery ladder + anti-loop ran exactly per design; all 4 tiles settled into honest `DEAD` within 13 s of each other. Last ~47 min: tiles `DEAD` (no thrashing, no leak).
+- The verifiable evidence supports `N=4` as the ceiling. The strict "6 h continuous LIVE" criterion was missed by the network event, not by capacity. **Two paths**:
+  1. Re-run the long soak (~6 h unattended).
+  2. Close with the 5.13 h evidence and the network-event caveat documented in `docs/findings/01-onn4k-tile-budget.md`.
+
+Until the operator chooses, Stage 2 is technically "not closed." WyzeGrid is **re-enabled** on `.182` regardless (it must not stay disabled while the operator decides).
 
 ## ~~C. Capacity re-soak (this is what completes the Stage 1 gate)~~
 

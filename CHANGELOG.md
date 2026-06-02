@@ -163,6 +163,48 @@ Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Esc
 - 🟡 Part C — bracket done; long soak unattended.
 - Stage 2 closes when the long soak ends and the closeout session re-enables WyzeGrid + commits the long-soak result.
 
+## Stage 2 Part C — harness telemetry fix + v2 long-soak (open closeout)
+
+### Harness telemetry bug + fix
+- The first long-soak attempt (`long-soak-4t-20260601-2100`) came back with a clean memory trace but **zero per-tile telemetry** (`events.log` empty, `summary.json.per_tile = {}`). Root cause: `scripts/probe-tile-count.sh` pulled logcat as a **one-shot `adb logcat -d -s MYMTS_SOAK` at the END of the 6 h sleep**. Over 6 hours the Android logcat ring buffer wrapped many times over; every `MYMTS_SOAK` event was overwritten before the dump fired.
+- Secondary bug: the meminfo sampler subshell inherited the parent script's `set -euo pipefail` and exited on the first transient `dumpsys` reply that didn't match a field — sampling died ~114 min in (revealed when bash flushed `Terminated: 15` at end-of-run).
+- Fix (commit `3c101c7`): continuous background `adb logcat -s MYMTS_SOAK` stream throughout the run (with a supervisor that re-launches if `adb` blips), `adb shell logcat -G 16M` to grow the on-device buffer, `set +e` inside both background subshells, `pkill -TERM -P` at end-of-run to actually tear down the supervisor's `adb` children.
+- Proof-of-fix (18 min N=4 run, `probe-fixproof-20260602-0838-4t`): events.log grew monotonically (5.8 KB → 76 KB by +11 min), all 4 tiles LIVE, 270 STATE transitions captured, meminfo flowed at 1/min throughout.
+- This failure mode is on permanent record so the same trap doesn't catch a future stage.
+
+### Long-soak v2 (`long-soak-4t-v2-20260602-0857`) — 5.13 h healthy + synchronized external-event DEAD
+- **5.13 h of clean N=4 LIVE evidence.** Per-tile lifecycle now fully verifiable (the harness fix held over the full 6 h): each tile ~1,140 LIVE↔STALE oscillations from the dw-news-en burst pattern characterized in Part B, every one self-resolving in ~75 ms — zero false LIVE labels over a frozen surface across 5+ hours.
+- **PSS in mature steady state (minutes 120 → 305): slope −9.53 KB/min over 184 min — PASS** the ±50 KB/min leak threshold. The +74 KB/min aggregate across the full healthy window is dominated by a one-time settling step ~h1.5 (112 → 127 MB) as caches/connection pools reach equilibrium; per-hour median h2=129, h3=128, h4=127 — flat steady state, not a leak.
+- At h5.13 all 4 tiles lost frames within a **12-second window**, hitting two distinct Akamai CDN origins (`rbmn-live.akamaized.net` + `dwamdstream102.akamaized.net`) simultaneously. The state machine ran the same 3-strike ladder on each tile (PREPARE → REINIT → REINIT → SETTLE_DEAD) and all 4 settled `DEAD` within a 13-second window. After `DEAD`: no thrashing, no CPU burn, PSS drops to 82.4 MB as `releaseInternal()` frees the 4 decoders. This is the C2 anti-loop discipline working exactly per design under a real-world adverse event.
+- **What the v2 run proves:** the harness fix held; the state machine is honest under sustained real load; the recovery ladder + anti-loop behave correctly under a real network outage; no memory leak in the mature steady state.
+- **What it does NOT prove:** 6 h of continuous 4-tile LIVE. The strict criterion was missed by a network event, not by capacity.
+
+### Stage 2 closeout — **open, operator's call**
+
+The verifiable evidence supports `N=4` as the ceiling on the Onn 4K / Amlogic S905Y4:
+- Bracket sweep: N=1..4 clean; N=5 degrades; N=6 triggers recovery.
+- 5.13 h continuous N=4 LIVE in v2 with mature-state PSS slope `−9.53 KB/min`.
+- State machine + recovery + anti-loop behaved correctly even under adverse event.
+
+The 47-min tail of all-tiles-DEAD is **not capacity-driven** — simultaneous failure across two distinct CDN origins inside a 12 s window is a network event between `.182` and Akamai. When the network recovers, a production wall would refresh the tiles back to LIVE; that refresh action is Stage 5 (operator settings) scope.
+
+**Two paths from here:**
+
+1. Re-run the long soak (~6 h unattended) to demonstrate 6 h of continuous LIVE. Risk: future network blips can land in the same shape.
+2. Close with the 5.13 h evidence + network-event caveat documented in `docs/findings/01-onn4k-tile-budget.md`.
+
+`MYMTS_DEFAULT_MAX_TILES = 4` stays either way — the bracket + 5.13 h healthy window are sufficient to set the default.
+
+### Standing rules held
+- WyzeGrid re-enabled on `.182` at end of session (foreground, watchdog service running). Verified.
+- unrelated host services untouched.
+- App + helper test suites green.
+
+### Stage 2 status (updated)
+- ✅ Part A — helper.
+- ✅ Part B — player robustness.
+- 🟡 Part C — bracket done; long-soak partially confirmed (5.13 h healthy + external-event DEAD); closeout pending operator decision.
+
 ### Known limitations carried forward
 - `SoakFixtures.LIVE` URLs are public broadcaster HLS endpoints and decay over time. The first long-soak run may need updated URLs before it produces useful data; the rule is to edit the fixture file in a single commit, never silently drop dead fixtures from a result.
 - Helper Dockerfile pins by tag (`python:3.13.1-slim-bookworm`), not by digest. Digest pinning lands in Stage 6 hardening.

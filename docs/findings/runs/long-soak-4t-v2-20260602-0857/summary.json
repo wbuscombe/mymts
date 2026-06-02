@@ -1,0 +1,101 @@
+{
+  "verdict": {
+    "tiles_requested": 4,
+    "tiles_mounted": 4,
+    "tiles_with_first_ready": 4,
+    "tiles_live_at_end": 0,
+    "tiles_dead_at_end": 4,
+    "all_reached_live": true,
+    "all_live_at_end": false
+  },
+  "memory": {
+    "samples": 352,
+    "pss_first_mb": 101.1,
+    "pss_last_mb": 82.4,
+    "pss_min_mb": 82.4,
+    "pss_max_mb": 132.8,
+    "pss_median_mb": 126.7
+  },
+  "per_tile": {
+    "dw-news-en-0": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 2272,
+      "dropped_total": 1201,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 1136,
+        "STALE": 1138,
+        "RECOVERING": 3,
+        "DEAD": 1
+      },
+      "recovery_strikes": {
+        "prepare": 1,
+        "reinit": 2
+      },
+      "dead": true,
+      "dead_attempts": 3,
+      "final_state": "DEAD",
+      "final_frame_age_ms": 3090241
+    },
+    "dw-news-en-2": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 2282,
+      "dropped_total": 1091,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 1141,
+        "STALE": 1143,
+        "RECOVERING": 3,
+        "DEAD": 1
+      },
+      "recovery_strikes": {
+        "prepare": 1,
+        "reinit": 2
+      },
+      "dead": true,
+      "dead_attempts": 3,
+      "final_state": "DEAD",
+      "final_frame_age_ms": 3091206
+    },
+    "redbull-tv-1": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 2296,
+      "dropped_total": 242,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 1148,
+        "STALE": 1150,
+        "RECOVERING": 3,
+        "DEAD": 1
+      },
+      "recovery_strikes": {
+        "prepare": 1,
+        "reinit": 2
+      },
+      "dead": true,
+      "dead_attempts": 3,
+      "final_state": "DEAD",
+      "final_frame_age_ms": 3093494
+    },
+    "redbull-tv-3": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 2294,
+      "dropped_total": 253,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 1147,
+        "STALE": 1149,
+        "RECOVERING": 3,
+        "DEAD": 1
+      },
+      "recovery_strikes": {
+        "prepare": 1,
+        "reinit": 2
+      },
+      "dead": true,
+      "dead_attempts": 3,
+      "final_state": "DEAD",
+      "final_frame_age_ms": 3099399
+    }
+  }
+}
