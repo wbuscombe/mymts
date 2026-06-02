@@ -130,9 +130,14 @@ cat > "$RUNDIR/meta.json" <<EOF
 }
 EOF
 
->&2 echo "==> stopping prior instance + clearing logcat"
+>&2 echo "==> stopping prior instance + clearing logcat + growing buffer"
 adb -s "$DEVICE" shell am force-stop "$PACKAGE" >/dev/null
 adb -s "$DEVICE" shell logcat -c
+# Grow Android's logcat ring buffer so a multi-hour run doesn't roll early
+# events out before we capture them. The default (~256KB per buffer) wraps
+# in minutes under decoder activity; 16M is plenty for any single
+# capture window. This is a no-op on devices where -G is unsupported.
+adb -s "$DEVICE" shell logcat -G 16M 2>/dev/null || true
 
 >&2 echo "==> launching probe: $TILES tile(s)"
 adb -s "$DEVICE" shell am start \
@@ -142,12 +147,33 @@ adb -s "$DEVICE" shell am start \
     --es labels "'$LABELS_CSV'" \
     --es ids "'$IDS_CSV'" >/dev/null
 
-# Background memory sampler — every 60s.
+# Continuous logcat stream — append MYMTS_SOAK events to events.log for the
+# whole run. The Stage 2 Part C bug fix: previous version pulled events ONCE
+# at end-of-run via `logcat -d`, which lost everything to ring-buffer wrap
+# over a 6h soak. The supervisor loop re-launches the stream if `adb` dies
+# mid-run so a transient connection blip doesn't lose telemetry forever.
 (
+    set +e   # never let a transient adb failure kill the supervisor
+    while true; do
+        adb -s "$DEVICE" logcat -s MYMTS_SOAK 2>/dev/null
+        # If logcat returns, the adb stream broke. Pause briefly and re-attach.
+        sleep 2
+    done
+) >> "$RUNDIR/events.log" &
+LOG_PID=$!
+
+# Background memory sampler — every 60s. Wrapped with `set +e` so an
+# individual grep/awk hiccup (or a 30s dumpsys timeout) doesn't end
+# sampling forever. The Stage 2 Part C bug fix: previous version inherited
+# the parent's `set -euo pipefail` and exited the entire subshell on the
+# first grep that didn't match a field — the sampler died ~2h into a 6h
+# run on a transient dumpsys reply that didn't include "Native Heap:".
+(
+    set +e
     echo "timestamp,total_pss_kb,java_heap_kb,native_heap_kb,graphics_kb" > "$RUNDIR/meminfo.csv"
     while sleep 60; do
         TS="$(date '+%Y-%m-%d %H:%M:%S')"
-        MEM="$(adb -s "$DEVICE" shell dumpsys -t 30 meminfo "$PACKAGE" 2>/dev/null || true)"
+        MEM="$(adb -s "$DEVICE" shell dumpsys -t 30 meminfo "$PACKAGE" 2>/dev/null)"
         if echo "$MEM" | grep -q "TOTAL PSS"; then
             PSS=$(echo "$MEM" | grep "TOTAL PSS:" | awk '{print $3}')
             JAVA=$(echo "$MEM" | grep "Java Heap:" | awk '{print $3}' | head -1)
@@ -161,10 +187,15 @@ MEM_PID=$!
 
 sleep "$DURATION"
 
-kill "$MEM_PID" 2>/dev/null || true
-
->&2 echo "==> pulling MYMTS_SOAK events"
-adb -s "$DEVICE" logcat -d -s MYMTS_SOAK > "$RUNDIR/events.log" 2>/dev/null
+>&2 echo "==> stopping samplers + finalizing events.log"
+# Kill the whole process tree under each supervisor — `kill PID` alone
+# leaves the inner `adb logcat` / `adb shell` children running. Pkill the
+# subtree by parent PID.
+pkill -TERM -P "$LOG_PID" 2>/dev/null || true
+pkill -TERM -P "$MEM_PID" 2>/dev/null || true
+kill "$LOG_PID" "$MEM_PID" 2>/dev/null || true
+# Give the streams a moment to flush.
+sleep 2
 
 >&2 echo "==> stopping app"
 adb -s "$DEVICE" shell am force-stop "$PACKAGE" >/dev/null

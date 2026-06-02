@@ -1,0 +1,81 @@
+{
+  "verdict": {
+    "tiles_requested": 4,
+    "tiles_mounted": 4,
+    "tiles_with_first_ready": 4,
+    "tiles_live_at_end": 4,
+    "tiles_dead_at_end": 0,
+    "all_reached_live": true,
+    "all_live_at_end": true
+  },
+  "memory": {
+    "samples": 17,
+    "pss_first_mb": 96.0,
+    "pss_last_mb": 126.9,
+    "pss_min_mb": 96.0,
+    "pss_max_mb": 126.9,
+    "pss_median_mb": 113.1
+  },
+  "per_tile": {
+    "dw-news-en-0": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 118,
+      "dropped_total": 581,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 59,
+        "STALE": 58
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 6598
+    },
+    "dw-news-en-2": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 116,
+      "dropped_total": 586,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 58,
+        "STALE": 57
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 5921
+    },
+    "redbull-tv-1": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 126,
+      "dropped_total": 20,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 63,
+        "STALE": 62
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 12078
+    },
+    "redbull-tv-3": {
+      "decoder": "c2.amlogic.avc.decoder",
+      "tile_ready_count": 124,
+      "dropped_total": 18,
+      "errors": {},
+      "state_transitions": {
+        "LIVE": 62,
+        "STALE": 61
+      },
+      "recovery_strikes": {},
+      "dead": false,
+      "dead_attempts": 0,
+      "final_state": "LIVE",
+      "final_frame_age_ms": 13682
+    }
+  }
+}
