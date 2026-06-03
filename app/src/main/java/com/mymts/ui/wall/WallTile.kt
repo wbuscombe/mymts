@@ -48,11 +48,11 @@ fun WallTile(
     playerFor: (TileSlotResolver.Slot.Playing) -> StreamPlayer?,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .background(WallColors.TileGap)
-            .padding(2.dp),
-    ) {
+    // The parent grid already supplies inter-tile spacing; the tile itself
+    // fills its allocated cell edge-to-edge. Black-bar letterboxing is the
+    // responsibility of the inner StreamSurface (RESIZE_MODE_FIT) so each
+    // tile's video is centered with clean bars on the cell background.
+    Box(modifier = modifier.background(WallColors.TileGap)) {
         when (slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
             is TileSlotResolver.Slot.Playing -> PlayingTile(slot, playerFor(slot))

@@ -5,20 +5,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,30 +31,33 @@ import kotlin.math.sqrt
 /**
  * The N=[tileCount]-tile video grid.
  *
- * Consumes channels from a [ChannelsRepository] (which the caller is
- * responsible for starting/stopping with the screen's lifecycle), and
- * drives a [StreamPlayerManager] whose player set matches the resolved
- * slots. The grid recomposes when:
+ * Stage 3 polish: the grid now **autofits** the region it's given —
+ * tiles divide the available space evenly (rows × columns) rather
+ * than each claiming a fixed 16:9 box. Aspect-ratio correctness moves
+ * inside the tile, where [StreamSurface]'s RESIZE_MODE_FIT letterboxes
+ * the video to its actual cell dimensions. Net effect: the grid fills
+ * its parent edge-to-edge horizontally; each tile then renders the
+ * video centered with clean black bars top/bottom (or left/right)
+ * where the source ratio doesn't match the cell.
  *
- *   - the set of live channels changes (helper resolved a new one,
- *     or one went unavailable), in which case the slot ids change
- *     and Compose `key()`s rebuild only the affected tiles;
- *   - any individual tile's [StreamPlayer.State] changes, in which
- *     case only that tile's badge/dim recomposes.
- *
- * Empty / dead slots stay in the layout grid so the wall doesn't
- * reshuffle every time a channel comes or goes. C2: a missing tile is
- * a quiet gap, not a layout-level event.
+ * Recomposition discipline (unchanged from Checkpoint A):
+ *   - the set of live channels changes → slot ids change → Compose
+ *     `key()`s rebuild only the affected tiles;
+ *   - any tile's [StreamPlayer.State] changes → only that tile's
+ *     badge/dim recomposes.
  */
 @Composable
 fun VideoGrid(
     repository: ChannelsRepository,
     tileCount: Int,
     modifier: Modifier = Modifier,
+    lineupSelector: (List<com.mymts.data.helper.Channel>) -> List<com.mymts.data.helper.Channel> =
+        { it },
 ) {
     val state by repository.state.collectAsState()
     val live = remember(state.snapshot) { state.snapshot?.playable.orEmpty() }
-    val slots = remember(tileCount, live) { TileSlotResolver.resolve(tileCount, live) }
+    val chosen = remember(live, lineupSelector) { lineupSelector(live) }
+    val slots = remember(tileCount, chosen) { TileSlotResolver.resolve(tileCount, chosen) }
     val playingSlots = remember(slots) { slots.filterIsInstance<Slot.Playing>() }
 
     val context = LocalContext.current
@@ -87,7 +88,7 @@ fun VideoGrid(
         if (slots.isEmpty()) {
             EmptyState(reason = "No channels reported by the helper.")
         } else {
-            FixedGrid(
+            AutofitGrid(
                 columns = columns,
                 slots = slots,
                 playerFor = playerBySlotId,
@@ -100,22 +101,16 @@ fun VideoGrid(
             OverlayBanner(text = "Helper unreachable — wall idle.")
         }
     }
-
-    // Surface helper-side staleness so the grid never silently presents
-    // an old channel set as current (C3). We re-read state each second
-    // via the StateFlow's recomposition; the banner only appears when
-    // we've had no successful fetch for `staleAfterMs`.
-    val isStale = repository.isStale()
-    LaunchedEffect(isStale) { /* no-op anchor for re-evaluation */ }
 }
 
 /**
- * A fixed-rows × columns grid that fills the available area, with each
- * cell aspect-ratioed 16:9. Unlike [androidx.compose.foundation.lazy.grid.LazyVerticalGrid]
- * this never scrolls — the wall is a fixed canvas, not a list.
+ * Even split: rows × columns each receive `weight(1f)` of the parent.
+ * The grid fills its parent in both dimensions; each cell is therefore
+ * `parentWidth/columns × parentHeight/rows`. Letterboxing happens
+ * inside the tile via [StreamSurface]'s resize mode.
  */
 @Composable
-private fun FixedGrid(
+private fun AutofitGrid(
     columns: Int,
     slots: List<Slot>,
     playerFor: (Slot.Playing) -> StreamPlayer?,
@@ -130,14 +125,7 @@ private fun FixedGrid(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .layout { measurable, constraints ->
-                        // Each row gets an equal share of the available height.
-                        val rowHeight = (constraints.maxHeight - (rows - 1) * 2.dp.roundToPx()) / rows
-                        val placeable = measurable.measure(
-                            constraints.copy(minHeight = rowHeight, maxHeight = rowHeight)
-                        )
-                        layout(placeable.width, rowHeight) { placeable.place(0, 0) }
-                    },
+                    .weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 for (c in 0 until columns) {
@@ -147,9 +135,12 @@ private fun FixedGrid(
                             slot = slots[idx],
                             playerFor = playerFor,
                             modifier = Modifier
-                                .fillMaxWidth(1f / (columns - c).coerceAtLeast(1))
-                                .aspectRatio(16f / 9f, matchHeightConstraintsFirst = true),
+                                .weight(1f)
+                                .fillMaxHeight(),
                         )
+                    } else {
+                        // Pad the last row so a partial row aligns left.
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight())
                     }
                 }
             }

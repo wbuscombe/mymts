@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Stage 3 — the wall on the TV (CLOSED 2026-06-03)
+
+### Added — TV-side wall UI
+
+- `data/helper/HelperClient` + `Channel` / `ChannelsSnapshot` / `FeedItem` / `FeedSnapshot` — minimal `HttpURLConnection`-based reader for the helper's `/api/channels` + `/api/feed`. `schema_version == 1` pinned; unknown versions refused. Connect 4 s / read 6 s timeouts. Real `org.json` on the unit-test classpath; Android's bundled copy is a stub there.
+- `data/helper/ChannelsRepository` (30 s poll) + `FeedRepository` (60 s poll). Neither ever silently empties the last good snapshot on error — both expose a freshness signal the UI reads to decide between "current and calm" and "honest stale" (Trust Bar C3).
+- `ui/wall/WallScreen` — single-screen assembly: `TickerStrip` across the top, `Row { FeedPane(weight 0.28) | divider | VideoGrid(rest) }` beneath.
+- `ui/wall/VideoGrid` + `WallTile` — the N=4 tile grid. Polish-pass: **autofit** by equal `weight(1f)` rows × columns; **fit-width-letterbox** scaling moves into `StreamSurface` via Media3 `PlayerView` + `RESIZE_MODE_FIT`. Each tile fills its cell width with clean black bars top/bottom where dimensions differ.
+- `ui/wall/WallTile` state-aware rendering: LIVE shows no badge (the picture is the signal), CONNECTING / STALE / RECOVERING dim the surface and label transparently, DEAD / OFFLINE collapse to a quiet near-black panel with a ghost channel label (Trust Bar C2 — graceful degradation made visible).
+- `ui/wall/TileSlotResolver` — pure cycler. Given K live channels and N slots, deterministically returns `[c0, c1, …, c0, c1, …]` (the v2-long-soak shape) with stable slot ids so Compose `key()`s reuse `ExoPlayer` instances across recompositions. 8 unit tests pin the 0/1/2/4/5 × N=4 cases + tileCount edge cases.
+- `ui/wall/LineupSelector` — preferred → fallback → rest, capped at N. `forWall(N)` exposes the operator's preferred lineup (`cbs-sports-hq`, `bbc-news`, `cnn`, `livenow-fox`) + 5-slug fallback (`c-span`, `nasa-tv`, `white-house-tv`, `newsmax`, `cnn-international`). 10 unit tests pin priority order, partial-resolution backfill, dedup across lists, and the maxCount cap.
+- `ui/wall/FeedPane` — 10-foot UI list of `FeedRow`s with `RelativeTime` chips (`now/Nm/Nh/Nd/date`, 7 unit tests). PaneHeader carries a calm staleness label. **Every field renders as Compose `Text` — no `WebView`, no HTML rendering path on the wall.** Trust Bar A1 boundary held at the UI layer.
+- `data/ticker/TickerSource` + `SampleTickerSource` — pluggable interface for a future real markets feed; the Stage 3 implementation emits 16 static placeholder entries with `isSample = true` on every one. 4 unit tests pin the `isSample` contract + asset-class variety.
+- `ui/wall/TickerStrip` — `basicMarquee` scroller. Per-cell `SYMBOL · value · ▲/▼/■` plus a visible `SAMPLE` pill so the operator can never mistake the values for live quotes (C3 applied to the ticker).
+- `MainActivity` routes the default mode to the wall; `--es mode soak` still launches the Stage 1/2 soak harness; `--es mode placeholder` reaches the build-identity smoke screen. `MYMTS_HELPER_BASE_URL` in `gradle.properties` → `BuildConfig.HELPER_BASE_URL`.
+- `app/src/main/res/xml/network_security_config.xml` — narrow cleartext allowance for `<LAN_IP>` only; the base config is `cleartextTrafficPermitted=false`. Stage 6 will replace this with TLS + internal-CA pinning.
+
+### Added — helper
+
+- `feeds/seed.json` + `feeds/seeder.py` — idempotent boot-time RSS-source upserter mirroring the channels-seed pattern. 4 known-good general-news sources seeded by default (BBC World, Al Jazeera, Guardian World, NPR World). 7 unit tests pin idempotency, malformed-input handling, and skip-invalid-row behavior.
+- `channels/seed.json` expanded from 7 to 16 entries — operator's preferred 4 + fallback 5 added to the existing 7 candidates.
+
+### Polish pass — fit-width-letterbox + autofit + preferred-lineup
+
+- `StreamSurface` rewritten from raw `SurfaceView` to Media3 `PlayerView` with `useController=false`, `setShowBuffering(NEVER)`, `resizeMode = RESIZE_MODE_FIT`. The wall's tile UI is the single source of truth for state; player chrome is hidden.
+- `VideoGrid` switched from `aspectRatio(16:9)`-per-tile to equal-weight rows × columns. Letterboxing now happens inside each tile, not by sizing the tile.
+- `LineupSelector` wired into `VideoGrid` via the `lineupSelector` lambda; `WallScreen` passes `LineupSelector.forWall(maxCount = tileCount)::invoke`.
+
+### Channel-resolution result (the start of the resolution-investigation record)
+
+After the polish-pass redeploy seeded all 16 channels and the helper's prober ran one sweep:
+
+- **4 channels live and playable**: `cbs-sports-hq` (operator's #1 preference), `dw-news-en`, `redbull-tv`, plus `nasa-tv` whose master manifest passes the prober but whose variant playlist fails for ExoPlayer with `ERROR_CODE_IO_BAD_HTTP_STATUS`. The wall renders the C2 OFFLINE panel for NASA TV — honest. Full per-channel result in `docs/findings/03-stage-3-wall.md §3`.
+- **12 channels unavailable**: a mix of `http_403` (geo-block on BBC News + C-SPAN), DNS failure (CNN / LiveNOW from FOX / Newsmax / CNN International — candidate Rakuten / Samsung TV+ / Akamai endpoints didn't resolve), `http_400` (manifest reject — France 24, Sky News), `http_404` (White House TV URL guessed), and an SSL handshake failure (TRT World).
+- **Stage 3 ships with what resolves;** the broader channel-resolution investigation (DNS-over-HTTPS, geo-egress, candidate-URL rotation, deepening the prober to variant-fetch) is **carried forward to BACKLOG** as its own scoped effort, not folded into Stage 3.
+
+### Honest constraints recorded at Stage 3 close
+1. **Channels: real but currently limited** (4/16 playable; cycler fills the wall from whatever resolves).
+2. **Feed: real** (BBC World, Al Jazeera, Guardian World, NPR World — render as native text).
+3. **Ticker: real styling, sample data** (`SAMPLE` pill on every cell; honest by construction).
+
+### Updated
+
+- `docs/THREAT-MODEL.md` — Stage 3 row populated with `T-T1` (re-confirmed Stage 2 mechanism is what the UI surfaces) through `T-T5`: HTML-injection-into-feed (no WebView), non-helper-URL ingestion (by construction), cleartext-on-LAN (narrow allowance, Stage 6 TLS), schema-version pinning + structural parsing of `/api/channels` + `/api/feed`.
+- `ARCHITECTURE.md` — Stage 3 §9: UI module map, the autofit + fit-width-letterbox model, lineup-selection priority order, helper-host boundary.
+- `docs/BACKLOG.md` — 5 new entries (partial channel-resolution investigation, configurable feed-pane width, configurable / scalable panes, in-app menu / settings (which IS Stage 5), browser / PWA client with the load-bearing security caveat from `04-TECHNICAL-APPROACH.md §1` preserved verbatim).
+
+### On-device evidence
+
+- Checkpoint A (2026-06-02 20:03): 4 tiles cycled `[dw, redbull, dw, redbull]` reached LIVE after one PREPARE strike; screencap at `docs/findings/runs/stage-3-checkpoint-a-20260602-2004/`.
+- Checkpoint B (2026-06-02 20:18): full assembled wall on the TV; Red Bull origin went down ~24 min in and settled `DEAD` honestly via the full ladder — C2 panels rendered; screencap at `docs/findings/runs/stage-3-checkpoint-b-20260602-2018/`.
+- Polish (2026-06-03 11:09): `[cbs-sports-hq, nasa-tv, dw-news-en, redbull-tv]` lineup; NASA TV's master-OK/variant-FAIL settled DEAD per the 3-strike ladder, C2 panel rendered; screencap at `docs/findings/runs/stage-3-polish-20260603-1109/`.
+
+### Standing rules held
+- **unrelated host services: never touched** for any reason across the stage.
+- **WyzeGrid:** re-enabled on `.182` at the end of every device run. No soak windows opened during Stage 3.
+- App test suites green: `TileSlotResolverTest`, `HelperClientParseTest`, `HelperClientFeedParseTest`, `RelativeTimeTest`, `SampleTickerSourceTest`, `LineupSelectorTest` + Stage 1/2 carry-over.
+- Helper test suites green: `test_feeds_seeder` (7) + prior 115 = 122.
+
+
 ### Stage 1 (apparatus + skeletons; GATE preliminary — long soak pending)
 
 #### Added — TV app

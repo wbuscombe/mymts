@@ -82,12 +82,44 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 *Residual risk:* a future contributor logs a secret directly via a non-standard logger or print(). Pre-commit gitleaks + log redaction is the layered defence.
 *Traces to:* **A7**.
 
+#### TV-side threats (Stage 3 — populated)
+
+**T-T1. Frozen tile labelled "LIVE" (silent staleness in the wall).**
+**Closed in Stage 2 Part B** and confirmed in the Stage 3 wall UI. Mechanism: `com.mymts.player.LivenessTracker` derives liveness from actual frame arrival via `onRenderedFirstFrame` + `onDroppedVideoFrames`, transitions to `STALE` when `last_frame_age_ms > 15 s`, runs a bounded recovery ladder (PREPARE → REINIT × 2 with 2 s/8 s/30 s backoff), and settles into `DEAD` after 3 strikes. The Stage 3 wall `WallTile` composable renders this state honestly: `STALE`/`RECOVERING` dim the surface and label the badge transparently; `DEAD`/`OFFLINE` collapse to a quiet near-black panel with a ghost channel label and no error chrome (Trust Bar **C2**). The C3 contract is enforced at both ends — helper API masks `current_url → null` when not live (Part A); player + wall UI surface honest `STALE`/`DEAD` (Part B + Stage 3). On-device evidence: Stage 3 Checkpoint B Red Bull origin failure at 20:42–20:44, and Stage 3 polish-pass NASA TV master-OK/variant-FAIL — both settled `DEAD` after the full ladder and rendered the C2 panel correctly.
+*Traces to:* **C2** (graceful degradation), **C3** (no silent staleness).
+
+**T-T2. HTML smuggled into the feed pane via RSS title/summary → XSS-equivalent on the TV.**
+*Likelihood:* high (any compromised or hostile RSS source is the vector).
+*Impact:* if the wall rendered RSS markup as HTML, an attacker could inject DOM that exfiltrates state, navigates to an attacker page, or layers attacker UI over the wall — even on a TV. Trust Bar A1 violation.
+*Mitigation:* **no HTML rendering path exists on the TV.** The helper strips HTML in `feeds/parser.py` and emits inert plain text. The wall's `FeedPane` renders every field as Compose `Text` (`com.mymts.ui.wall.FeedRow`); the source code contains no `WebView`, no `AndroidView { WebView(...) }`, no HTML-rendering library on the classpath. There is *no API in the wall* that could render an attacker string as markup. The boundary is enforced by construction, not by escaping discipline.
+*Residual risk:* a future contributor pulls in a Markdown/HTML renderer for feed items. Code-review gate + this threat-model entry are the layered defences.
+*Traces to:* **A1** (assume hostile input), **A2** (blast radius — TV can render text only).
+
+**T-T3. Wall pointed at a non-helper stream URL → bypasses the helper's SSRF + manifest validation.**
+*Likelihood:* low (would require code change in the wall; the wall has no UI to enter URLs).
+*Impact:* if the wall accepted operator- or attacker-supplied stream URLs, it would lose the helper's SSRF + structured-URL + manifest checks; could be steered into private-network probing or hostile-stream playback.
+*Mitigation:* by construction. The `VideoGrid` consumes `Channel` objects from `ChannelsRepository`, which reads only `/api/channels` from the helper at `BuildConfig.HELPER_BASE_URL`. The wall never holds, accepts, or constructs a stream URL from any source other than the helper's `current_url`. Compose `LineupSelector` picks which helper channels to surface; it cannot synthesize one. `TileSlotResolver.resolve()` `error()`s if a `Slot.Playing` would carry a null URL.
+*Residual risk:* a future "add custom channel" feature would re-introduce this surface; threat-model it fresh at that point.
+*Traces to:* **A1**, **A4** (least-privilege egress).
+
+**T-T4. Cleartext HTTP to the helper on the LAN → tampering / sniffing by a LAN-local attacker.**
+*Likelihood:* low (operator's LAN; no public-internet exposure).
+*Impact:* a LAN-local attacker could inject feed items, channel URLs, or modified `/api/feed` content. Worst case: an injected channel URL pointing at attacker-controlled HLS → wall plays attacker content.
+*Mitigation (partial):* the wall's `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host is HTTPS-only by Android policy. The helper container is bound to the LAN bridge only — not reachable from the public internet. Operator's network is single-occupant residential.
+*Residual risk:* a LAN-local attacker (e.g. a compromised IoT device on the same network) could MITM the helper response. Stage 6 hardens this with TLS to the helper + certificate pinning (operator-issued internal CA). The current state is a documented v0.1 compromise — narrower than app-wide `usesCleartextTraffic=true`, broader than TLS.
+*Traces to:* **A2**, **A4**.
+
+**T-T5. Wall consumes an attacker-shaped `/api/channels` or `/api/feed` JSON.**
+*Likelihood:* low-to-medium (requires either a compromised helper or T-T4 MITM).
+*Impact:* malformed JSON could crash the wall, drop into an unsafe code path, or inject hostile field values.
+*Mitigation:* `HelperClient` pins `schema_version == 1` and **refuses** any other version (`HelperException`). Fields are parsed structurally: `current_url` null/blank → channel marked unplayable; `title` null → feed item silently skipped; `status` enum normalized through a single `parseStatus`. Field parsing is unit-tested in `HelperClientParseTest` + `HelperClientFeedParseTest` against null-injection, missing-field, unknown-status, and bad-schema-version cases. Parse failures on the wire surface to the UI as the existing staleness signal (`feed not updating` / `helper unreachable`), not as an empty list pretending to be current state.
+*Traces to:* **A1**, **C3**.
+
 #### Other stages (filled in as they land)
 
 - **T-A1: Malicious or buggy app sideload on the Onn box.** Stage 6.
 - **T-A2: Update mechanism bricking the TV or being subverted.** Stage 6.
 - **T-O1: Backup mechanism becoming the source of the failures it's meant to prevent.** Stage 6.
-- **T-T1: TV-side surface honesty (frozen tile labelled "LIVE").** **Closed in Stage 2 Part B.** Mechanism: `com.mymts.player.LivenessTracker` derives liveness from actual frame arrival via `onRenderedFirstFrame` + `onDroppedVideoFrames`, transitions to `STALE` when `last_frame_age_ms > 15 s`, runs a bounded recovery ladder (PREPARE → REINIT × 2 with 2 s/8 s/30 s backoff), and settles into `DEAD` after 3 strikes. Demonstrated on `.182`: an unreachable URL (`httpbin.org/status/404`) completed the lifecycle to `DEAD` in ~120 s, the same Stage 1 v3 failure-shape that left nasa-public-0 in `RECONNECTING` for 10 h. The C3 contract is now enforced **at both ends** — helper API masks `current_url → null` when not live (Part A); player surfaces honest `STALE`/`DEAD` to the UI (Part B). Details + on-device evidence in `docs/findings/02-player-state-machine.md`.
 - **T-S1: A friend's sideloaded instance compromised → ranked above operator data loss; isolation by construction is the defence.** Stage 7 portability pass.
 
 Each will be filled in with **likelihood**, **impact**, **mitigation**, **residual risk**, and a **back-trace** to the Trust Bar principle when the relevant stage lands.
@@ -98,7 +130,7 @@ Each will be filled in with **likelihood**, **impact**, **mitigation**, **residu
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.
 - **Stage 2:** populate every helper-related threat with concrete mitigations and tests.
-- **Stage 3:** populate the TV-side video playback threats.
+- **Stage 3:** populate the TV-side video playback threats. **Done — T-T1 through T-T5 above.**
 - **Stage 6:** populate update mechanism + backup mechanism threats.
 - **Stage 7:** final review against every Trust Bar principle (A0–A9, B1–B5, C0–C6); each must have at least one mitigation line here, or be explicitly noted as "not applicable to this architecture" with reasoning.
 

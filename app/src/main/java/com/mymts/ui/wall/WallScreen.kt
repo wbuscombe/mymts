@@ -86,6 +86,7 @@ fun WallScreen(
                     repository = channels,
                     tileCount = tileCount,
                     modifier = Modifier.fillMaxSize(),
+                    lineupSelector = LineupSelector.forWall(maxCount = tileCount)::invoke,
                 )
             }
         }

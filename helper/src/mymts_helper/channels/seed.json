@@ -1,5 +1,59 @@
 [
   {
+    "slug": "cbs-sports-hq",
+    "label": "CBS Sports HQ",
+    "kind": "hls",
+    "source_url": "https://dai.google.com/linear/hls/event/Sid4xiTQTkCT1SLu6rjUSQ/master.m3u8"
+  },
+  {
+    "slug": "bbc-news",
+    "label": "BBC News",
+    "kind": "hls",
+    "source_url": "https://vs-cmaf-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/iptv_hd_abr_v1.m3u8"
+  },
+  {
+    "slug": "cnn",
+    "label": "CNN",
+    "kind": "hls",
+    "source_url": "https://cnn-cnninternational-1-eu.rakuten.wurl.tv/playlist.m3u8"
+  },
+  {
+    "slug": "livenow-fox",
+    "label": "LiveNOW from FOX",
+    "kind": "hls",
+    "source_url": "https://livenowfromfox.akamaized.net/cdn-streaming-livenow/master.m3u8"
+  },
+  {
+    "slug": "c-span",
+    "label": "C-SPAN",
+    "kind": "hls",
+    "source_url": "https://cspan1-lh.akamaihd.net/i/cspan1_1@179085/master.m3u8"
+  },
+  {
+    "slug": "nasa-tv",
+    "label": "NASA TV",
+    "kind": "hls",
+    "source_url": "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8"
+  },
+  {
+    "slug": "white-house-tv",
+    "label": "White House TV",
+    "kind": "hls",
+    "source_url": "https://wh.gov/live/playlist.m3u8"
+  },
+  {
+    "slug": "newsmax",
+    "label": "Newsmax",
+    "kind": "hls",
+    "source_url": "https://newsmax-newsmaxtv-1-us.samsung.wurl.tv/playlist.m3u8"
+  },
+  {
+    "slug": "cnn-international",
+    "label": "CNN International",
+    "kind": "hls",
+    "source_url": "https://cnn-cnninternational-1-fr.rakuten.wurl.tv/playlist.m3u8"
+  },
+  {
     "slug": "redbull-tv",
     "label": "Red Bull TV",
     "kind": "hls",
@@ -42,4 +96,3 @@
     "source_url": "https://tv-trtworld.live.trt.com.tr/master.m3u8"
   }
 ]
-

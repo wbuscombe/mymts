@@ -297,7 +297,59 @@ Both ends of the TV ↔ helper chain honor "staleness is never silent":
 | Helper API boundary (Part A) | `/api/channels` masks `current_url → null` whenever `status != "live"`. |
 | TV player (Part B) | `StreamPlayer.state` derives from actual frame arrival; `STALE`/`DEAD` are surfaced honestly to the UI; the wall **cannot** show a `LIVE` badge over a frozen surface. |
 
-## 9. What this document deliberately does NOT specify yet
+## 9. Stage 3 — the wall UI (what the operator actually sees)
+
+The TV-app side gains a single screen (`com.mymts.ui.wall.WallScreen`) composed of three regions consuming three independent data sources:
+
+```
+app/src/main/java/com/mymts/
+├── data/
+│   ├── helper/
+│   │   ├── Channel.kt             ← /api/channels row + ChannelsSnapshot envelope
+│   │   ├── ChannelsRepository.kt  ← 30 s poll, freshness signal, never silent empty
+│   │   ├── FeedRepository.kt      ← 60 s poll, 10 min staleness window
+│   │   └── HelperClient.kt        ← HttpURLConnection + org.json, schema_version=1 pinned
+│   └── ticker/
+│       ├── TickerSource.kt        ← interface (real markets impl. drops in here)
+│       └── SampleTickerSource.kt  ← every entry isSample=true (clearly-labeled placeholder)
+└── ui/wall/
+    ├── WallScreen.kt              ← assembled layout: ticker top / feed left / grid right
+    ├── TickerStrip.kt             ← basicMarquee scroller; per-cell SAMPLE pill
+    ├── FeedPane.kt                ← 10-foot UI list; native-text only (no WebView path)
+    ├── RelativeTime.kt            ← "now/Nm/Nh/Nd/date" relative-time chip
+    ├── VideoGrid.kt               ← autofit grid; equal weight() rows × columns
+    ├── WallTile.kt                ← state-aware cell: surface + badge + label
+    ├── LineupSelector.kt          ← preferred → fallback → rest, capped at N
+    ├── TileSlotResolver.kt        ← cycles K live channels across N slots
+    └── WallColors.kt              ← dark-newsroom palette
+```
+
+### Region behaviors (Stage 3 polish-pass shape)
+
+| Region | Source | Refresh | Failure shape |
+|---|---|---|---|
+| Ticker (top, 40 dp) | `SampleTickerSource` (static; real source drops in via `TickerSource`) | n/a — static | Empty source → empty strip (no error chrome) |
+| Feed pane (left, 28% width) | `/api/feed?limit=80` via `FeedRepository` | 60 s poll | Header carries `"feed not updating"` / `"helper unreachable"`; old items don't pretend to be current |
+| Video grid (right, autofit fill) | `/api/channels` via `ChannelsRepository` → `LineupSelector` → `TileSlotResolver` | 30 s poll | Per-tile honest state from `StreamPlayer.state`; dead tile = quiet near-black panel (C2) |
+
+### Autofit + fit-width-letterbox
+
+The grid (`VideoGrid`) divides its parent region evenly: rows × columns each take `weight(1f)`, so each cell is `parentWidth/columns × parentHeight/rows`. Aspect-ratio correctness moves **inside the tile**: `StreamSurface` hosts a Media3 `PlayerView` with `RESIZE_MODE_FIT`, which fills the cell's width while preserving source aspect ratio and letterboxing with black bars where dimensions differ. Net effect: the grid fills the right-hand region edge-to-edge; each tile renders video centered with clean bars rather than floating at native size or stretching.
+
+### Lineup selection
+
+`LineupSelector.forWall(maxCount)` walks three lists in priority order:
+1. Operator's preferred slugs (`cbs-sports-hq`, `bbc-news`, `cnn`, `livenow-fox`) — picked first if playable.
+2. Fallback slugs (`c-span`, `nasa-tv`, `white-house-tv`, `newsmax`, `cnn-international`) — fill if preferred didn't resolve.
+3. Any remaining playable channels — top up so the grid isn't half-empty when other channels work.
+
+Result is capped at `tileCount`. If fewer than `tileCount` channels resolve across all three lists, the remaining slots are `Slot.Empty` and the tile renders the same quiet OFFLINE panel as a `DEAD` slot. **The wall never fakes a tile** (C2 + the prompt's "do not fake completeness" rule).
+
+### Helper-host boundary
+
+The wall's only inbound is the helper at `BuildConfig.HELPER_BASE_URL` (sourced from `MYMTS_HELPER_BASE_URL` in `gradle.properties`). `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host on the wall is HTTPS-only by Android policy. TLS to the helper is deferred to Stage 6 hardening (with operator-issued internal-CA pinning); documented in `THREAT-MODEL.md T-T4`.
+
+## 10. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.
