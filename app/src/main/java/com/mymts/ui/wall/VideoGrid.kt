@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -22,7 +21,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.mymts.data.helper.ChannelsRepository
 import com.mymts.player.StreamPlayer
 import com.mymts.player.StreamPlayerManager
 import com.mymts.ui.wall.TileSlotResolver.Slot
@@ -30,32 +28,32 @@ import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /**
- * The N=[tileCount]-tile video grid.
+ * The N=`slots.size`-tile video grid.
  *
- * Channel-identity honesty (Trust Bar C3 at the identity layer):
- * each tile receives a [BoundTile] — a slot paired with the player
- * whose `spec.id` matches that slot. The pairing is enforced at
- * construction (see [BoundTile.init]) and Compose `key(slot.id)`
- * around each [WallTile] guarantees identity changes when a slot's
- * channel changes. A label can never describe the wrong stream.
+ * Stage 5: the slot list is computed by the caller ([com.mymts.ui.wall.WallScreen])
+ * and passed in. This is the **single source of truth** the menu and
+ * the wall share — the menu's [com.mymts.ui.menu.SlotRow]s read the
+ * same list, so the two surfaces can never disagree about which
+ * channel is in which slot.
  *
- * Autofit (Stage 3 polish): rows × columns each take `weight(1f)`,
- * so the grid fills its parent in both dimensions; cell dimensions
- * follow from the parent. Aspect-ratio correctness lives inside the
- * tile via [com.mymts.ui.components.StreamSurface]'s RESIZE_MODE_FIT.
+ * Channel-identity honesty (Trust Bar C3, identity layer): each tile
+ * receives a [BoundTile] — a slot paired with the player whose
+ * `spec.id` matches that slot. The pairing is enforced at construction
+ * (see [BoundTile.init]) and Compose `key(slot.id)` around each
+ * [WallTile] guarantees identity changes when a slot's channel
+ * changes. A label can never describe the wrong stream.
+ *
+ * Autofit (Stage 3 polish): rows × columns each take `weight(1f)`, so
+ * the grid fills its parent in both dimensions; cell dimensions follow
+ * from the parent. Aspect-ratio correctness lives inside the tile via
+ * [com.mymts.ui.components.StreamSurface]'s RESIZE_MODE_FIT.
  */
 @Composable
 fun VideoGrid(
-    repository: ChannelsRepository,
-    tileCount: Int,
+    slots: List<Slot>,
     modifier: Modifier = Modifier,
-    lineupSelector: (List<com.mymts.data.helper.Channel>) -> List<com.mymts.data.helper.Channel> =
-        { it },
+    helperUnreachable: Boolean = false,
 ) {
-    val state by repository.state.collectAsState()
-    val live = remember(state.snapshot) { state.snapshot?.playable.orEmpty() }
-    val chosen = remember(live, lineupSelector) { lineupSelector(live) }
-    val slots = remember(tileCount, chosen) { TileSlotResolver.resolve(tileCount, chosen) }
     val playingSlots = remember(slots) { slots.filterIsInstance<Slot.Playing>() }
 
     val context = LocalContext.current
@@ -69,18 +67,9 @@ fun VideoGrid(
         onDispose { lifecycleOwner.lifecycle.removeObserver(manager) }
     }
 
-    // Subscribe to the manager's readiness signal. The `b19b013` regression
-    // (telemetry-confirmed: `EV=TILE_READY=0` against a known-good stream)
-    // came from caching player lookups in a `remember(manager, specs)`
-    // block — that runs **during composition**, before the
-    // `DisposableEffect` above adds the lifecycle observer, so
-    // `manager.player(idx)` returned null and stayed null forever. Reading
-    // `readyVersion.value` subscribes this composable to recompose when
-    // the manager's `onStart` populates its players (the version flips),
-    // and including it in the `remember` keys below makes the binding
-    // re-evaluate at that moment. The structural pairing guarantee
-    // (`BoundTile.init { require(player.specId == slot.spec.id) }`) is
-    // unchanged.
+    // Subscribe to the manager's readiness signal so this composable
+    // recomposes when `onStart` populates real players. See
+    // `StreamPlayerManager.readyVersion` for the bug history.
     val readyVersion by manager.readyVersion
 
     val bound: List<BoundTile> = remember(slots, manager, readyVersion) {
@@ -90,28 +79,26 @@ fun VideoGrid(
         }
     }
 
-    val columns = remember(tileCount) {
-        when (tileCount) {
+    val columns = remember(slots.size) {
+        when (slots.size) {
             0, 1 -> 1
             in 2..4 -> 2
-            else -> ceil(sqrt(tileCount.toDouble())).toInt().coerceAtLeast(1)
+            else -> ceil(sqrt(slots.size.toDouble())).toInt().coerceAtLeast(1)
         }
     }
 
     Box(modifier = modifier.background(WallColors.Background)) {
         if (bound.isEmpty()) {
-            EmptyState(reason = "No channels reported by the helper.")
+            EmptyState(
+                reason = if (helperUnreachable) "Helper unreachable — wall idle."
+                else "No channels reported by the helper.",
+            )
         } else {
             AutofitGrid(
                 columns = columns,
                 bound = bound,
                 modifier = Modifier.fillMaxSize(),
             )
-        }
-        if (live.isEmpty() && state.snapshot != null) {
-            OverlayBanner(text = "Helper reports 0 channels live — tiles waiting.")
-        } else if (!state.lastFetchOk && state.snapshot == null) {
-            OverlayBanner(text = "Helper unreachable — wall idle.")
         }
     }
 }
@@ -138,11 +125,6 @@ private fun AutofitGrid(
                     val idx = r * columns + c
                     if (idx < bound.size) {
                         val tile = bound[idx]
-                        // Explicit key on the slot id so Compose treats the
-                        // tile's identity as the channel-slot pair, not the
-                        // grid position. When a slot's channel changes, the
-                        // tile is rebuilt from scratch — no stale label or
-                        // surface state can leak across the identity change.
                         key(tile.key) {
                             WallTile(
                                 bound = tile,
@@ -165,15 +147,5 @@ private fun EmptyState(reason: String) {
         contentAlignment = Alignment.Center,
     ) {
         Text(text = reason, color = WallColors.LabelGhost, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun OverlayBanner(text: String) {
-    Box(
-        modifier = Modifier.fillMaxSize().padding(8.dp),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Text(text = text, color = WallColors.LabelMuted, fontSize = 11.sp)
     }
 }

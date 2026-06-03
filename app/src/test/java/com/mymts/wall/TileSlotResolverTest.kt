@@ -22,7 +22,7 @@ class TileSlotResolverTest {
     )
 
     @Test fun `zero channels with N=4 yields four Empty slots`() {
-        val slots = TileSlotResolver.resolve(tileCount = 4, liveChannels = emptyList())
+        val slots = TileSlotResolver.resolve(tileCount = 4, defaultChannels =emptyList())
         assertEquals(4, slots.size)
         slots.forEachIndexed { i, s ->
             assertTrue("slot $i should be Empty but was $s", s is Slot.Empty)

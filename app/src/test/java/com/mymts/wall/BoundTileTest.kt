@@ -71,7 +71,7 @@ class BoundTileTest {
         val chosen = selector(playable)
         assertEquals(listOf("a", "e", "f", "g"), chosen.map { it.slug })
 
-        val slots = TileSlotResolver.resolve(tileCount = 4, liveChannels = chosen)
+        val slots = TileSlotResolver.resolve(tileCount = 4, defaultChannels =chosen)
         val players = slots.filterIsInstance<TileSlotResolver.Slot.Playing>()
             .associate { it.spec.id to fakePlayer(it.spec.id) }
 

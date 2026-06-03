@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Stage 5 checkpoint 2 — channel picker + persistence, lineup control complete (2026-06-03)
+
+Stage 5 makes the wall operable from the couch. Checkpoint 1 (commit `e803fee`) shipped the menu shell — open/navigate/back. Checkpoint 2 (this commit) wires the actual feature: real per-slot channel labels, the centered TV-style channel picker with honest live/offline marking, on-device lineup persistence, and telemetry-verified reassignment.
+
+### Added — TV-side menu (channel/lineup control only — settings/layout/diagnostics deferred to BACKLOG)
+
+- **`ui/menu/ChannelPickerOverlay`** — centered TV-style popup (WyzeGrid signature pattern). Shows the focused channel as `< Channel Name (status) >`; D-pad LEFT/RIGHT cycles the helper's channels (wrapping at the ends); SELECT/CENTER assigns; BACK cancels. Each channel decorated with its real current status (`live` / `offline`); the operator cannot mistake an offline channel for one that will play (Trust Bar C3 at the menu layer).
+- **`data/lineup/LineupStore`** — SharedPreferences-backed persistence. Format: `SharedPreferences("mymts_lineup") → key "lineup_overrides"` holding a JSON array `[slot, slug, slot, slug, …]`. Deterministic encode (sorted by key) so two writes of the same lineup produce byte-identical disk state. Tolerant of corrupt blobs (resets + logs once). **No secrets, no PII, no absolute paths** — only short slug strings the operator chose.
+- **Mark-and-allow** policy for offline-pinned slots: the picker permits assigning an offline channel but marks it visibly; the wall renders the C2 honest panel for that slot with the assigned channel's label, distinct from an unassigned blank tile. (Rationale recorded in `docs/findings/04-stage-5-menu.md` — the wall already degrades honestly, and the operator may want a channel queued for when it returns.)
+
+### Refactored — TileSlotResolver and the slot list as a single source of truth
+
+- **`TileSlotResolver.Slot.Offline(index, channel)`** — new variant for an operator-pinned-but-not-currently-live channel. Renders the C2 panel with the channel's label. **Has no `spec` field by construction** — so the structural label/stream binding from `9d5b0ad` (`BoundTile.init { require(player.specId == slot.spec.id) }`) cannot misfire on an offline slot; the type system rules out a mispaired player.
+- **`TileSlotResolver.resolve(tileCount, defaultChannels, allChannels, overrides)`** — new signature accepts the override map. Overrides take priority over the default cycler; the cycler's pool filters out operator-pinned slugs so a pinned channel never double-fills another slot. Saved slugs that no longer match any helper channel **fall through gracefully** to the default cycler — the operator never sees a label for a vanished channel.
+- **`WallScreen` is now the owner** of the slot list. Computes it once per recomposition from `(allChannels, defaultOrder, overrides)` and passes the same `List<Slot>` to both `VideoGrid` and `MenuOverlay`. The menu and the wall **cannot disagree** about which channel is in which slot.
+
+### Telemetry — the proof (operator was away from the TV)
+
+The Stage 3 lesson held: a tile that fails to start is pixel-identical to an honest dead tile, so appearance proves nothing. Verified via telemetry only:
+
+| Behavior | Evidence |
+|---|---|
+| **Reassign slot 0 to a different live channel** | After `MENU → SELECT → RIGHT × 2 → SELECT` to pin `redbull-tv` to slot 0: `EV=DECODER\|id=slot-0-redbull-tv` at 17:56:35 → `EV=TILE_READY\|id=slot-0-redbull-tv` at 17:56:36. New spec id = new player = real first frame, not just a label swap. |
+| **Persistence across force-stop and relaunch** | `shared_prefs/mymts_lineup.xml` on disk contained `[0,"redbull-tv"]`. After `am force-stop` + relaunch: `EV=TILE_READY\|id=slot-0-redbull-tv` (restored from disk), not `slot-0-dw-news-en` (the default cycler's first pick). |
+| **Offline assignment never starts a player** | After pinning `slot 0 → cnn` (offline) via direct prefs write: decoders started for slot-1-dw-news-en, slot-2-redbull-tv, slot-3-redbull-tv; **zero events** for `slot-0-cnn` or `slot-0/offline-cnn`. The C2 panel rendered with `CNN` as the ghost label (screencap evidence). |
+| **No capacity blowout** | ~10 decoder inits across the full test (4 baseline + 3 rebind + 3 post-restart). Zero recovery strikes. Zero `EV=DEAD`. Stage 2 N=4 ceiling holds. |
+
+Evidence: `docs/findings/runs/stage-5-checkpoint-2-20260603-1755/` (picker screencap + wall-with-cnn-offline screencap + notes.md).
+
+### Tests added
+
+- **`MenuStateTest`** (8 cases, checkpoint 1) — visibility + sub-overlay state.
+- **`TileSlotResolverOverridesTest`** (7 cases) — override-to-live → Playing, override-to-offline → Offline with label, override-to-vanished-slug → graceful fallback, no double-fill, every-slot-pinned-and-no-spares → honest Empty tail, Offline carries no spec.
+- **`LineupStoreCodecTest`** (7 cases) — round-trip preservation, corrupt-JSON safety, odd-length blob handling, invalid-pair skipping, deterministic encoding.
+
+### Updated
+
+- **`ARCHITECTURE.md`** §10 — new menu module map, slot-list-as-single-source-of-truth diagram, slot-variant table, persistence format, D-pad model, honesty rules carried through.
+- **`docs/THREAT-MODEL.md`** — new `T-T6` (LineupStore persistence; no-secrets-by-construction) and `T-T7` (menu UI honesty; picker reads same `Channel.isPlayable` the player does). Stage 5 row in the gate table marked done.
+- **`docs/findings/04-stage-5-menu.md`** — new finding doc covering the interaction model, the mark-and-allow decision, the telemetry proof, the persistence format.
+
+### Standing rules held
+- **unrelated host services: never touched.**
+- **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy. No disable.
+- Helper untouched (UI-only commit).
+- App test count ~50+ cases.
+
 ## Stage 3 fix-forward — video startup regression repaired (2026-06-03)
 
 The Stage 3 follow-up commit `b19b013` (label/stream binding made structural) introduced a Compose-timing bug that broke video startup. The honesty rule itself was correct; the wiring was wrong. Telemetry — not visual inspection — surfaced it.

@@ -2,6 +2,7 @@ package com.mymts.ui.wall
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.focusable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -26,41 +26,39 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.mymts.data.helper.Channel
 import com.mymts.data.helper.ChannelsRepository
 import com.mymts.data.helper.FeedRepository
 import com.mymts.data.helper.HelperClient
+import com.mymts.data.lineup.LineupStore
 import com.mymts.data.ticker.SampleTickerSource
+import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
 import com.mymts.ui.menu.SlotRow
 import com.mymts.ui.menu.rememberMenuState
 
 /**
- * Stage 3 assembled wall + Stage 5 side menu.
+ * Stage 3 wall + Stage 5 menu + channel picker.
  *
- * Layout (dark, dense, single-screen, ambient):
+ * This composable owns the **single source of truth** for the wall's
+ * slot list: a `List<TileSlotResolver.Slot>` derived from the helper's
+ * channel state, the operator's [LineupStore] overrides, and the
+ * default cycler. The same slot list drives:
+ *   - the video grid (each slot's player is created from
+ *     `Slot.Playing.spec`);
+ *   - the menu (each `SlotRow` reads the channel from the same slot);
+ *   - the picker (the slot index it edits is the index into this list).
  *
- *   ┌──────────────────────────────────────────────┐
- *   │  ticker (thin marquee strip)                 │
- *   ├──────────────┬───────────────────────────────┤
- *   │              │                               │
- *   │  feed pane   │   video grid (2×2 at N=4)     │
- *   │  ~28% width  │   ~72% width                  │
- *   │              │                               │
- *   └──────────────┴───────────────────────────────┘
+ * The menu and the wall can never disagree about which channel is in
+ * which slot because they read the same list.
  *
- * Stage 5: a left-side menu slides in over this layout on the D-pad
- * MENU key, dimming (not pausing) the wall behind a scrim. The menu
- * lists one row per grid tile so the operator can pick which channel
- * fills each slot. Compose's standard focus system drives UP/DOWN
- * navigation between rows; SELECT/CENTER triggers each row's action;
- * BACK closes the menu via [BackHandler].
- *
- * Trust Bar **C2**: opening the menu never touches the
- * [com.mymts.player.StreamPlayerManager]; the grid keeps playing
- * behind the scrim. The menu state is local UI; it cannot cascade
- * into a video failure.
+ * Trust Bar **C2**: opening the menu / picker never touches the
+ * `StreamPlayerManager` for un-reassigned slots; the grid keeps playing
+ * behind a scrim. **C3**: offline channels are surfaced honestly at
+ * every layer — the row, the picker, the tile.
  */
 @Composable
 fun WallScreen(
@@ -71,10 +69,13 @@ fun WallScreen(
     menu: MenuState = rememberMenuState(),
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val client = remember(helperBaseUrl) { HelperClient(helperBaseUrl) }
     val channels = remember(client) { ChannelsRepository(client) }
     val feed = remember(client) { FeedRepository(client) }
     val ticker = remember { SampleTickerSource() }
+    val lineupStore = remember(context) { LineupStore(context) }
+    val overrides by lineupStore.overrides
 
     DisposableEffect(channels, feed, ticker) {
         channels.start()
@@ -87,26 +88,32 @@ fun WallScreen(
         }
     }
 
-    // Stage 5 checkpoint 1: placeholder slot rows so the operator can
-    // confirm the navigation feel before the channel picker + lineup
-    // wiring lands in checkpoint 2.
-    val slotRows = remember(tileCount) {
-        (0 until tileCount).map { i ->
-            SlotRow(
-                slotIndex = i,
-                title = "Slot ${i + 1}",
-                detail = "(channel picker — coming next)",
-                detailStyle = SlotRow.DetailStyle.Default,
-            )
-        }
+    // The slot list — single source of truth.
+    val state by channels.state.collectAsState()
+    val allChannels = remember(state.snapshot) { state.snapshot?.channels.orEmpty() }
+    val playable = remember(allChannels) { allChannels.filter { it.isPlayable } }
+    val defaultOrder = remember(playable) {
+        LineupSelector.forWall(maxCount = tileCount).invoke(playable)
     }
+    val slots = remember(tileCount, defaultOrder, allChannels, overrides) {
+        TileSlotResolver.resolve(
+            tileCount = tileCount,
+            defaultChannels = defaultOrder,
+            allChannels = allChannels,
+            overrides = overrides,
+        )
+    }
+
+    // Build the menu's per-slot rows from the SAME slot list.
+    val slotRows = remember(slots) { slots.map { it.toRow() } }
+
+    // Picker channels: every helper channel, sorted live-first so the
+    // operator can scan the working ones quickly. Honest (live/offline)
+    // status travels into the picker via Channel.isPlayable.
+    val pickerChannels = remember(allChannels) { allChannels.sortedByLiveFirst() }
 
     BackHandler(enabled = menu.isOpen) { menu.close() }
 
-    // The root Box must be focusable for `onPreviewKeyEvent` to fire —
-    // Compose only dispatches key events to focused composables. We
-    // grab focus initially and after every menu close so the wall's
-    // MENU/LEFT bindings keep working without a manual focus poke.
     val rootFocusRequester = remember { FocusRequester() }
     DisposableEffect(menu.isOpen) {
         if (!menu.isOpen) rootFocusRequester.requestFocus()
@@ -119,25 +126,11 @@ fun WallScreen(
             .background(WallColors.Background)
             .focusRequester(rootFocusRequester)
             .focusable()
-            // Toggle the menu on D-pad MENU or, when closed, on D-pad
-            // LEFT (the natural gesture for opening a left-side panel
-            // when the Onn remote has no hardware MENU button).
-            // `onPreviewKeyEvent` here covers the case where focus has
-            // moved into the panel: the preview pass runs from the root
-            // down, so a MENU press still closes the panel even after
-            // focus has entered it. LEFT inside the open panel does
-            // NOT bubble here — when the menu is open we return false
-            // and let the panel's own focus system handle it.
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.Menu -> { menu.toggle(); true }
                     Key.DirectionLeft -> if (!menu.isOpen) { menu.open(); true } else false
-                    // BackHandler is the primary close path, but on TV
-                    // Modifier.focusable can consume BACK to exit a
-                    // focus group before the dispatcher sees it. Catch
-                    // BACK here as a belt-and-braces close when the
-                    // menu is open.
                     Key.Back -> if (menu.isOpen) { menu.close(); true } else false
                     else -> false
                 }
@@ -159,10 +152,9 @@ fun WallScreen(
                         .background(Color(0x22FFFFFF)),
                 )
                 VideoGrid(
-                    repository = channels,
-                    tileCount = tileCount,
+                    slots = slots,
                     modifier = Modifier.fillMaxSize(),
-                    lineupSelector = LineupSelector.forWall(maxCount = tileCount)::invoke,
+                    helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                 )
             }
         }
@@ -174,5 +166,60 @@ fun WallScreen(
             onSlotSelected = { slotIndex -> menu.pickSlot(slotIndex) },
             modifier = Modifier.fillMaxSize(),
         )
+
+        // Picker overlays the menu when a slot row was activated. It
+        // renders only when both the menu is open AND there's a pending
+        // SlotPicker selection — closing the menu via BACK clears the
+        // pending state automatically.
+        val pending = menu.pendingSelection
+        if (menu.isOpen && pending is MenuState.PendingSelection.SlotPicker) {
+            ChannelPickerOverlay(
+                slotIndex = pending.slotIndex,
+                channels = pickerChannels,
+                currentSelection = slots.getOrNull(pending.slotIndex)?.currentSlug(),
+                onAssign = { slug ->
+                    lineupStore.assign(pending.slotIndex, slug)
+                    menu.dismissSelection()
+                },
+                onCancel = { menu.dismissSelection() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
+
+/**
+ * Render a [TileSlotResolver.Slot] as a menu [SlotRow]. The detail
+ * line and style come from the slot's own kind — Playing renders as
+ * "live", Offline as "offline", Empty as "— empty —".
+ */
+private fun TileSlotResolver.Slot.toRow(): SlotRow = when (this) {
+    is TileSlotResolver.Slot.Playing -> SlotRow(
+        slotIndex = index,
+        title = "Slot ${index + 1}",
+        detail = "${channel.label} · live",
+        detailStyle = SlotRow.DetailStyle.Live,
+    )
+    is TileSlotResolver.Slot.Offline -> SlotRow(
+        slotIndex = index,
+        title = "Slot ${index + 1}",
+        detail = "${channel.label} · offline",
+        detailStyle = SlotRow.DetailStyle.Offline,
+    )
+    is TileSlotResolver.Slot.Empty -> SlotRow(
+        slotIndex = index,
+        title = "Slot ${index + 1}",
+        detail = "— empty —",
+        detailStyle = SlotRow.DetailStyle.Empty,
+    )
+}
+
+private fun TileSlotResolver.Slot.currentSlug(): String? = when (this) {
+    is TileSlotResolver.Slot.Playing -> channel.slug
+    is TileSlotResolver.Slot.Offline -> channel.slug
+    is TileSlotResolver.Slot.Empty -> null
+}
+
+/** Live channels first, then offline. Alphabetical within each group. */
+private fun List<Channel>.sortedByLiveFirst(): List<Channel> =
+    sortedWith(compareByDescending<Channel> { it.isPlayable }.thenBy { it.label.lowercase() })

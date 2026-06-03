@@ -349,7 +349,74 @@ Result is capped at `tileCount`. If fewer than `tileCount` channels resolve acro
 
 The wall's only inbound is the helper at `BuildConfig.HELPER_BASE_URL` (sourced from `MYMTS_HELPER_BASE_URL` in `gradle.properties`). `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host on the wall is HTTPS-only by Android policy. TLS to the helper is deferred to Stage 6 hardening (with operator-issued internal-CA pinning); documented in `THREAT-MODEL.md T-T4`.
 
-## 10. What this document deliberately does NOT specify yet
+## 10. Stage 5 — in-app menu + channel/lineup control
+
+The wall gains a WyzeGrid-style left side panel for **channel/lineup control only**. Settings, layout config, diagnostics, and other future menu rows are explicitly deferred.
+
+```
+app/src/main/java/com/mymts/
+├── data/lineup/
+│   └── LineupStore.kt           ← SharedPreferences-backed slot→slug persistence
+└── ui/menu/
+    ├── MenuState.kt             ← isOpen + pendingSelection (PendingSelection.SlotPicker)
+    ├── MenuOverlay.kt           ← left side panel, focusable rows, version footer
+    ├── ChannelPickerOverlay.kt  ← centered TV-style popup (cycle + assign + cancel)
+    └── MenuColors.kt            ← WyzeGrid-family palette (green focus, dark translucent)
+```
+
+### Slot list — single source of truth
+
+`WallScreen` computes the slot list **once** per recomposition from three inputs:
+
+```
+ChannelsRepository  ─► allChannels  ─┐
+                                     ├─► TileSlotResolver.resolve(N, default, all, overrides)
+LineupStore         ─► overrides  ───┤   = List<Slot.Playing | Slot.Offline | Slot.Empty>
+LineupSelector      ─► defaultOrder ─┘                              │
+                                                                    ▼
+                                                ┌───────────────────┴──────────────────┐
+                                                ▼                                       ▼
+                                          VideoGrid(slots)                       slots.map { it.toRow() }
+                                                                                       ▼
+                                                                                 MenuOverlay(slotRows)
+```
+
+The menu and the wall **cannot disagree** about a slot's channel because they read the same list. When the picker writes a new override via `LineupStore.assign(slotIndex, slug)`, the store's `mutableStateOf` flips, the wall recomposes, `slots` recomputes, and both surfaces update atomically.
+
+### Slot variants (refactor of Stage 3's TileSlotResolver.Slot)
+
+| Variant | When | Renders as |
+|---|---|---|
+| `Slot.Playing(idx, channel, spec)` | helper says channel is live + has `current_url`; paired with a real player | live video |
+| `Slot.Offline(idx, channel)` | operator-pinned channel exists in helper but `status != live` (mark-and-allow) | C2 honest panel **with the channel's label** |
+| `Slot.Empty(idx)` | no operator pin and no default available | C2 blank panel, no label |
+
+`Slot.Offline` has no `spec` field by construction — the type system rules out a mispaired player, so the structural `BoundTile.init { require(player.specId == slot.spec.id) }` from `9d5b0ad` cannot misfire on an offline-pinned slot.
+
+### Persistence format
+
+`SharedPreferences("mymts_lineup")` → key `lineup_overrides` → JSON array `[slot, slug, slot, slug, …]`. Codec is deterministic (sorted by key), tolerant of corrupt blobs (returns empty + clears), and unit-tested in `LineupStoreCodecTest`. **No secrets, no PII, no absolute paths** — values are short slug strings.
+
+### D-pad model
+
+| Gesture | Menu closed | Menu open | Picker open |
+|---|---|---|---|
+| MENU | open menu | close menu | (picker handles) |
+| LEFT | open menu | (panel focus) | cycle channel back |
+| RIGHT | n/a | (panel focus) | cycle channel forward |
+| UP/DOWN | n/a | move focused row | n/a |
+| CENTER/OK | n/a | open picker for focused slot | **assign** + dismiss |
+| BACK | n/a | close menu | **cancel** — slot unchanged |
+
+BACK is caught both via `BackHandler` and via the root `onPreviewKeyEvent`. On TV, `Modifier.focusable` consumes BACK to exit a focus group before `BackHandler`'s dispatcher sees it; the dual path closes that gap.
+
+### Honesty rules at the menu layer
+
+- **C3 — staleness never silent at the picker.** Each channel in the cycle is decorated with its real current status (`live` / `offline`); the operator cannot mistake an offline channel for one that will play.
+- **C2 — graceful degradation made visible.** An offline-pinned slot renders the C2 panel **with the assigned channel's label** so the operator sees what's planned for the slot vs. an unassigned tile.
+- **9d5b0ad — label/stream binding holds through reassignment.** A reassignment swaps the `Slot.Playing.spec.id`, which forces a fresh player via `bindTiles`'s identity-match. `BoundTile.init { require }` enforces this at construction; a tile labelled "X" cannot end up playing channel "Y" even mid-rebind.
+
+## 11. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

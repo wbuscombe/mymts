@@ -115,6 +115,22 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 *Mitigation:* `HelperClient` pins `schema_version == 1` and **refuses** any other version (`HelperException`). Fields are parsed structurally: `current_url` null/blank → channel marked unplayable; `title` null → feed item silently skipped; `status` enum normalized through a single `parseStatus`. Field parsing is unit-tested in `HelperClientParseTest` + `HelperClientFeedParseTest` against null-injection, missing-field, unknown-status, and bad-schema-version cases. Parse failures on the wire surface to the UI as the existing staleness signal (`feed not updating` / `helper unreachable`), not as an empty list pretending to be current state.
 *Traces to:* **A1**, **C3**.
 
+#### TV-side threats (Stage 5 — additions)
+
+**T-T6. Stage 5 menu introduces a new local-state surface (`LineupStore`).**
+*Likelihood:* low (operator-only, on-device).
+*Impact:* if the persistence held credentials or routable URLs, a compromised app process or a sideloaded debugger with `run-as com.mymts` access could exfiltrate them.
+*Mitigation:* by construction. `LineupStore` stores only short slug strings the operator chose (e.g. `cbs-sports-hq`, `dw-news-en`) — no PII, no credentials, no absolute paths, no URLs. The slug is an opaque key the helper resolves to a current URL via `/api/channels`; if a slug were re-targeted later, the lineup just rebinds to whatever the helper now associates with that slug. Format is `SharedPreferences("mymts_lineup") → key "lineup_overrides"` holding a JSON array `[slot, slug, slot, slug, …]`. The decoder tolerates corrupt blobs (resets to empty + logs once) rather than crashing. Stage 5 codec round-trip is pinned by `LineupStoreCodecTest`.
+*Residual risk:* none beyond the Android sandbox boundary itself, which is the same boundary the rest of the app relies on.
+*Traces to:* **A7** (least-secret persistence), **B5** (operator-only data discipline).
+
+**T-T7. Menu UI could misrepresent a channel's live/offline status.**
+*Likelihood:* medium (every interaction surface where helper truth is restated is a new opportunity for drift).
+*Impact:* if the picker presented an offline channel as if it would play, the operator could assign a slot expecting video and get nothing — a sibling of T-T1 (silent staleness) at the menu layer.
+*Mitigation:* the picker reads each channel's status from the same `Channel.isPlayable` (`status == LIVE && currentUrl != null`) the player consumes. The picker decorates every cycle entry with `live` or `offline` text + colour. The wall's tile renders match — `Slot.Offline` produces the C2 panel with the channel's label, never a fake live tile. Both surfaces consume the same `TileSlotResolver.Slot` list (single source of truth), so the menu and the wall cannot disagree. Honesty pinned by `TileSlotResolverOverridesTest` cases (override-to-offline → `Slot.Offline`; override-to-vanished-slug → graceful fallback to default cycler).
+*Residual risk:* a helper response with a stale `status` field. Mitigated by the existing `T-H5` (helper prober only sets `live` after a fresh manifest check) and Stage 2 `T-T1` (player-side liveness derived from actual frame arrival, not reported state).
+*Traces to:* **C3**.
+
 #### Other stages (filled in as they land)
 
 - **T-A1: Malicious or buggy app sideload on the Onn box.** Stage 6.
@@ -131,6 +147,7 @@ Each will be filled in with **likelihood**, **impact**, **mitigation**, **residu
 - **Stage 1:** review threats applicable to the spike's outbound surface.
 - **Stage 2:** populate every helper-related threat with concrete mitigations and tests.
 - **Stage 3:** populate the TV-side video playback threats. **Done — T-T1 through T-T5 above.**
+- **Stage 5:** confirm the in-app menu introduces no new boundary issues. **Done — T-T6, T-T7 above.**
 - **Stage 6:** populate update mechanism + backup mechanism threats.
 - **Stage 7:** final review against every Trust Bar principle (A0–A9, B1–B5, C0–C6); each must have at least one mitigation line here, or be explicitly noted as "not applicable to this architecture" with reasoning.
 

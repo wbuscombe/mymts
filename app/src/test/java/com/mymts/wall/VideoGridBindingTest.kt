@@ -104,7 +104,7 @@ class VideoGridBindingTest {
     private fun makeSetup(): Triple<List<Slot>, List<Slot.Playing>, StubManager> {
         val a = channelOf("a")
         val b = channelOf("b")
-        val slots = TileSlotResolver.resolve(tileCount = 2, liveChannels = listOf(a, b))
+        val slots = TileSlotResolver.resolve(tileCount = 2, defaultChannels =listOf(a, b))
         val playing = slots.filterIsInstance<Slot.Playing>()
         val manager = StubManager(specs = playing.map { it.spec })
         return Triple(slots, playing, manager)

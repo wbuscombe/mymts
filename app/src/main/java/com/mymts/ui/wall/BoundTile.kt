@@ -55,6 +55,7 @@ internal fun bindTiles(
 ): List<BoundTile> = slots.map { slot ->
     when (slot) {
         is TileSlotResolver.Slot.Empty -> BoundTile(slot = slot, player = null)
+        is TileSlotResolver.Slot.Offline -> BoundTile(slot = slot, player = null)
         is TileSlotResolver.Slot.Playing -> {
             val candidate = findPlayer(slot.spec.id)
             // The init {} check inside BoundTile guarantees the player's

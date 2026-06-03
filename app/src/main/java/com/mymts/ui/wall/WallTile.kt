@@ -20,12 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.ExoPlayer
+import com.mymts.data.helper.Channel
 import com.mymts.player.StreamPlayer
 import com.mymts.ui.components.StreamSurface
 
 /**
- * One tile on the wall. Renders the live video surface when there is
- * one, and surfaces the player's state via a single small badge.
+ * One tile on the wall.
  *
  * Trust Bar rules made visible here:
  *   - **Channel-identity honesty:** the tile takes a [BoundTile] — a
@@ -39,14 +39,13 @@ import com.mymts.ui.components.StreamSurface
  *     [com.mymts.player.LivenessTracker]-derived state on each frame,
  *     not the ExoPlayer-reported playWhenReady. A frozen surface is
  *     never labelled LIVE.
- *   - **C2 (graceful degradation):** a DEAD tile collapses to a
- *     quiet near-black panel, not an error card. No retry button,
- *     no red exclamation, no chrome.
- *
- * Visual register chosen for a 10-foot UI: badge in a small top-right
- * pill, channel name in a low-contrast bottom-left tag. Both stay out
- * of the picture's centre so an actually-LIVE tile reads as video,
- * not chrome.
+ *   - **C2 (graceful degradation):** a DEAD tile, an `Offline` slot,
+ *     and an `Empty` slot all collapse to a quiet near-black panel
+ *     with at most a low-contrast label. Stage 5 adds the
+ *     operator-assigned-but-currently-offline case: the panel reads
+ *     the channel's name as a ghost label so the operator sees what's
+ *     planned for the slot (not a fake live label, not a stale label
+ *     for a vanished channel).
  */
 @Composable
 internal fun WallTile(
@@ -56,6 +55,7 @@ internal fun WallTile(
     Box(modifier = modifier.background(WallColors.TileGap)) {
         when (val slot = bound.slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
+            is TileSlotResolver.Slot.Offline -> OfflineTile(channel = slot.channel)
             is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player)
         }
     }
@@ -68,6 +68,18 @@ private fun EmptyTile() {
             .fillMaxSize()
             .background(WallColors.EmptyTile),
     )
+}
+
+@Composable
+private fun OfflineTile(channel: Channel) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(WallColors.DeadTile),
+    ) {
+        ChannelLabel(label = channel.label, state = StreamPlayer.State.OFFLINE)
+        StateBadge(state = StreamPlayer.State.OFFLINE)
+    }
 }
 
 @Composable
@@ -85,9 +97,6 @@ private fun PlayingTile(slot: TileSlotResolver.Slot.Playing, player: StreamPlaye
         if (!isDead) {
             VideoSurface(player = player?.getPlayer(), state = state)
         }
-        // Label is always drawn from slot.channel.label — the same Channel
-        // whose currentUrl the bound player is playing. The pairing was
-        // enforced at BoundTile construction; this composable trusts that.
         ChannelLabel(label = slot.channel.label, state = state)
         StateBadge(state = state)
     }
