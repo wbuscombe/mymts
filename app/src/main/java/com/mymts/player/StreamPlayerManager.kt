@@ -1,40 +1,84 @@
 package com.mymts.player
 
 import android.content.Context
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 
 /**
- * Owns N StreamPlayers and their lifecycle. The soak harness is the only
- * caller in Stage 1; future stages will use this from the grid screen as
- * well.
+ * Owns N StreamPlayers and their lifecycle.
  *
  * Lifecycle policy (adapted from WyzeGrid): players (re)initialize on
- * onStart, release on onDestroy. onStop merely pauses by clearing playWhenReady
- * (Stage 6 will tune this for the dim-window + watchdog interplay).
+ * onStart, release on onDestroy. onStop merely pauses by clearing
+ * playWhenReady (Stage 6 will tune this for the dim-window + watchdog
+ * interplay).
+ *
+ * **Compose-observable readiness signal ([readyVersion]).** Composables
+ * that bind a UI element to a player (e.g. the wall's [com.mymts.ui.wall.VideoGrid])
+ * must subscribe to this state so they recompose when players actually
+ * become available. The regression in `b19b013` (caught by telemetry —
+ * `EV=TILE_READY=0` against a known-good stream) was that VideoGrid
+ * cached `manager.player(idx)` in a `remember(manager, specs)` block
+ * that evaluates **during composition**, before the `DisposableEffect`
+ * that registers the lifecycle observer has run — so every cached
+ * reference was null. With no subsequent invalidation, the tiles
+ * permanently rendered the dead-panel path (visually identical to a
+ * genuine C2 dead tile, which is why the regression was invisible).
+ *
+ * The fix: increment [readyVersion] inside [onStart] after players are
+ * created. A composable that reads `readyVersion` subscribes to it,
+ * causing Compose to invalidate its `remember` and re-bind the now-
+ * non-null players. See `VideoGrid.kt` for the call-site pattern.
  */
 class StreamPlayerManager(
     private val context: Context,
     val specs: List<StreamSpec>,
+    /**
+     * Override the player constructor for tests. Production passes the
+     * default (the real [StreamPlayer]); tests pass a mock factory so
+     * the readiness-signal behaviour can be exercised without spinning
+     * up real ExoPlayer instances.
+     */
+    private val playerFactory: (Context, StreamSpec) -> StreamPlayer = { ctx, spec ->
+        StreamPlayer(ctx, spec)
+    },
 ) : DefaultLifecycleObserver {
 
     private val _players = mutableMapOf<Int, StreamPlayer>()
     val players: Map<Int, StreamPlayer> get() = _players
+
+    /**
+     * Increments each time the manager's player set becomes ready (after
+     * `onStart`) or is torn down (after `onDestroy`). Composables observe
+     * this so they re-bind after lifecycle events the call-site otherwise
+     * has no synchronous handle on. Backed by a snapshot int state so
+     * Compose tracks reads automatically.
+     */
+    private val _readyVersion = mutableIntStateOf(0)
+    val readyVersion: State<Int> get() = _readyVersion
 
     fun player(idx: Int): StreamPlayer? = _players[idx]
 
     override fun onStart(owner: LifecycleOwner) {
         if (_players.isEmpty()) {
             specs.forEachIndexed { idx, spec ->
-                val p = StreamPlayer(context, spec)
+                val p = playerFactory(context, spec)
                 _players[idx] = p
                 p.initialize()
             }
+            // Flip the signal LAST so callers that observe it see all
+            // players in place when they re-bind. Compose subscribers
+            // recompose on the next snapshot apply.
+            _readyVersion.intValue++
         }
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
         _players.values.forEach { it.release() }
         _players.clear()
+        // Bump again so observers can collapse to the C2 panel cleanly
+        // rather than holding the prior players' references.
+        _readyVersion.intValue++
     }
 }

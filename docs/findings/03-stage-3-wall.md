@@ -1,6 +1,8 @@
 # Finding 03 — Stage 3, the wall on the TV
 
 > **Status:** Stage 3 CLOSED (2026-06-03). The full wall — ticker top, feed pane left, 4-tile video grid right — runs on the Onn 4K. Operator confirmed the assembled wall as a solid v0.1 alpha. **Follow-up pass (2026-06-03):** channel-identity honesty made structural (label/stream binding can no longer drift); CBS Sports HQ + ISS-feed candidate URLs tried (honest "didn't resolve" result); NASA TV moved to a deny list while its variant-fetch problem is unresolved.
+>
+> **Fix-forward (2026-06-03 — same day):** the follow-up commit `b19b013` introduced a Compose-timing regression that broke video startup (player lookup cached null during composition, before lifecycle init; tiles permanently rendered the C2 dead panel that was visually indistinguishable from a real network failure). Diagnosed via telemetry (`EV=TILE_READY=0` against known-good streams). Fixed by adding `StreamPlayerManager.readyVersion: State<Int>` and including it in `VideoGrid`'s `remember` key list. Two new regression-test suites added — `StreamPlayerManagerReadinessTest` would not compile against `b19b013`. Meta-lesson recorded: honest-degradation UI can mask startup regressions; telemetry is the verification standard for video-pipeline changes, not visual inspection. See `docs/findings/runs/stage-3-fixforward-20260603-1658/`.
 
 ---
 

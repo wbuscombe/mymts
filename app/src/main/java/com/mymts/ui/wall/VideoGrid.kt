@@ -69,15 +69,25 @@ fun VideoGrid(
         onDispose { lifecycleOwner.lifecycle.removeObserver(manager) }
     }
 
-    // Build slot.spec.id → player map ONCE per (manager, specs) change.
-    // The lookup is by identity (spec.id), never by slot index, so a
-    // reordered slot list cannot pair a tile with the wrong player.
-    val playerBySpecId: Map<String, StreamPlayer?> = remember(manager, specs) {
-        specs.mapIndexed { idx, spec -> spec.id to manager.player(idx) }.toMap()
-    }
+    // Subscribe to the manager's readiness signal. The `b19b013` regression
+    // (telemetry-confirmed: `EV=TILE_READY=0` against a known-good stream)
+    // came from caching player lookups in a `remember(manager, specs)`
+    // block — that runs **during composition**, before the
+    // `DisposableEffect` above adds the lifecycle observer, so
+    // `manager.player(idx)` returned null and stayed null forever. Reading
+    // `readyVersion.value` subscribes this composable to recompose when
+    // the manager's `onStart` populates its players (the version flips),
+    // and including it in the `remember` keys below makes the binding
+    // re-evaluate at that moment. The structural pairing guarantee
+    // (`BoundTile.init { require(player.specId == slot.spec.id) }`) is
+    // unchanged.
+    val readyVersion by manager.readyVersion
 
-    val bound: List<BoundTile> = remember(slots, playerBySpecId) {
-        bindTiles(slots) { specId -> playerBySpecId[specId] }
+    val bound: List<BoundTile> = remember(slots, manager, readyVersion) {
+        bindTiles(slots) { specId ->
+            val idx = playingSlots.indexOfFirst { it.spec.id == specId }
+            if (idx >= 0) manager.player(idx) else null
+        }
     }
 
     val columns = remember(tileCount) {

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Stage 3 fix-forward — video startup regression repaired (2026-06-03)
+
+The Stage 3 follow-up commit `b19b013` (label/stream binding made structural) introduced a Compose-timing bug that broke video startup. The honesty rule itself was correct; the wiring was wrong. Telemetry — not visual inspection — surfaced it.
+
+### What broke
+
+`VideoGrid` cached the player-by-spec-id lookup in `remember(manager, specs) { … manager.player(idx) … }`. That `remember` block evaluates **during composition**, before the `DisposableEffect` that registers the manager as a lifecycle observer has run. So `manager.player(idx)` returned `null` for every idx, the materialised map permanently cached nulls, and — because `(manager, specs)` was stable across recompositions — nothing invalidated the cache once `manager.onStart` later populated real players. Each `BoundTile` permanently held `player == null`; `WallTile → PlayingTile` early-returned the C2 dead panel; `StreamSurface` was never mounted; no SurfaceView attached to any ExoPlayer; `onRenderedFirstFrame` never fired; `EV=TILE_READY` stayed at 0. The LivenessTracker honestly settled all 4 tiles into `DEAD` after the recovery ladder — correct mechanism, wrong cause.
+
+The C2 dead-panel UI made the regression **visually identical** to a genuine network failure. The original commit message attributed it to an "Akamai blip" — that hypothesis was false. Both Akamai origins responded `HTTP 200` from the dev Mac and were pingable from `.182` at ~12–36 ms RTT with 0% loss.
+
+### The fix
+
+- **`StreamPlayerManager`** now exposes `val readyVersion: State<Int>` — a Compose-observable signal backed by `mutableIntStateOf(0)`, incremented inside `onStart` *after* players are created (and again inside `onDestroy` so observers can collapse cleanly).
+- **`VideoGrid`** now reads `manager.readyVersion.value` (subscribing the composable to its changes) and includes it in `remember(slots, manager, readyVersion) { bindTiles(…) }`. When `onStart` flips the version, Compose invalidates the cached binding, the lookup re-runs with the now-populated manager, and the bound tiles carry real players. `StreamSurface` mounts, surface attaches, video renders, `EV=TILE_READY` fires.
+- `StreamPlayerManager` also gains a `playerFactory` constructor parameter (defaults to `::StreamPlayer`) so the readiness mechanism is unit-testable without spinning up real ExoPlayer instances.
+- **The structural honesty rule** (`BoundTile.init { require(player.specId == slot.spec.id) }` + `bindTiles` identity-pairing + Compose `key(tile.key)` per tile) is **unchanged**. The regression was in *when/how* the binding was wired, not in the rule.
+
+### Telemetry — the proof
+
+| Signal (~90 s after launch) | `b19b013` | After this commit |
+|---|---|---|
+| `EV=TILE_READY` | **0** | **4** (one per slot, within 60 s) |
+| `EV=DECODER` | 12 (3 strikes × 4 tiles) | 4 (one per slot, no recovery thrashing) |
+| `EV=DEAD` | 4 (all tiles settled DEAD) | **0** |
+| LIVE transitions | 0 | 7 (4 initial + 3 bursty self-resolutions) |
+| Wall appearance | 4 C2 dead panels | 4 live video tiles (verified by screencap) |
+
+Stream URLs and network conditions were identical across both runs. The variable was the code. Screencap evidence: `docs/findings/runs/stage-3-fixforward-20260603-1658/`.
+
+### Regression tests
+
+- **`StreamPlayerManagerReadinessTest`** (4 cases) — direct probe of the readiness mechanism. Verifies `readyVersion == 0` and `player(idx) == null` before `onStart`; verifies `readyVersion` increments and players are populated by the factory after `onStart`; verifies `onStart` is idempotent; verifies `onDestroy` releases + bumps. **These tests would not compile against `b19b013`** because the `readyVersion` property does not exist there — the strongest form of "fails on broken / passes on fix."
+- **`VideoGridBindingTest`** (3 cases) — documents the broken vs fixed Compose-`remember` patterns by simulating cache semantics in plain Kotlin. The "buggy wiring without readyVersion key" test demonstrates that the regression's pattern caches nulls forever; the "fixed wiring keyed on readyVersion" test demonstrates that the fix invalidates correctly when readiness flips.
+
+The pre-existing `BoundTileTest` (4 cases) guards the honesty rule but did **not** catch this wiring bug — those tests pass a fully-populated player map, exercising correctness *assuming* players exist. That gap is closed by the two new test suites above.
+
+### Meta-lesson — for the permanent record
+
+**Honest-degradation UI can mask a startup regression.** A `BoundTile` with `player == null` rendered the C2 quiet dead-panel — pixel-identical to a tile whose player legitimately settled DEAD after the recovery ladder ran. The C2 rule (graceful degradation, no error chrome) is correct; it just turns out to be the worst-case UI signal during a startup regression because it normalises "no video" as "honest about being offline."
+
+**Corollary: after any change to the video-pipeline wiring, telemetry (`EV=TILE_READY`, `EV=DECODER`, state-machine transitions) is the verification standard — not visual inspection.** This stage's first verification was visual ("the wall looks right") and the regression slipped past. The operator's directive to verify with telemetry (no display needed) is what surfaced it.
+
+### Standing rules held
+- **unrelated host services untouched.**
+- **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy.
+- App tests green: `StreamPlayerManagerReadinessTest` (4) + `VideoGridBindingTest` (3) added; total app unit-test count ~36+.
+- Helper untouched (the bug was TV-only).
+
 ## Stage 3 follow-up — channel-identity honesty + lineup corrections (2026-06-03)
 
 ### Honesty fix — label and stream cannot drift (the important one)
