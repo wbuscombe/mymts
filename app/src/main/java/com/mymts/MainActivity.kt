@@ -103,6 +103,8 @@ class MainActivity : ComponentActivity() {
                     else -> WallScreen(
                         helperBaseUrl = helperBaseUrl,
                         tileCount = tiles.coerceIn(1, 16),
+                        buildVersion = BuildConfig.VERSION_NAME,
+                        buildSha = BuildConfig.BUILD_SHA,
                     )
                 }
             }
