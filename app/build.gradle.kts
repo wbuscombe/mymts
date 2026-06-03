@@ -45,6 +45,12 @@ fun getGitSha(): String = try {
 val defaultMaxTiles: Int =
     (project.findProperty("MYMTS_DEFAULT_MAX_TILES") as? String)?.toIntOrNull() ?: 6
 
+// Helper base URL — the TV consumes /api/channels + /api/feed from here.
+// Sourced from gradle.properties so retargeting the helper host doesn't
+// require a source edit.
+val helperBaseUrl: String =
+    (project.findProperty("MYMTS_HELPER_BASE_URL") as? String) ?: "http://<LAN_IP>:8091"
+
 android {
     namespace = "com.mymts"
     compileSdk = 35
@@ -60,6 +66,7 @@ android {
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
         buildConfigField("int", "DEFAULT_MAX_TILES", "$defaultMaxTiles")
+        buildConfigField("String", "HELPER_BASE_URL", "\"$helperBaseUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -118,6 +125,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    // Real org.json impl on the JVM test classpath — Android's bundled
+    // org.json is a stub that throws "Method ... not mocked" under
+    // testDebugUnitTest. Production code links the framework version.
+    testImplementation(libs.org.json)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.leakcanary)

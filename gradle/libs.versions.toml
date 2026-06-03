@@ -25,6 +25,9 @@ mockk = "1.13.13"
 kotlinx-coroutines = "1.9.0"
 turbine = "1.2.0"
 
+# Test-only — real org.json impl (Android's bundled copy is a stub on the unit-test classpath)
+org-json = "20240303"
+
 # Debug-only
 leakcanary = "2.14"
 
@@ -53,6 +56,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+org-json = { group = "org.json", name = "json", version.ref = "org-json" }
 leakcanary = { group = "com.squareup.leakcanary", name = "leakcanary-android", version.ref = "leakcanary" }
 
 [plugins]

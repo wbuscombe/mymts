@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stage 3 helper-host cleartext allow-list.
+
+  The TV consumes JSON from the helper at http://<LAN_IP>:8091. The
+  helper itself is LAN-bound (compose binds the host port locally only)
+  and the TV-to-helper boundary is the wired/wifi LAN behind the NAS.
+  Allowing cleartext for that single private host is narrower than the
+  alternative (app-wide `usesCleartextTraffic=true`).
+
+  Stage 6 will revisit this with the production hostname/TLS story; this
+  config is the Stage 3 dev/prod compromise, not the final shape.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false"><LAN_IP></domain>
+    </domain-config>
+</network-security-config>

@@ -9,6 +9,7 @@ import com.mymts.soak.SoakHarness
 import com.mymts.soak.SoakSpec
 import com.mymts.ui.components.PlaceholderScreen
 import com.mymts.ui.theme.MyMtsTheme
+import com.mymts.ui.wall.WallScreen
 
 /**
  * Single activity. Stage 1 has two modes:
@@ -77,6 +78,12 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
 
+        // Stage 3: the default mode is the wall (video grid for the
+        // checkpoint A build; feed + ticker layer in for checkpoint B).
+        // The placeholder screen is kept reachable for build-identity
+        // smoke checks via `--es mode placeholder`.
+        val helperBaseUrl = intent?.getStringExtra("helper") ?: BuildConfig.HELPER_BASE_URL
+
         setContent {
             MyMtsTheme {
                 when (mode) {
@@ -88,10 +95,14 @@ class MainActivity : ComponentActivity() {
                             adhocFixtures = adhocFixtures,
                         )
                     )
-                    else -> PlaceholderScreen(
+                    "placeholder" -> PlaceholderScreen(
                         version = BuildConfig.VERSION_NAME,
                         buildSha = BuildConfig.BUILD_SHA,
                         defaultMaxTiles = BuildConfig.DEFAULT_MAX_TILES,
+                    )
+                    else -> WallScreen(
+                        helperBaseUrl = helperBaseUrl,
+                        tileCount = tiles.coerceIn(1, 16),
                     )
                 }
             }
