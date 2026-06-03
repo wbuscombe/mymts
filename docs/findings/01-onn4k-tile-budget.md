@@ -1,8 +1,10 @@
 # 01 — Onn 4K Tile Budget
 
-> **Status:** Stage 1 GATE — **PRELIMINARY**. The method is validated and the apparatus is committed. The gate exit criterion ("sustained over multiple hours") was not met in-session because a multi-hour soak does not fit in a single session. The operator runs the long soak using the exact harness below; this doc gets a `## Final` section appended once the long-soak data is in.
+> **Status:** Stage 1 GATE — **CLOSED (2026-06-02).** Sustainable ceiling on the Onn 4K (Amlogic S905Y4) = **N=4**, bracket-evidenced (1→6 escalating sweep) and 5.13h-LIVE-confirmed under verified per-tile telemetry, terminated by an external Akamai network event rather than by capacity or memory. Memory: no leak (mature steady-state slope −9.53 KB/min over 184 min, PASS ±50 KB/min). Graceful degradation: confirmed — the recovery ladder + anti-loop ran honestly under a real network outage.
 >
-> **What is committed today:** the method, the apparatus, a 12-minute method-validation run at 6 tiles, the configurable grid default plumbing (`BuildConfig.DEFAULT_MAX_TILES`, sourced from `gradle.properties` → `MYMTS_DEFAULT_MAX_TILES`), and an interim default of **6** pending the long-soak result.
+> **Decision recorded 2026-06-02 (operator, after the v2 long-soak):** close on the 5.13h + network-event evidence rather than chase a pristine 6.0h run a random blip can deny. The gate criterion's *intent* — "can this box sustain 4 tiles over a long run without leaking or degrading from its own limits" — is met. The literal "6.0h continuous" number failed only because of an external network event the box cannot control. See the `Stage 2 Part C` and `Stage 2 Closeout` sections at the end of this file for the full evidence + rationale.
+>
+> **What is committed:** the escalating-probe method + apparatus (`scripts/probe-tile-count.sh`), the Stage 1 short soak that validated the method, the Stage 2 bracket sweep, the Stage 2 long-soak v2 run, and `MYMTS_DEFAULT_MAX_TILES = 4` (no longer "validation-pending") as the measured-safe ceiling for this device profile.
 
 ---
 
@@ -234,7 +236,7 @@ Stage 2 (the helper's real aggregation + resolution) can begin **only once** the
 
 **Closing position, decided 2026-06-01:** the leak question is answered (no leak). The capacity question is not yet answered, because three soaks have shown the 6-tile load can't be sustained from the current fixture pool + the current player code. The capacity re-soak is deferred into Stage 2 — running it again now would just produce a fourth degenerate run.
 
-> **Updated 2026-06-01 (Stage 2 Part C bracket).** The capacity question IS now answered. See `## Stage 2 Part C — Escalating-probe bracket` below. The number this device sustains is **N=4**. The interim default has been moved to 4 (long-soak confirmation in progress).
+> **Updated 2026-06-02 (Stage 2 closed, Path 2).** The capacity question IS now answered. See `## Stage 2 Part C — Escalating-probe bracket` and `## Stage 2 closeout` below. The number this device sustains is **N=4**, bracket-evidenced + 5.13h-LIVE-confirmed under verified per-tile telemetry; the v2 long soak was terminated by an external Akamai network event at h5.13, not by capacity. `MYMTS_DEFAULT_MAX_TILES = 4` is the measured-safe ceiling for this hardware (no longer "validation-pending"). The Stage 1 "Final" prose below is preserved as the historical 2026-06-01 closing position; the closing-position-of-record is the Stage 2 closeout section.
 
 ### Leak behavior — **PASS**
 
@@ -441,20 +443,32 @@ All 4 tiles lost frames within a **12-second window** (14:04:47 → 14:04:59); a
 
 - **6 h of continuous 4-tile LIVE.** We have 5.13 h of continuous 4-tile LIVE followed by ~50 min of all tiles in `DEAD` state. The Stage 1 gate criterion of "Duration ≥ 4 h" is met by the healthy window alone, but the strict "tiles LIVE for the bulk of the run" reading is only met if "bulk" allows ~14% of the run to be tiles-DEAD-due-to-external-event.
 
-### Stage 2 closeout — status: **open pending operator decision**
+### Stage 2 closeout — **CLOSED 2026-06-02** (Path 2: close on the 5.13h-LIVE + network-event evidence)
 
-The verifiable evidence supports `N=4` as the sustainable ceiling on the Onn 4K / Amlogic S905Y4:
-- Bracket sweep (Stage 2 Part C bracket): N=1..4 clean; N=5 degrades; N=6 triggers recovery.
-- 5.13 h continuous N=4 LIVE in v2 with `−9.53 KB/min` PSS slope in the mature steady state (no leak).
-- The state machine + recovery + anti-loop behave correctly even under a real-world adverse event.
+#### Decision
 
-The 47-min tail of all-tiles-DEAD is **not capacity-driven** (zero memory creep, simultaneous failure across two distinct CDN origins, all 4 tiles fail within 13 s — signature of a network event between `.182` and Akamai). When the network recovers, a production wall would refresh the tiles back to LIVE; that refresh action is Stage 5 (operator settings) scope, not Stage 2.
+**N=4 is the sustainable ceiling for this device profile (Onn 4K / Amlogic S905Y4).** Closed on the bracket-sweep + 5.13h-LIVE evidence, not on a 6.0h pristine run.
 
-**Two paths from here, operator's call:**
+#### Why this evidence meets the bar (recorded permanently here for future re-readers)
 
-1. **Re-run** the long soak (4 tiles, 6 h, helper-resolved cycled). If a fresh run achieves 6 h of continuous LIVE with no synchronized DEAD, the gate is unambiguously closed. Cost: another ~6 h of unattended run + a session to verify. Risk: network blips happen; a re-run could land in the same shape.
-2. **Close with the 5.13 h evidence and the caveat documented above.** N=4 is bracket-evidenced + 5.13-h-healthy-evidenced; the state machine handled the external event per design. Cost: zero further runs. Risk: future re-readers see "DEAD at h5.13" without reading the caveat.
+- **The failure mode at h5.13 is unambiguously external, not capacity.** All 4 tiles lost frames within a **12-second window** at 14:04, hitting **two unrelated Akamai CDN origins** (`rbmn-live.akamaized.net` for redbull-tv + `dwamdstream102.akamaized.net` for dw-news-en) simultaneously. This is the signature of a network event between the box and Akamai — capacity failures are *staggered and load-correlated* (as observed at N=5 and N=6 in the bracket sweep), not synchronized across independent upstreams.
+- **The state machine succeeded at the hardest job it has** — surfacing real-world adverse degradation honestly. When the network event hit, the recovery ladder ran (PREPARE → REINIT → REINIT) on each tile, and when recovery genuinely could not succeed, all 4 settled into `DEAD` honestly within ~2 minutes. PSS then dropped to 82.4 MB, independently confirming `SETTLE_DEAD` actually released the 4 decoders. **This is Trust Bar C2 + C3 working correctly under real-world failure; the degraded ending is the system succeeding at its hardest job, not failing.**
+- **The gate criterion's intent is met.** The intent was "can this box sustain 4 tiles over a long run without leaking or degrading from its own limits?" — answered: yes. 5.13h of clean continuous LIVE, mature-state PSS slope −9.53 KB/min (PASS ±50 KB/min), and a correct honest graceful-degradation response when an external network blip arrived. The literal "6.0h continuous" number failed only because of an external event the box cannot control. Re-running risks the identical outcome (network blips are not schedulable) and would be perfectionism on the margin.
 
-`MYMTS_DEFAULT_MAX_TILES = 4` stays either way — the bracket + 5.13 h healthy window are sufficient to set the default; the 47-min DEAD tail does not undermine that number.
+#### Result, stated precisely (not overstated)
 
-WyzeGrid was disabled on `.182` for the v2 window and **re-enabled at the end of this session** per the standing rule. Foregrounded; `WatchdogService` running. The next long-soak attempt (if the operator chooses path 1) will disable it again per the documented recipe.
+| dimension | result |
+|---|---|
+| Sustainable ceiling | **N=4** on the Onn 4K (Amlogic S905Y4) |
+| Bracket evidence | 1→6 escalating sweep, 2026-06-01: N=1..4 clean; N=5 degrades (drops ~37%); N=6 triggers recovery strikes |
+| Continuous LIVE evidence | **5.13h verified** (all 4 tiles, real per-tile telemetry, ~1,140 LIVE↔STALE bursty-stream oscillations per tile, every one self-resolving in ~75ms, zero false-LIVE labels) |
+| Memory | **No leak.** Mature steady-state slope **−9.53 KB/min over 184 min** (h2→h5.08), PASS ±50 KB/min. Early rise (h0→h2: 112→129 MB) is one-time settling (caches + connection pools reach equilibrium), not a leak. Post-DEAD drop to 82.4 MB confirms decoder release. |
+| Graceful degradation | **Confirmed under real-world failure.** Recovery ladder ran + anti-loop held; all 4 tiles settled DEAD honestly within ~2 min of the external network event. |
+| Telemetry fix | **Validated over 6h.** Continuous capture held (`events.log` 2.3 MB / 20,830+ lines, monotonic growth; 352 meminfo samples, no gaps). |
+| What was NOT captured | A clean 6.0h-uninterrupted-LIVE run. Closed on 5.13h + network-event evidence rather than chase a pristine run a random blip can deny. |
+
+#### Config default
+
+`MYMTS_DEFAULT_MAX_TILES = 4` in `gradle.properties` — now the **measured-safe ceiling** for this device profile (no longer "validation-pending"). Bracket-evidenced + 5.13h-LIVE-evidenced.
+
+WyzeGrid was disabled on `.182` for the v2 window and re-enabled at the close of this stage. Foregrounded; `WatchdogService` running.

@@ -1,6 +1,12 @@
 # Stage 2 — Plan
 
-> **Status (this doc):** Stage 2 entry list. Operationalized when the Stage 2 prompt arrives — this is not the prompt, it's the punch list the prompt will draw from. Keep it short and exact.
+> **Status: COMPLETE (2026-06-02).** A, B, and C all done.
+>
+> - ✅ **Part A — Helper** (commit `2808c29`). RSS aggregation + stream-address resolution, hardened deploy on the NAS at `<LAN_IP>:8091`. Trust Bar A1/A2/A4 enforced at the boundary; C3 honored via `/api/channels` masking `current_url → null` when not live.
+> - ✅ **Part B — Player robustness** (commit `aabd7e1`). Frame-age-aware `LivenessTracker` + recovery ladder + anti-loop. C3 violation Stage 1 demonstrated three times is now fixed at the player layer. Demonstrated against the helper's real resolved streams.
+> - ✅ **Part C — Capacity probe** (commits `5e22886` / `3c101c7` / `93f89a2` / this closeout). **Sustainable ceiling: N=4** on the Onn 4K (Amlogic S905Y4) — bracket-evidenced + 5.13h-LIVE-confirmed under verified per-tile telemetry. Closed with the network-event caveat documented in `docs/findings/01-onn4k-tile-budget.md`; full evidence + rationale recorded there.
+>
+> Stage 3 (the real wall UI) is unblocked but a separate instruction.
 
 For *why* Stage 2 exists and what it owns, see `docs/foundation/04-TECHNICAL-APPROACH.md §2 "Piece 2"`. Two non-negotiable items below are graduated out of `docs/BACKLOG.md` because Stage 1 proved they are blockers, not "nice to have"s.
 
@@ -67,7 +73,7 @@ Plausible causes:
 
 ---
 
-## ✅ C (BRACKETED 2026-06-01, long-soak in flight). Capacity probe — DONE up to bracket; long soak running
+## ✅ C — Capacity probe (CLOSED 2026-06-02, Path 2: bracket + 5.13h-LIVE + external Akamai event at h5.13)
 
 Bracket result + method + dw-news-en answer + buffer decision are in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C"`.
 
@@ -78,15 +84,13 @@ Highlights:
 - Buffer floor kept at Stage 1 values; rationale in the finding doc.
 - The escalating-probe procedure is committed as `scripts/probe-tile-count.sh` + recipe in the finding doc — that's the portability deliverable.
 
-### Long-soak status (2026-06-02) — open pending operator decision
+### Long-soak status (2026-06-02) — **CLOSED Path 2** (close on 5.13h + network-event evidence)
 
 - Attempt 1 (`long-soak-4t-20260601-2100`): INVALIDATED by a harness bug (one-shot end-of-run logcat dump lost everything to ring-buffer wrap). Fix landed in `3c101c7`.
-- Attempt 2 (`long-soak-4t-v2-20260602-0857`): 5.13 h of clean N=4 LIVE evidence (state machine honest, PSS slope `−9.53 KB/min` in mature steady state), then a synchronized external network event hit both CDN origins simultaneously at h5.13. State machine + recovery ladder + anti-loop ran exactly per design; all 4 tiles settled into honest `DEAD` within 13 s of each other. Last ~47 min: tiles `DEAD` (no thrashing, no leak).
-- The verifiable evidence supports `N=4` as the ceiling. The strict "6 h continuous LIVE" criterion was missed by the network event, not by capacity. **Two paths**:
-  1. Re-run the long soak (~6 h unattended).
-  2. Close with the 5.13 h evidence and the network-event caveat documented in `docs/findings/01-onn4k-tile-budget.md`.
+- Attempt 2 (`long-soak-4t-v2-20260602-0857`): 5.13 h of clean N=4 LIVE evidence (state machine honest, PSS slope `−9.53 KB/min` in mature steady state), then a synchronized external network event hit both Akamai CDN origins simultaneously at h5.13. State machine + recovery ladder + anti-loop ran exactly per design; all 4 tiles settled into honest `DEAD` within 13 s of each other. Last ~47 min: tiles `DEAD` (no thrashing, no leak).
+- **Decision (2026-06-02):** close on the 5.13h + network-event evidence. The failure mode at h5.13 is unambiguously external (synchronized across two unrelated CDN origins inside a 12-second window — capacity failures are staggered and load-correlated, not synchronized). The state machine succeeded at its hardest job (honest graceful degradation under real-world failure). The gate criterion's *intent* — "sustain 4 tiles without leaking or degrading from the box's own limits" — is met. Re-running risks the identical outcome (network blips are not schedulable). Full rationale + evidence in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 closeout"`.
 
-Until the operator chooses, Stage 2 is technically "not closed." WyzeGrid is **re-enabled** on `.182` regardless (it must not stay disabled while the operator decides).
+WyzeGrid was re-enabled on `.182` at the close.
 
 ## ~~C. Capacity re-soak (this is what completes the Stage 1 gate)~~
 

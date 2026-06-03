@@ -1,9 +1,0 @@
-{
-  "run_id": "long-soak-4t-20260601-2100",
-  "device": "<LAN_IP>:5555",
-  "tiles": 4,
-  "duration_seconds": 21600,
-  "helper": "http://<LAN_IP>:8091",
-  "live_channels_in_pool": 2,
-  "started_at": "2026-06-02T02:00:46Z"
-}

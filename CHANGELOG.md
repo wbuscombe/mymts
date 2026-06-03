@@ -123,7 +123,7 @@ Full details + on-device evidence in `docs/findings/02-player-state-machine.md`.
 - **Part B — player robustness: DONE** (this entry).
 - **Part C — capacity probe: next**. Now unblocked: the helper resolves real streams (A) and the player is honest about staleness (B), so Part C can measure the true sustainable tile ceiling on this hardware.
 
-## Stage 2 Part C — capacity probe bracket (long soak in flight)
+## Stage 2 Part C — capacity probe bracket (historical entry; superseded by the closeout section below)
 
 Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Escalating-probe bracket"`.
 
@@ -157,13 +157,13 @@ Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Esc
 - WyzeGrid is disabled on `.182` for the long soak window; re-enable command documented and queued for closeout.
 - unrelated host services untouched.
 
-### Stage 2 status
+### Stage 2 status (this section — interim; final state in the closeout section below)
 - ✅ Part A — helper.
 - ✅ Part B — player robustness.
-- 🟡 Part C — bracket done; long soak unattended.
-- Stage 2 closes when the long soak ends and the closeout session re-enables WyzeGrid + commits the long-soak result.
+- 🟡 Part C — bracket done; long soak unattended (at this point in the changelog timeline). _Final Part C state recorded in the next section._
+- Stage 2 closes when the long soak ends and the closeout session re-enables WyzeGrid + commits the long-soak result. _(That closeout happened — see next section.)_
 
-## Stage 2 Part C — harness telemetry fix + v2 long-soak (open closeout)
+## Stage 2 Part C — harness telemetry fix + v2 long-soak + closeout
 
 ### Harness telemetry bug + fix
 - The first long-soak attempt (`long-soak-4t-20260601-2100`) came back with a clean memory trace but **zero per-tile telemetry** (`events.log` empty, `summary.json.per_tile = {}`). Root cause: `scripts/probe-tile-count.sh` pulled logcat as a **one-shot `adb logcat -d -s MYMTS_SOAK` at the END of the 6 h sleep**. Over 6 hours the Android logcat ring buffer wrapped many times over; every `MYMTS_SOAK` event was overwritten before the dump fired.
@@ -179,31 +179,34 @@ Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Esc
 - **What the v2 run proves:** the harness fix held; the state machine is honest under sustained real load; the recovery ladder + anti-loop behave correctly under a real network outage; no memory leak in the mature steady state.
 - **What it does NOT prove:** 6 h of continuous 4-tile LIVE. The strict criterion was missed by a network event, not by capacity.
 
-### Stage 2 closeout — **open, operator's call**
+### Stage 2 closeout — **CLOSED 2026-06-02**
 
-The verifiable evidence supports `N=4` as the ceiling on the Onn 4K / Amlogic S905Y4:
-- Bracket sweep: N=1..4 clean; N=5 degrades; N=6 triggers recovery.
-- 5.13 h continuous N=4 LIVE in v2 with mature-state PSS slope `−9.53 KB/min`.
-- State machine + recovery + anti-loop behaved correctly even under adverse event.
+**Sustainable ceiling on the Onn 4K (Amlogic S905Y4) = N=4** — bracket-evidenced (1→6 escalating sweep) and **5.13h-LIVE-confirmed** under verified per-tile telemetry in the v2 long soak. The strict "6.0h continuous LIVE" criterion was missed by a synchronized external Akamai network event at h5.13, **not** by capacity or memory pressure — failure was synchronized across two unrelated CDN origins inside a 12-second window (capacity failures are staggered and load-correlated; this signature is unambiguously external). Closed on the evidence rather than chase a pristine run a random network blip can deny.
 
-The 47-min tail of all-tiles-DEAD is **not capacity-driven** — simultaneous failure across two distinct CDN origins inside a 12 s window is a network event between `.182` and Akamai. When the network recovers, a production wall would refresh the tiles back to LIVE; that refresh action is Stage 5 (operator settings) scope.
+**Three permanent records carried forward in this stage:**
+1. **N=4 ceiling with honest framing.** Stated as bracket-evidenced + 5.13h-LIVE-confirmed (not "6h confirmed"). Re-readers see the precise evidence and the network-event caveat together; the closing rationale lives in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 closeout"`.
+2. **Harness telemetry bug + fix as a failure-mode-on-record.** Documented above: one-shot end-of-run logcat dump → ring-buffer wrap → zero per-tile evidence over 6h. Fix is continuous background stream + 16 MB buffer growth + `set +e` in subshells + `pkill -TERM -P` cleanup. Recorded so this trap cannot catch a future stage silently.
+3. **Graceful degradation as C2/C3 validation.** When the external network event hit at h5.13, the recovery ladder ran (PREPARE → REINIT → REINIT → SETTLE_DEAD), the anti-loop discipline held (DEAD is absorbing), all 4 tiles settled honestly within 13 s, and PSS dropped to 82.4 MB confirming the decoders were released. The state machine **succeeded** at its hardest job: surfacing real-world adverse failure honestly. C2 + C3 validated under real-world conditions, not just synthetic ones.
 
-**Two paths from here:**
+`MYMTS_DEFAULT_MAX_TILES = 4` in `gradle.properties` — the **measured-safe ceiling** for this device profile (no longer "validation-pending"). The `Awaiting long-soak confirmation` annotation has been dropped from the comment block.
 
-1. Re-run the long soak (~6 h unattended) to demonstrate 6 h of continuous LIVE. Risk: future network blips can land in the same shape.
-2. Close with the 5.13 h evidence + network-event caveat documented in `docs/findings/01-onn4k-tile-budget.md`.
-
-`MYMTS_DEFAULT_MAX_TILES = 4` stays either way — the bracket + 5.13 h healthy window are sufficient to set the default.
+**What closing Stage 2 means in total:** the security shield (helper), the honest self-recovering player, and the verified hardware capacity are all done. Stage 3 (the real wall UI) is unblocked.
 
 ### Standing rules held
 - WyzeGrid re-enabled on `.182` at end of session (foreground, watchdog service running). Verified.
 - unrelated host services untouched.
 - App + helper test suites green.
 
-### Stage 2 status (updated)
+### Run-artifact hygiene at closeout
+- Dropped `docs/findings/runs/long-soak-4t-20260601-2100/` (telemetry-bug-invalidated v1 — the failure mode is permanently recorded above; the run dir itself is dead weight).
+- Dropped `docs/findings/runs/probe-fixproof-20260602-0838-4t/` (proof-of-fix run, superseded by the 6h v2 which independently demonstrates the fix held).
+- Kept `docs/findings/runs/long-soak-4t-v2-20260602-0857/` — the durable evidence record (5.13h healthy + DEAD evidence + memory record).
+- Kept the `probe-20260601-2007-{1..6}t` bracket-sweep dirs.
+
+### Stage 2 status (closed)
 - ✅ Part A — helper.
 - ✅ Part B — player robustness.
-- 🟡 Part C — bracket done; long-soak partially confirmed (5.13 h healthy + external-event DEAD); closeout pending operator decision.
+- ✅ Part C — capacity probe. **N=4 ceiling, bracket-evidenced + 5.13h-LIVE-confirmed, terminated by external network event.**
 
 ### Known limitations carried forward
 - `SoakFixtures.LIVE` URLs are public broadcaster HLS endpoints and decay over time. The first long-soak run may need updated URLs before it produces useful data; the rule is to edit the fixture file in a single commit, never silently drop dead fixtures from a result.
