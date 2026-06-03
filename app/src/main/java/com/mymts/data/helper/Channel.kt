@@ -38,3 +38,30 @@ data class ChannelsSnapshot(
     /** Only the channels we can actually play right now. */
     val playable: List<Channel> get() = channels.filter { it.isPlayable }
 }
+
+/**
+ * One row from the helper's `/api/feed` response. The helper guarantees
+ * inert plain text (HTML stripped at parse time) — the TV renders
+ * everything as native Text and never instantiates a WebView.
+ *
+ * `title` is always present; `summary` and `link` may be null. The
+ * timestamp pair gives the publisher time when present, falling back
+ * to the helper's fetch time.
+ */
+data class FeedItem(
+    val id: Long,
+    val source: String,
+    val title: String,
+    val summary: String?,
+    val link: String?,
+    val publishedAtIso: String?,
+    val fetchedAtIso: String?,
+)
+
+/**
+ * Parsed `/api/feed` snapshot.
+ */
+data class FeedSnapshot(
+    val schemaVersion: Int,
+    val items: List<FeedItem>,
+)

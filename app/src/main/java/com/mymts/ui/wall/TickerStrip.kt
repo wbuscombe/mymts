@@ -1,0 +1,113 @@
+package com.mymts.ui.wall
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.mymts.data.ticker.TickerEntry
+import com.mymts.data.ticker.TickerSource
+
+/**
+ * Top-of-wall scrolling ticker.
+ *
+ * Stage 3 reads from any [TickerSource]; the only implementation today
+ * is the sample-data adapter, and every entry it emits is decorated as
+ * SAMPLE so the operator can never mistake the values for live quotes
+ * (Trust Bar C3 applied to the ticker).
+ *
+ * Visual register: a thin dark strip across the top of the wall, with
+ * each entry rendered as `SYMBOL · value` (an arrow glyph encodes
+ * direction). Values use a monospaced font so up/down don't reshuffle
+ * the marquee width on each repaint.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun TickerStrip(
+    source: TickerSource,
+    modifier: Modifier = Modifier,
+) {
+    val entries by source.state.collectAsState()
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .background(Color(0xFF050505)),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (entries.isEmpty()) {
+            // C2: empty source = empty strip. No error text, no chrome.
+            return@Box
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            entries.forEach { entry -> TickerCell(entry) }
+        }
+    }
+}
+
+@Composable
+private fun TickerCell(entry: TickerEntry) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = entry.symbol,
+            color = WallColors.LabelPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+        )
+        Text(
+            text = entry.display,
+            color = WallColors.LabelMuted,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        val (arrow, color) = when (entry.direction) {
+            TickerEntry.Direction.UP -> "▲" to WallColors.BadgeLive
+            TickerEntry.Direction.DOWN -> "▼" to Color(0xFFEF5350)
+            TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
+        }
+        Text(text = arrow, color = color, fontSize = 11.sp)
+        if (entry.isSample) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0x33FFFFFF))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                Text(
+                    text = "SAMPLE",
+                    color = WallColors.LabelGhost,
+                    fontSize = 8.sp,
+                    letterSpacing = 1.sp,
+                )
+            }
+        }
+    }
+}

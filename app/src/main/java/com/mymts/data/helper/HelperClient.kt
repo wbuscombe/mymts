@@ -39,6 +39,13 @@ class HelperClient(
         parseChannels(json)
     }
 
+    /**
+     * Fetch and parse `/api/feed` with a bounded item limit. The helper
+     * already strips HTML — we render whatever it returns as native text.
+     */
+    suspend fun fetchFeed(limit: Int = 100): Result<FeedSnapshot> =
+        request("/api/feed?limit=$limit") { json -> parseFeed(json) }
+
     private suspend fun <T> request(path: String, parse: (JSONObject) -> T): Result<T> = try {
         val body = openGet(path)
         val obj = JSONObject(body)
@@ -76,6 +83,34 @@ class HelperClient(
             "live" -> Channel.Status.LIVE
             "unavailable" -> Channel.Status.UNAVAILABLE
             else -> Channel.Status.UNKNOWN
+        }
+
+        /**
+         * Parse a `/api/feed` JSON body. Items without a `title` are skipped
+         * (the helper guarantees titles, but defending against the contract
+         * drifting is cheap).
+         */
+        fun parseFeed(json: JSONObject): FeedSnapshot {
+            val version = json.optInt("schema_version", -1)
+            if (version != SUPPORTED_SCHEMA_VERSION) {
+                throw HelperException("feed schema_version=$version not supported")
+            }
+            val arr = json.optJSONArray("items")
+                ?: throw HelperException("items field missing")
+            val list = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val title = o.optStringOrNull("title") ?: return@mapNotNull null
+                FeedItem(
+                    id = o.optLong("id", -1L),
+                    source = o.optStringOrNull("source") ?: "",
+                    title = title,
+                    summary = o.optStringOrNull("summary"),
+                    link = o.optStringOrNull("link"),
+                    publishedAtIso = o.optStringOrNull("published_at"),
+                    fetchedAtIso = o.optStringOrNull("fetched_at"),
+                )
+            }
+            return FeedSnapshot(version, list)
         }
 
         /**

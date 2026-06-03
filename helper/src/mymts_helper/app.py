@@ -28,6 +28,7 @@ from .channels.prober import ChannelProber
 from .config import Config
 from .feeds.api import get_router as feed_router
 from .feeds.poller import FeedPoller
+from .feeds.seeder import seed_from_file as seed_feeds_from_file
 from .fetcher import Resolver
 from .health import FreshnessSnapshotter, HealthState
 from .log import configure_logging
@@ -45,6 +46,14 @@ def _resolve_seed_path() -> Path:
     # idempotent and operator-curated edits still flow through.
     from importlib.resources import files
     pkg = files("mymts_helper.channels").joinpath("seed.json")
+    return Path(str(pkg))
+
+
+def _resolve_feed_seed_path() -> Path:
+    # Same shape as the channel seed: ships with the package, applied
+    # idempotently on every boot.
+    from importlib.resources import files
+    pkg = files("mymts_helper.feeds").joinpath("seed.json")
     return Path(str(pkg))
 
 
@@ -69,12 +78,15 @@ def create_app(
     schema_version = db.migrate(db_path)
     log.info("db_ready", extra={"path": str(db_path), "schema_version": schema_version})
 
-    # Seed channels (idempotent).
+    # Seed channels + feed sources (idempotent).
     seed_path = _resolve_seed_path()
+    feed_seed_path = _resolve_feed_seed_path()
     conn = db.connect(db_path)
     try:
         seeded = channels_registry.seed_from_file(conn, seed_path)
         log.info("channels_seeded", extra={"count": seeded})
+        seeded_feeds = seed_feeds_from_file(conn, feed_seed_path)
+        log.info("feed_sources_seeded_total", extra={"count": seeded_feeds})
     finally:
         conn.close()
 
