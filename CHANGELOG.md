@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Stage 3 follow-up — channel-identity honesty + lineup corrections (2026-06-03)
+
+### Honesty fix — label and stream cannot drift (the important one)
+
+Operator review of the polished wall identified a tile-label / stream desync — a tile labelled "X" could end up playing channel "Y" as the resolution/backfill order changed. **This is a labelling lie**, the channel-identity sibling of Trust Bar C3 (no silent staleness). Fixed structurally:
+
+- **New `com.mymts.ui.wall.BoundTile`** pairs a slot with the player whose `spec.id` matches that slot. `init { require(player.specId == slot.spec.id) }` throws at construction if the pairing is wrong. A tile labelled "X" cannot end up playing channel "Y" because the type system + runtime check forbid it.
+- **New `bindTiles(slots, findPlayer)`** pairs by identity match on `spec.id`, never by index. A stale player from a prior recomposition is discarded (`.takeIf { specId match }`); the tile renders the same C2 panel as a settled-DEAD tile rather than drawing the wrong channel's video.
+- **`WallTile` rewritten** to take a `BoundTile` parameter; no internal player lookup. Label, state, and player all flow from the same already-paired object.
+- **`Compose key(tile.key)`** wraps each `WallTile` in `VideoGrid` so when a slot's channel changes the tile is rebuilt from scratch — no stale label or surface state can leak across the identity change.
+- **4 regression tests** in `app/src/test/java/com/mymts/wall/BoundTileTest.kt` exercise the operator's described scenario (preferred fail, fallbacks backfill, labels still match), the runtime-check fires for a deliberately-wrong pairing, the lookup-miss case renders null rather than a wrong-channel player, and the stale-specId player is discarded.
+
+### Lineup corrections
+
+- **CBS Sports HQ**: prior candidate was CBS *News*, not Sports HQ — replaced with a Samsung TV+ Wurl pattern guess (`cbssports-cbssports-1-us.samsung.wurl.tv/playlist.m3u8`). Helper prober verdict: **DNS failure** — that candidate doesn't resolve from this network. Honest plain-text result recorded: a working current public HLS endpoint for CBS Sports HQ could not be reliably found without web access. Per the operator's "honest OFFLINE rather than the wrong channel mislabeled" instruction, the slug stays in the seed but doesn't occupy a default slot until a working endpoint is found.
+- **ISS feed**: added new `iss-feed` channel slug in `LineupSelector.FALLBACK` in NASA TV's place. ISS candidate URL: `iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8`. Helper prober verdict: **SSL certificate hostname mismatch** — UStream's cert is no longer valid for that hostname. Honest result: candidate doesn't resolve.
+- **NASA TV moved to a deny list**: new `LineupSelector.DENY = setOf("nasa-tv")`. NASA TV's master HLS manifest passes the prober but its variant playlist fails for ExoPlayer; the slug stays seeded (so the operator can re-enable it once the prober is deepened to variant-fetch — already in BACKLOG) but is structurally excluded from the default lineup, including from the "rest" backfill tier. 3 unit tests in `LineupSelectorDenyTest.kt` pin this.
+
+### Net result on the wall
+
+Helper currently reports `dw-news-en`, `redbull-tv`, and `nasa-tv` as live. `LineupSelector.forWall(4)`: preferred + fallback (10 slugs total) all unavailable, NASA TV denied in the "rest" tier → only `dw-news-en` and `redbull-tv` survive, `TileSlotResolver` cycles `[dw, redbull, dw, redbull]` into the 4 slots. Same shape as the Stage 2 v2 long-soak.
+
+Evidence: `docs/findings/runs/stage-3-followup-20260603-1235/wall-followup-c2-panels-honest.png` — captured during an external Akamai network blip when all 4 tiles were settled in honest C2 OFFLINE panels. Each label correctly matches its assigned channel; NASA TV is denied even though the helper has it as live. The honesty rules hold even under adverse network conditions.
+
+### Standing rules held
+
+- **unrelated host services untouched.**
+- **WyzeGrid** as-found on `.182`.
+- App tests green: 4 `BoundTileTest` + 3 `LineupSelectorDenyTest` added on top of prior suite. Helper tests green (122).
+
+### Carried forward to BACKLOG
+
+The channel-resolution-investigation entry was extended to cover four sub-tracks: (1) find current working candidate URLs for CBS Sports HQ + ISS feed, (2) deepen the prober to variant-fetch (turns NASA TV and any other master-OK-variant-FAIL into real lineup options), (3) geo-blocks (BBC News, C-SPAN — needs an egress strategy with non-trivial threat-model implications), (4) DNS-blocked candidate-URL rotation (CNN, LiveNOW, Newsmax, CNN International).
+
 ## Stage 3 — the wall on the TV (CLOSED 2026-06-03)
 
 ### Added — TV-side wall UI

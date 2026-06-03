@@ -3,7 +3,13 @@
     "slug": "cbs-sports-hq",
     "label": "CBS Sports HQ",
     "kind": "hls",
-    "source_url": "https://dai.google.com/linear/hls/event/Sid4xiTQTkCT1SLu6rjUSQ/master.m3u8"
+    "source_url": "https://cbssports-cbssports-1-us.samsung.wurl.tv/playlist.m3u8"
+  },
+  {
+    "slug": "iss-feed",
+    "label": "ISS Live",
+    "kind": "hls",
+    "source_url": "https://iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8"
   },
   {
     "slug": "bbc-news",

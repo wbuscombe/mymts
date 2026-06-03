@@ -28,14 +28,20 @@ import com.mymts.ui.components.StreamSurface
  * one, and surfaces the player's state via a single small badge.
  *
  * Trust Bar rules made visible here:
- *   - **C3 (no silent staleness):** the badge reflects the
- *     [LivenessTracker]-derived state on each frame, not the
- *     ExoPlayer-reported playWhenReady. A frozen surface is never
- *     labelled LIVE.
+ *   - **Channel-identity honesty:** the tile takes a [BoundTile] — a
+ *     slot paired with the player whose `spec.id` matches that slot.
+ *     Label, channel, and stream all flow from that single object;
+ *     no separate lookup happens inside this composable, and
+ *     [BoundTile]'s `init` check guarantees the player matches the
+ *     slot it's drawn under. A label can never describe the wrong
+ *     stream by construction.
+ *   - **C3 (no silent staleness):** the state badge reflects the
+ *     [com.mymts.player.LivenessTracker]-derived state on each frame,
+ *     not the ExoPlayer-reported playWhenReady. A frozen surface is
+ *     never labelled LIVE.
  *   - **C2 (graceful degradation):** a DEAD tile collapses to a
  *     quiet near-black panel, not an error card. No retry button,
- *     no red exclamation, no chrome. The tile *was* there; now
- *     it isn't — and the room still feels calm.
+ *     no red exclamation, no chrome.
  *
  * Visual register chosen for a 10-foot UI: badge in a small top-right
  * pill, channel name in a low-contrast bottom-left tag. Both stay out
@@ -43,19 +49,14 @@ import com.mymts.ui.components.StreamSurface
  * not chrome.
  */
 @Composable
-fun WallTile(
-    slot: TileSlotResolver.Slot,
-    playerFor: (TileSlotResolver.Slot.Playing) -> StreamPlayer?,
+internal fun WallTile(
+    bound: BoundTile,
     modifier: Modifier = Modifier,
 ) {
-    // The parent grid already supplies inter-tile spacing; the tile itself
-    // fills its allocated cell edge-to-edge. Black-bar letterboxing is the
-    // responsibility of the inner StreamSurface (RESIZE_MODE_FIT) so each
-    // tile's video is centered with clean bars on the cell background.
     Box(modifier = modifier.background(WallColors.TileGap)) {
-        when (slot) {
+        when (val slot = bound.slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
-            is TileSlotResolver.Slot.Playing -> PlayingTile(slot, playerFor(slot))
+            is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player)
         }
     }
 }
@@ -84,6 +85,9 @@ private fun PlayingTile(slot: TileSlotResolver.Slot.Playing, player: StreamPlaye
         if (!isDead) {
             VideoSurface(player = player?.getPlayer(), state = state)
         }
+        // Label is always drawn from slot.channel.label — the same Channel
+        // whose currentUrl the bound player is playing. The pairing was
+        // enforced at BoundTile construction; this composable trusts that.
         ChannelLabel(label = slot.channel.label, state = state)
         StateBadge(state = state)
     }
@@ -134,8 +138,6 @@ private fun ChannelLabel(label: String, state: StreamPlayer.State) {
 
 @Composable
 private fun StateBadge(state: StreamPlayer.State) {
-    // LIVE doesn't earn a badge here — the picture being there is the
-    // signal. Anything else gets a quiet, non-flashing label.
     val (text, color) = when (state) {
         StreamPlayer.State.LIVE -> return
         StreamPlayer.State.CONNECTING -> "CONNECTING" to WallColors.BadgeConnecting

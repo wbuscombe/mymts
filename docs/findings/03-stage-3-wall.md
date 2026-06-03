@@ -1,6 +1,6 @@
 # Finding 03 — Stage 3, the wall on the TV
 
-> **Status:** Stage 3 CLOSED (2026-06-03). The full wall — ticker top, feed pane left, 4-tile video grid right — runs on the Onn 4K. Operator confirmed the assembled wall as a solid v0.1 alpha; this finding records the three honest constraints, the channel-resolution result from the polish pass, and what the operator should expect to see at next launch.
+> **Status:** Stage 3 CLOSED (2026-06-03). The full wall — ticker top, feed pane left, 4-tile video grid right — runs on the Onn 4K. Operator confirmed the assembled wall as a solid v0.1 alpha. **Follow-up pass (2026-06-03):** channel-identity honesty made structural (label/stream binding can no longer drift); CBS Sports HQ + ISS-feed candidate URLs tried (honest "didn't resolve" result); NASA TV moved to a deny list while its variant-fetch problem is unresolved.
 
 ---
 
@@ -101,7 +101,54 @@ The helper's prober validates the *master* HLS manifest only (`#EXTM3U` prefix c
 
 See `docs/BACKLOG.md` for each, with `What` / `Why-not-now` / `Reconsider when` framing.
 
-## 6. Standing rules at Stage 3 close
+## 6. Follow-up pass (2026-06-03) — channel-identity honesty + lineup corrections
+
+Operator review of the polished wall surfaced three items: a wrong CBS stream, a NASA → ISS swap, and — most importantly — a tile-label / stream desync (a label could describe the wrong stream as the resolution/backfill order changed). The follow-up pass addresses each.
+
+### 6.1 Channel-identity honesty — structural fix (the important one)
+
+The label / stream desync is a **labelling lie** — the same class of violation as a LIVE badge over a frozen surface (Trust Bar C3), at the identity layer instead of the liveness layer. Fixed in code, not in convention:
+
+- New `com.mymts.ui.wall.BoundTile` data class pairs a slot with the player whose `spec.id` matches that slot. `init { require(...) }` throws at construction if the pairing is wrong; **a tile labelled "X" cannot end up playing channel "Y"** because the type system + runtime check forbid it.
+- New `bindTiles(slots, findPlayer)` pairs by **identity match on `spec.id`**, never by index. A stale player from a prior recomposition is discarded (`.takeIf { it.specId == slot.spec.id }`); the tile renders the C2 dead panel rather than drawing the wrong channel's video.
+- `WallTile` rewritten to take a `BoundTile` parameter — no internal player lookup. Label, state, and player all flow from the same already-paired object.
+- Compose `key(tile.key)` wraps each `WallTile` in `VideoGrid` so when a slot's channel changes the tile is rebuilt from scratch.
+
+Regression suite: `app/src/test/java/com/mymts/wall/BoundTileTest.kt`:
+- `label, channel, and player all come from one Channel after backfill` — runs the operator's described scenario (preferred fail, fallbacks backfill) and asserts every (label, url) pair matches a single Channel.
+- `binding the wrong player to a slot throws` — proves the runtime check fires.
+- `lookup miss leaves the tile with null player, not a wrong-channel player` — the wall never falls back to a different player to "fill" the slot.
+- `stale player whose specId mismatches is discarded, not drawn` — second-layer guarantee.
+
+### 6.2 CBS Sports HQ — candidate tried, didn't resolve
+
+Replaced the prior CBS *News* endpoint (which had been mislabeled as Sports HQ) with the Samsung TV+ Wurl pattern guess `https://cbssports-cbssports-1-us.samsung.wurl.tv/playlist.m3u8`. Helper prober verdict: **DNS failure** — that candidate doesn't resolve from this network. **Honest plain-text result:** a working current public HLS endpoint for CBS Sports HQ could not be reliably found without web access. Per the operator's instruction ("honest OFFLINE rather than the wrong channel mislabeled"), the `cbs-sports-hq` slug stays in the seed but does not occupy a default slot until a working endpoint is found. The wall skips it; the slot backfills via the selector.
+
+### 6.3 NASA TV → ISS feed — ISS candidate tried, didn't resolve; NASA TV added to deny list
+
+- ISS candidate: `https://iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8` (NASA's UStream feed). Helper prober verdict: **SSL certificate hostname mismatch** — UStream's cert is no longer valid for that hostname. Honest result: candidate doesn't resolve.
+- The `iss-feed` slug stays in the seed (operator can update the candidate later) and is in `LineupSelector.FALLBACK` in NASA TV's place.
+- **`LineupSelector.DENY = setOf("nasa-tv")`** — new mechanism. NASA TV's master HLS manifest passes the prober's check but its variant playlist fails for ExoPlayer; the slug remains seeded (so the operator can re-enable it once the prober is deepened to variant-fetch — already in BACKLOG) but it's structurally excluded from the default lineup, including from the "rest" backfill tier. 3 new unit tests in `LineupSelectorDenyTest.kt` pin this.
+
+### 6.4 Net result on the wall
+
+Helper currently reports `dw-news-en`, `redbull-tv`, and `nasa-tv` as live. After `LineupSelector.forWall(4)`:
+
+- preferred + fallback (10 slugs across both) — all unavailable, skipped.
+- rest — `nasa-tv` is in `DENY` → only `dw-news-en` and `redbull-tv` survive.
+- `TileSlotResolver` cycles `[dw, redbull, dw, redbull]` into the 4 slots.
+
+This is the same shape as the Stage 2 v2 long-soak (2 channels cycled into 4 slots). Each label provably matches its slot. Screencap evidence: `docs/findings/runs/stage-3-followup-20260603-1235/`.
+
+### 6.5 What's still in BACKLOG (extended)
+
+The channel-resolution-investigation entry now covers four sub-tracks the follow-up surfaced:
+- Find current working candidate URLs for CBS Sports HQ + ISS feed (data, not architecture).
+- Deepen the helper's prober to also fetch a variant playlist — turns NASA TV (and any other master-OK-variant-FAIL channel) from a deny-listed seed into a real lineup option.
+- Address geo-blocks (BBC News, C-SPAN) — likely needs an egress strategy; threat-model implications are non-trivial.
+- DNS-blocked candidate-URL rotation (CNN, LiveNOW from FOX, Newsmax, CNN International) — also data, not architecture.
+
+## 7. Standing rules at Stage 3 close
 
 - **unrelated host services: never touched** (entire stage).
 - **WyzeGrid:** re-enabled on `.182` at end of every device run; no soak windows were opened during Stage 3, so disable/re-enable wasn't needed for any extended period.

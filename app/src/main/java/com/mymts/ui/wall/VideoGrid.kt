@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,20 +32,17 @@ import kotlin.math.sqrt
 /**
  * The N=[tileCount]-tile video grid.
  *
- * Stage 3 polish: the grid now **autofits** the region it's given —
- * tiles divide the available space evenly (rows × columns) rather
- * than each claiming a fixed 16:9 box. Aspect-ratio correctness moves
- * inside the tile, where [StreamSurface]'s RESIZE_MODE_FIT letterboxes
- * the video to its actual cell dimensions. Net effect: the grid fills
- * its parent edge-to-edge horizontally; each tile then renders the
- * video centered with clean black bars top/bottom (or left/right)
- * where the source ratio doesn't match the cell.
+ * Channel-identity honesty (Trust Bar C3 at the identity layer):
+ * each tile receives a [BoundTile] — a slot paired with the player
+ * whose `spec.id` matches that slot. The pairing is enforced at
+ * construction (see [BoundTile.init]) and Compose `key(slot.id)`
+ * around each [WallTile] guarantees identity changes when a slot's
+ * channel changes. A label can never describe the wrong stream.
  *
- * Recomposition discipline (unchanged from Checkpoint A):
- *   - the set of live channels changes → slot ids change → Compose
- *     `key()`s rebuild only the affected tiles;
- *   - any tile's [StreamPlayer.State] changes → only that tile's
- *     badge/dim recomposes.
+ * Autofit (Stage 3 polish): rows × columns each take `weight(1f)`,
+ * so the grid fills its parent in both dimensions; cell dimensions
+ * follow from the parent. Aspect-ratio correctness lives inside the
+ * tile via [com.mymts.ui.components.StreamSurface]'s RESIZE_MODE_FIT.
  */
 @Composable
 fun VideoGrid(
@@ -71,9 +69,15 @@ fun VideoGrid(
         onDispose { lifecycleOwner.lifecycle.removeObserver(manager) }
     }
 
-    val playerBySlotId: (Slot.Playing) -> StreamPlayer? = { slot ->
-        val idx = playingSlots.indexOfFirst { it.id == slot.id }
-        if (idx >= 0) manager.player(idx) else null
+    // Build slot.spec.id → player map ONCE per (manager, specs) change.
+    // The lookup is by identity (spec.id), never by slot index, so a
+    // reordered slot list cannot pair a tile with the wrong player.
+    val playerBySpecId: Map<String, StreamPlayer?> = remember(manager, specs) {
+        specs.mapIndexed { idx, spec -> spec.id to manager.player(idx) }.toMap()
+    }
+
+    val bound: List<BoundTile> = remember(slots, playerBySpecId) {
+        bindTiles(slots) { specId -> playerBySpecId[specId] }
     }
 
     val columns = remember(tileCount) {
@@ -85,13 +89,12 @@ fun VideoGrid(
     }
 
     Box(modifier = modifier.background(WallColors.Background)) {
-        if (slots.isEmpty()) {
+        if (bound.isEmpty()) {
             EmptyState(reason = "No channels reported by the helper.")
         } else {
             AutofitGrid(
                 columns = columns,
-                slots = slots,
-                playerFor = playerBySlotId,
+                bound = bound,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -103,20 +106,13 @@ fun VideoGrid(
     }
 }
 
-/**
- * Even split: rows × columns each receive `weight(1f)` of the parent.
- * The grid fills its parent in both dimensions; each cell is therefore
- * `parentWidth/columns × parentHeight/rows`. Letterboxing happens
- * inside the tile via [StreamSurface]'s resize mode.
- */
 @Composable
 private fun AutofitGrid(
     columns: Int,
-    slots: List<Slot>,
-    playerFor: (Slot.Playing) -> StreamPlayer?,
+    bound: List<BoundTile>,
     modifier: Modifier = Modifier,
 ) {
-    val rows = ceil(slots.size / columns.toDouble()).toInt().coerceAtLeast(1)
+    val rows = ceil(bound.size / columns.toDouble()).toInt().coerceAtLeast(1)
     Column(
         modifier = modifier.fillMaxSize().padding(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -130,16 +126,20 @@ private fun AutofitGrid(
             ) {
                 for (c in 0 until columns) {
                     val idx = r * columns + c
-                    if (idx < slots.size) {
-                        WallTile(
-                            slot = slots[idx],
-                            playerFor = playerFor,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                        )
+                    if (idx < bound.size) {
+                        val tile = bound[idx]
+                        // Explicit key on the slot id so Compose treats the
+                        // tile's identity as the channel-slot pair, not the
+                        // grid position. When a slot's channel changes, the
+                        // tile is rebuilt from scratch — no stale label or
+                        // surface state can leak across the identity change.
+                        key(tile.key) {
+                            WallTile(
+                                bound = tile,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
                     } else {
-                        // Pad the last row so a partial row aligns left.
                         Box(modifier = Modifier.weight(1f).fillMaxHeight())
                     }
                 }
