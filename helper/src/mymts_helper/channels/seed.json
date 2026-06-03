@@ -3,31 +3,31 @@
     "slug": "cbs-sports-hq",
     "label": "CBS Sports HQ",
     "kind": "hls",
-    "source_url": "https://cbssports-cbssports-1-us.samsung.wurl.tv/playlist.m3u8"
-  },
-  {
-    "slug": "iss-feed",
-    "label": "ISS Live",
-    "kind": "hls",
-    "source_url": "https://iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8"
+    "source_url": "https://propee33f9c2.airspace-cdn.cbsivideo.com/index.m3u8"
   },
   {
     "slug": "bbc-news",
     "label": "BBC News",
     "kind": "hls",
-    "source_url": "https://vs-cmaf-pushb-uk-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/iptv_hd_abr_v1.m3u8"
+    "source_url": "https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_hd_abr_v2.m3u8"
   },
   {
     "slug": "cnn",
     "label": "CNN",
     "kind": "hls",
-    "source_url": "https://cnn-cnninternational-1-eu.rakuten.wurl.tv/playlist.m3u8"
+    "source_url": "https://turnerlive.warnermediacdn.com/hls/live/586495/cnngo/cnn_slate/VIDEO_2_1964000.m3u8"
+  },
+  {
+    "slug": "cnn-international",
+    "label": "CNN International",
+    "kind": "hls",
+    "source_url": "https://cnn-cnninternational-1-fr.rakuten.wurl.tv/playlist.m3u8"
   },
   {
     "slug": "livenow-fox",
     "label": "LiveNOW from FOX",
     "kind": "hls",
-    "source_url": "https://livenowfromfox.akamaized.net/cdn-streaming-livenow/master.m3u8"
+    "source_url": "https://pb-k5p02dtnr2162.akamaized.net/LiveNOW_from_FOX.m3u8"
   },
   {
     "slug": "c-span",
@@ -42,6 +42,12 @@
     "source_url": "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8"
   },
   {
+    "slug": "iss-feed",
+    "label": "ISS Live",
+    "kind": "hls",
+    "source_url": "https://iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8"
+  },
+  {
     "slug": "white-house-tv",
     "label": "White House TV",
     "kind": "hls",
@@ -51,13 +57,7 @@
     "slug": "newsmax",
     "label": "Newsmax",
     "kind": "hls",
-    "source_url": "https://newsmax-newsmaxtv-1-us.samsung.wurl.tv/playlist.m3u8"
-  },
-  {
-    "slug": "cnn-international",
-    "label": "CNN International",
-    "kind": "hls",
-    "source_url": "https://cnn-cnninternational-1-fr.rakuten.wurl.tv/playlist.m3u8"
+    "source_url": "https://nmxlive.akamaized.net/hls/live/529965/Live_1/index.m3u8"
   },
   {
     "slug": "redbull-tv",
@@ -75,7 +75,7 @@
     "slug": "france24-en",
     "label": "France 24 English",
     "kind": "hls",
-    "source_url": "https://f24hls-i.akamaihd.net/hls/live/221147/F24_EN_HI_HLS/master.m3u8"
+    "source_url": "https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8"
   },
   {
     "slug": "al-jazeera-en",
@@ -87,7 +87,7 @@
     "slug": "sky-news",
     "label": "Sky News",
     "kind": "hls",
-    "source_url": "https://skynews2-plutolive-vo.akamaized.net/cdnAkamaiLive_201/playlist.m3u8"
+    "source_url": "https://linear417-gb-hls1-prd-ak.cdn.skycdp.com/100e/Content/HLS_001_1080_30/Live/channel(skynews)/index_1080-30.m3u8"
   },
   {
     "slug": "cgtn-en",

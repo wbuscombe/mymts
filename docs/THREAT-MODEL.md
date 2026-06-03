@@ -134,7 +134,21 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 #### Other stages (filled in as they land)
 
 - **T-A1: Malicious or buggy app sideload on the Onn box.** Stage 6.
-- **T-A2: Update mechanism bricking the TV or being subverted.** Stage 6.
+
+**T-A2. Update mechanism bricking the TV or being subverted.**
+*Likelihood:* medium (every update is a chance for a build to bring something nasty, or for an installer to push a bad APK).
+*Impact:* worst case — the box ends up running an APK the operator did not authorise (impersonation / supply chain), or the upgrade fails open and leaves no working build on the device.
+*Mitigation:*
+- **Signed installs (auth).** Release APKs are signed with a v1+v2+v3 signing config tied to a keystore the operator controls. `app/build.gradle.kts` sources the signing material from `app/keystore.properties` (gitignored; modelled on `app/keystore.properties.example`) or matching environment variables. The deploy script calls `apksigner verify --print-certs` and **refuses to push** an APK whose certificate subject is the Android Debug stub (`CN=Android Debug,O=Android,C=US`). A build with no keystore configured falls back to debug-signing so dev builds still work, but `IS_RELEASE_SIGNED` in `BuildConfig` is `false` and the deploy refuses to ship it. Android itself refuses upgrades signed with a different key, so a stolen APK signed by anyone else cannot upgrade the operator's installation — only the holder of the keystore can ship updates.
+- **Never-bricks (B1).** The deploy script installs the new APK with `adb install -r` (retain data + previous app remains installable in the rollback step). The old APK is preserved in `$MYMTS_ARCHIVE_DIR/archive/`. If anything fails between install and promotion, the rollback path reinstalls the prior known-good — the wall returns to whatever last worked, never to an absent app.
+- **Always-a-way-back (B2).** `$MYMTS_ARCHIVE_DIR/known-good` names the currently-known-good APK filename; the pointer is updated **only** after the health gate passes. A failed deploy never overwrites the pointer, so manual rollback (`./scripts/deploy-app.sh --manual-rollback`) always reinstalls the last-good build. Older APKs are retained in the archive — recovery to any prior version is one `adb install -r -d`.
+- **No silent bad-bundle cascade (B5).** Promotion is gated on `health_check.decide()` — a pure-Python function (15 unit tests in `scripts/test_health_check.py`) classifies the launch as `PASS` / `FAIL_ALL_DEAD` / `FAIL_DECODER_THRASH` / `FAIL_NOT_READY` / `FAIL_TIMEOUT` based on `MYMTS_SOAK` telemetry. A build that fails to start enough tiles, or starts decoders without ever rendering a frame (the b19b013 regression shape, now permanently caught), is **never** declared the new known-good. The Stage 3 fix-forward lesson is wired into the update path.
+- **Audit trail.** Every deploy writes to `$MYMTS_ARCHIVE_DIR/deploy.log` with timestamps for build / install / health-gate result / promote-or-rollback.
+*Residual risk:*
+- **Keystore loss / theft.** A leaked keystore allows the holder to sign builds Android will accept as upgrades for this `applicationId`. Mitigation: the operator's standard secret-handling discipline (`.gitignore` exclusion verified, off-device backup, password-protected store). A leaked keystore would require migrating to a new `applicationId` + clean install — the Android signing model has no in-place revocation. This is a known limit and acceptable for a single-operator personal-scale wall.
+- **Window-bounded health gate.** A regression that takes minutes to surface (e.g. a 30-min memory leak) won't be caught in the 90-s health window. Mitigation: the manual rollback path stays operator-invocable any time; future stages may add a "soak hour" extended gate after promotion, but the v1 trade-off is launch-only.
+*Traces to:* **B1** (never bricks), **B2** (always a way back), **B5** (no silent fleet cascade), **A7** (secrets — keystore handling).
+
 - **T-O1: Backup mechanism becoming the source of the failures it's meant to prevent.** Stage 6.
 - **T-S1: A friend's sideloaded instance compromised → ranked above operator data loss; isolation by construction is the defence.** Stage 7 portability pass.
 
@@ -148,6 +162,7 @@ Each will be filled in with **likelihood**, **impact**, **mitigation**, **residu
 - **Stage 2:** populate every helper-related threat with concrete mitigations and tests.
 - **Stage 3:** populate the TV-side video playback threats. **Done — T-T1 through T-T5 above.**
 - **Stage 5:** confirm the in-app menu introduces no new boundary issues. **Done — T-T6, T-T7 above.**
+- **Stage 6 — update mechanism.** **Done — T-A2 above.** Signed installs prevent unauthorised builds; health-gated promotion + retained-archive rollback prevent silent bad-bundle cascades.
 - **Stage 6:** populate update mechanism + backup mechanism threats.
 - **Stage 7:** final review against every Trust Bar principle (A0–A9, B1–B5, C0–C6); each must have at least one mitigation line here, or be explicitly noted as "not applicable to this architecture" with reasoning.
 

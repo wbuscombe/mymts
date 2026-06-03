@@ -104,7 +104,93 @@ The soak harness lives in `scripts/soak.sh`. It installs the debug APK, starts t
 
 ## Install path (Stage 1 dev-sideload only)
 
-Stage 1 deploys are dev-sideloads via `adb install`. The production signed-install update path (Op Bar B1/B2 — never bricks, always a way back) lands in Stage 6.
+Stage 1 deploys are dev-sideloads via `adb install`. The production signed-install update path is **Stage 6** — see "Update + rollback" below.
+
+## Update + rollback (Stage 6)
+
+The Stage 6 update flow replaces ad-hoc `adb install` with a health-gated, rollback-capable script that satisfies the Operational Bar:
+- **B1 (never bricks):** the old build keeps running until the new build proves itself.
+- **B2 (always a way back):** every install keeps the prior known-good APK in an archive; manual rollback is one command.
+- **B5 (no silent bad-bundle cascade):** the new build is **not** promoted to known-good until a telemetry-based health gate passes.
+
+### Where artifacts live
+
+| Path | Contents |
+|---|---|
+| `$HOME/.mymts/release/archive/` | Every released APK, named `mymts-<version>+<sha>-<utc>.apk`. Older versions are retained — manual rollback to any prior version is one `--manual-rollback` invocation. |
+| `$HOME/.mymts/release/known-good` | Single line with the **filename** (not absolute path) of the current known-good APK. Updated atomically (temp-write + rename). |
+| `$HOME/.mymts/release/deploy.log` | Audit log of every build / install / health-gate / promotion / rollback. |
+
+The archive directory is overridable via `--archive-dir` or `MYMTS_ARCHIVE_DIR` so production can target the NAS instead of `$HOME`.
+
+### Signing keystore — secret, never committed
+
+Release builds require a real keystore. The keystore + credentials are **secrets** — `.gitignore` excludes `*.jks`, `*.keystore`, and `keystore.properties`. The operator supplies them via either:
+
+- `app/keystore.properties` (untracked file, modeled on `app/keystore.properties.example`), or
+- Four environment variables of the same name: `MYMTS_RELEASE_STORE_FILE`, `MYMTS_RELEASE_STORE_PASSWORD`, `MYMTS_RELEASE_KEY_ALIAS`, `MYMTS_RELEASE_KEY_PASSWORD`.
+
+The file path inside `keystore.properties` points at the operator's standard secrets directory (e.g. `~/.keystores/mymts-release.jks`) — **never** inside the repo. Loss of the keystore means losing the ability to push updates to existing installs (Android refuses upgrades signed with a different key); back it up off-device.
+
+A first-time keystore is created with:
+```bash
+keytool -genkeypair -v \
+    -keystore mymts-release.jks \
+    -alias mymts -keyalg RSA -keysize 4096 -validity 10000 \
+    -dname "CN=MyMTS,OU=Operator,O=MyMTS,C=US"
+```
+
+### Single-command deploy + health-gate + auto-rollback
+
+```bash
+# Build + sign + install + health-gate + promote-or-rollback
+./scripts/deploy-app.sh
+
+# Dry-run: build + archive only, NO device touch (the operator-away
+# default — confirms the signed APK is producible without risking the
+# physical box while no one's there to recover it).
+./scripts/deploy-app.sh --dry-run
+
+# Manual rollback to the last known-good APK
+./scripts/deploy-app.sh --manual-rollback
+```
+
+Flags:
+| Flag | Default | Notes |
+|---|---|---|
+| `--device <ip[:port]>` | `<LAN_IP>:5555` | Target adb device. |
+| `--archive-dir <path>` | `$HOME/.mymts/release` | Archive + known-good pointer location. |
+| `--dry-run` | off | Build + archive only; never touches the device. |
+| `--manual-rollback` | off | Skip build; reinstall the current known-good. |
+| `--minimum-ready N` | 2 | Health-gate floor: minimum `EV=TILE_READY` events. |
+| `--expected-tiles N` | 4 | Wall's tile count — used to detect FAIL_ALL_DEAD. |
+| `--deadline-seconds N` | 90 | Health-gate observation window. |
+
+### The health gate (`scripts/health_check.py`)
+
+After install + launch, the deploy script captures `MYMTS_SOAK` telemetry for `--deadline-seconds` and runs the gate's decision logic over it. The decision is **pure** (`scripts/test_health_check.py` exercises 15 cases) and returns one of:
+
+| Outcome | Trigger | Result |
+|---|---|---|
+| `PASS` | ≥ `minimum_ready` `EV=TILE_READY` events, no `EV=DEAD` within window | promote: write known-good pointer |
+| `FAIL_ALL_DEAD` | `EV=DEAD` count ≥ expected tile count | rollback to prior known-good |
+| `FAIL_DECODER_THRASH` | `EV=DECODER` ≥ expected tile count but `EV=TILE_READY` == 0 | rollback (the `b19b013` regression shape) |
+| `FAIL_NOT_READY` | `EV=TILE_READY` < minimum | rollback |
+| `FAIL_TIMEOUT` | window elapsed without sufficient data | rollback |
+
+The script's exit code mirrors the outcome (0 = PASS / promoted; 1 = FAIL / rolled back; 3+ = configuration error / blocked).
+
+### Manual rollback — the always-a-way-back guarantee
+
+If a deploy goes wrong outside the health-gate window (a regression that surfaces hours later), the operator runs:
+```bash
+./scripts/deploy-app.sh --manual-rollback
+```
+This reinstalls the **current known-good** (the APK named in `known-good` *before* the failed deploy promoted itself — note: a failed deploy does NOT update the pointer, so the pointer always names the last working build). Because APKs are kept in the archive, rolling further back to any prior version is `adb install -r -d <archive>/mymts-X.Y.Z+sha-…apk`.
+
+### Health-gate verification status (recorded honestly)
+
+The decision-logic Python is fully unit-tested (`scripts/test_health_check.py`). The end-to-end install + rollback flow has been **dry-run verified** (build + archive succeeds; no device install). A live install + force-failed-health + automatic-rollback test is **staged for when the operator is near the box** — running it now while the operator is away carries device-recovery risk if it misfires. See the Stage 6 finding for the rationale and the trigger condition.
 
 ## WyzeGrid coexistence (note for the record; not currently active state)
 

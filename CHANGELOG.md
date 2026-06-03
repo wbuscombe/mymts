@@ -7,6 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Channel-resolution investigation (helper-side) — 8 channels live, up from 2 (2026-06-03)
+
+The deferred channel-resolution follow-on, now done. Three honest tracks:
+
+### Prober deepened — master + variant validation
+
+The prober previously validated only the master HLS manifest (`#EXTM3U` prefix check). NASA TV exposed the gap: its master fetches fine, but its variants return HTTP 404 — the helper would say `live` while the player couldn't actually play. The Stage 3 polish-pass `LineupSelector.DENY` workaround masked the truth at the menu layer; this commit fixes the cause at the helper layer.
+
+After this commit (`helper/src/mymts_helper/channels/prober.py`):
+1. Fetch master through the SSRF-safe `fetcher` (unchanged).
+2. Validate `#EXTM3U` (unchanged).
+3. If the master is a **media playlist** (`#EXTINF` present, no `#EXT-X-STREAM-INF`) → mark live with master URL.
+4. Otherwise parse the master, find the first `#EXT-X-STREAM-INF` entry's URL line, absolutize against the master URL, and **fetch that variant** through the same SSRF-safe `fetcher`. Variant must respond `2xx + #EXTM3U`. Anything else → record precise error (`variant_http_<code>`, `variant_fetch:<reason>`, `variant_not_hls_manifest`, `variant_missing_in_master`).
+
+All SSRF guards (https-only, DNS-pinned, RFC1918/loopback/CGNAT/ULA rejection, bounded body, bounded time, redirect re-validation) apply to the variant fetch verbatim. **No new egress surface.** 10 unit tests in `helper/tests/test_channels_prober.py` cover the master/media/variant cases including downgrade-rejection (http variant in master refused) and conservative None-on-ambiguity (intermediate tag-line skipped → return None rather than picking wrong rendition).
+
+### Seed URL rotation — verified working candidates
+
+Each new candidate was fetched and confirmed `HTTP 200 + #EXTM3U` from a US residential IP before being written into `helper/src/mymts_helper/channels/seed.json`:
+
+- `cbs-sports-hq` → CBSi airspace CDN
+- `bbc-news` → BBC worldwide shard (`-ww-live` instead of UK-only `-uk-live`)
+- `cnn` → Turner/Warner slate feed (publicly-streamable, AES-128)
+- `livenow-fox`, `newsmax` → Akamai direct
+- `france24-en` → official `live.france24.com` origin (old `f24hls-i.akamaihd.net` decommissioned)
+- `sky-news` → Sky CDN direct (in flight — works from dev + NAS curl, deploy-time probe returned 403; next 30-min cycle will retry)
+
+### Net result on the helper
+
+| status | count | channels |
+|---|---|---|
+| **live** | **8** | bbc-news, cbs-sports-hq, cnn, dw-news-en, france24-en, livenow-fox, newsmax, redbull-tv |
+| unavailable | 9 | al-jazeera-en, c-span, cgtn-en, cnn-international, iss-feed, **nasa-tv** (variant-FAIL honestly reclassified — the deepened prober caught what the old prober missed), sky-news (in flight), trt-world, white-house-tv |
+
+The operator's preferred lineup (CBS Sports HQ → BBC News → CNN → LiveNOW from FOX) now resolves **all four** to playable channels. The wall no longer cycles two channels into four slots.
+
+### Carried forward to BACKLOG as honest "no public endpoint" cases
+
+- **Geo-block circumvention** for region-locked broadcasters — explicit operator-decision item. **Not** added by default — would require re-doing the helper's egress threat-model and the operator's call on legal/TOS posture for specific broadcasters.
+- **ISS Live standalone HLS** — UStream is dead and CloudFront origin DNS-fails; NASA's current standalone ISS feed is YouTube-only. NASA TV NTV1 is the honest substitute.
+- **CNN International / C-SPAN** — no public free linear HLS exists; C-SPAN wraps its current web player in a session-token handshake; CNN International is no longer on any FAST platform.
+
+### NASA TV deny-list no longer load-bearing
+
+`LineupSelector.DENY = setOf("nasa-tv")` from the Stage 3 polish-pass was a workaround for the master-OK / variant-FAIL boundary gap. With the deepened prober, NASA TV is now honestly `unavailable` from the helper, so the deny list is documentation-of-the-shape rather than load-bearing logic. Left in place; if the variant becomes reachable again, the next probe cycle re-marks it live and the deny list can be removed in a future commit.
+
+### Updated
+
+- `helper/src/mymts_helper/channels/prober.py` — variant-fetch step added.
+- `helper/src/mymts_helper/channels/seed.json` — 7 candidate URLs rotated.
+- `helper/tests/test_channels_prober.py` — 10 new tests for the variant-validation logic.
+- `docs/findings/05-channel-resolution.md` — full investigation record + resolution map.
+- `docs/BACKLOG.md` — geo-block-circumvention (operator-decision), ISS-Live-standalone, CNN International / C-SPAN entries.
+- `docs/THREAT-MODEL.md` — T-H5 unchanged in spirit; the prober's "live" definition is now tighter and matches the player.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- **WyzeGrid** untouched (helper-side; no `.182` involvement).
+- Helper tests: 132 green (122 prior + 10 new).
+- Helper redeployed to `<USER>@<HOST>:/srv/docker/mymts-helper/`; non-root, read_only, cap_drop ALL, dedicated bridge network — **never the unrelated host container**.
+
+## Stage 6 — signed-install update path + rollback (2026-06-03)
+
+Per `03-OPERATIONAL-BAR.md` B1/B2/B5 — never bricks, always a way back, no silent bad-bundle cascade. App-side + release-infra track only (does NOT touch the helper, so safe in parallel with the channel-resolution work above).
+
+### Release signing
+
+`app/build.gradle.kts` gains a release signing config sourced from either `app/keystore.properties` (gitignored; modelled on `app/keystore.properties.example`) or four environment variables of the same name. The keystore + credentials are **secrets** — `.gitignore` excludes `*.jks`, `*.keystore`, `keystore.properties`. Loss of the keystore means losing the ability to push updates (Android refuses upgrades signed with a different key); backup-off-device responsibility documented.
+
+A `BuildConfig.IS_RELEASE_SIGNED` boolean flips when a real keystore is wired up; the deploy script reads the actual signing certificate via `apksigner verify --print-certs` and refuses to ship a debug-signed APK (subject `CN=Android Debug,O=Android,C=US`).
+
+### Update flow: build → install → health-gate → promote-or-rollback
+
+`scripts/deploy-app.sh` orchestrates:
+1. `:app:assembleRelease` (signed if keystore configured; falls back to debug-sign for dev, refused at install time).
+2. Archive to `$MYMTS_ARCHIVE_DIR/archive/mymts-<v>+<sha>-<utc>.apk`. Older APKs are retained — manual rollback to any prior version is one command.
+3. `adb install -r -t` on the target.
+4. Launch.
+5. Capture `MYMTS_SOAK` telemetry for `--deadline-seconds` (default 90).
+6. Run `scripts/health_check.py` against the capture — pure-Python decision logic.
+7. On **PASS**: atomic write of the new APK filename to `$MYMTS_ARCHIVE_DIR/known-good`.
+8. On **FAIL**: reinstall the prior known-good APK; log the rollback.
+
+The decision function returns one of `PASS / FAIL_ALL_DEAD / FAIL_DECODER_THRASH / FAIL_NOT_READY / FAIL_TIMEOUT`. The `FAIL_DECODER_THRASH` outcome catches exactly the b19b013 regression shape (decoders init repeatedly but `EV=TILE_READY` never fires) — the Stage 3 fix-forward lesson is now wired permanently into the update path. **15 unit tests** in `scripts/test_health_check.py` exercise the decision matrix.
+
+### Operator-away safety — no destructive on-device install in this commit
+
+The operator is currently away from `.182` and cannot physically recover a botched install. Per the prompt's `Section 3` guidance:
+- **The decision logic is fully unit-tested.**
+- **Dry-run validated end-to-end on this Mac**: `./scripts/deploy-app.sh --dry-run` built a signed-keystore-absent fallback APK and archived it as `mymts-0.0.0+6be42c4-20260603T232010Z.apk` without touching `.182`.
+- A **live install + force-failed-health + automatic-rollback** test is **staged for when the operator is near the box**. Running it now while the operator is away carries device-recovery risk if the script misfires (e.g. if `adb` install fails to restore the prior APK). The staged test is documented in `OPERATIONS.md` so it can be picked up immediately when the recovery posture is acceptable.
+
+### Manual rollback — the always-a-way-back guarantee
+
+```bash
+./scripts/deploy-app.sh --manual-rollback
+```
+Reads the `known-good` pointer (which never names a failed APK because promotion happens only on PASS), reinstalls that APK with `adb install -r -d` (`-d` allows downgrade for versionCode), restarts the activity. Manual recovery to any *older* archived APK is `adb install -r -d <archive>/mymts-X.Y.Z+sha-…apk`.
+
+### Updated
+
+- `app/build.gradle.kts` — signing config + `IS_RELEASE_SIGNED` BuildConfig field.
+- `app/keystore.properties.example` — template; real file gitignored.
+- `scripts/deploy-app.sh` — orchestrator.
+- `scripts/health_check.py` — decision logic.
+- `scripts/test_health_check.py` — 15 unit tests covering PASS / FAIL_ALL_DEAD / FAIL_DECODER_THRASH (b19b013 shape) / FAIL_NOT_READY / partial-dead-below-threshold / decoder-thrash-only-when-zero-TILE_READY / decision matrix.
+- `docs/OPERATIONS.md` — Install + Update + rollback rows populated with the deploy flow, the artifact layout, the manual-rollback path, the dry-run mode, and the operator-away staged-pending status.
+- `ARCHITECTURE.md` §11 — release/update/rollback flow + the four states an APK can be in.
+- `docs/THREAT-MODEL.md` — T-A2 populated covering signed installs / never-bricks / always-a-way-back / no-silent-bad-bundle-cascade. Residual risks: keystore loss and the window-bounded health gate.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- **WyzeGrid** as-found on `.182` (no device install in this commit).
+- App tests: ~50+ prior cases still green. Decision logic tests: 15 new cases.
+- Helper untouched in this track.
+
 ## Stage 5 checkpoint 2 — channel picker + persistence, lineup control complete (2026-06-03)
 
 Stage 5 makes the wall operable from the couch. Checkpoint 1 (commit `e803fee`) shipped the menu shell — open/navigate/back. Checkpoint 2 (this commit) wires the actual feature: real per-slot channel labels, the centered TV-style channel picker with honest live/offline marking, on-device lineup persistence, and telemetry-verified reassignment.

@@ -416,7 +416,53 @@ BACK is caught both via `BackHandler` and via the root `onPreviewKeyEvent`. On T
 - **C2 — graceful degradation made visible.** An offline-pinned slot renders the C2 panel **with the assigned channel's label** so the operator sees what's planned for the slot vs. an unassigned tile.
 - **9d5b0ad — label/stream binding holds through reassignment.** A reassignment swaps the `Slot.Playing.spec.id`, which forces a fresh player via `bindTiles`'s identity-match. `BoundTile.init { require }` enforces this at construction; a tile labelled "X" cannot end up playing channel "Y" even mid-rebind.
 
-## 11. What this document deliberately does NOT specify yet
+## 11. Stage 6 — signed-install update path + rollback
+
+Per `03-OPERATIONAL-BAR.md` B1/B2/B5 — never bricks, always a way back, no silent bad-bundle cascade.
+
+```
+scripts/
+├── deploy-app.sh         ← orchestrator (bash)
+└── health_check.py       ← post-install decision logic (pure-Python, unit-tested)
+                            scripts/test_health_check.py — 15 cases
+```
+
+```
+app/
+├── build.gradle.kts                  ← release signing config (keystore from .properties or env)
+├── keystore.properties.example       ← template (real file gitignored)
+└── (release key file)                ← NEVER in repo; .gitignore excludes *.jks
+```
+
+### The four states an APK can be in
+
+1. **Built** — produced by `:app:assembleRelease`. Signed with the operator's release key if `keystore.properties` exists; otherwise debug-signed. The deploy script refuses to install a debug-signed APK as a release.
+2. **Archived** — copied into `$MYMTS_ARCHIVE_DIR/archive/mymts-<v>+<sha>-<utc>.apk`. Older versions are kept; manual rollback to any of them is one command.
+3. **Installed** — `adb install -r` on the target. Not yet known-good.
+4. **Known-good** — pointer at `$MYMTS_ARCHIVE_DIR/known-good` (single filename, atomic write) names the APK currently in production. Only updated after the health gate passes.
+
+### Promotion is gated, not automatic
+
+After install + launch, the deploy script captures `MYMTS_SOAK` telemetry for a bounded window (default 90 s) and runs `health_check.decide()` over it. The decision is purely a function of the telemetry — same logic the Stage 3 fix-forward used to verify itself, now wired into the update path.
+
+| Decision | Trigger | Action |
+|---|---|---|
+| `PASS` | ≥ `minimum_ready` `EV=TILE_READY` and zero `EV=DEAD` in window | atomic write of the new APK name to `known-good` |
+| `FAIL_ALL_DEAD` | all 4 tiles settled DEAD (the b19b013 shape) | reinstall the prior known-good; record |
+| `FAIL_DECODER_THRASH` | `EV=DECODER` ≥ expected_tiles but `EV=TILE_READY` == 0 | rollback (the exact regression shape Stage 3 caught) |
+| `FAIL_NOT_READY` | not enough tiles came up | rollback |
+| `FAIL_TIMEOUT` | window elapsed with insufficient evidence | rollback |
+
+The "rollback" path is the same code path as `--manual-rollback`: read the `known-good` pointer (which never names the failed APK — promotion happens only on success), `adb install -r -d` the file, restart. Because older APKs are retained, manual recovery to *any* prior version is one command if the auto-restored known-good itself is bad.
+
+### Honesty discipline preserved at the update layer
+
+- **No silent promotion.** A new build that doesn't pass telemetry is *never* the known-good — the operator's wall keeps running whatever last worked.
+- **No debug-signed release.** The deploy script reads the signing certificate via `apksigner verify --print-certs` and refuses if the subject is `CN=Android Debug,O=Android,C=US`. Configured environments only.
+- **Loss of keystore = loss of update ability** (Android refuses upgrades signed with a different key). The keystore is backed up off-device per the operator's secret-handling practice.
+- **Audit log of every deploy.** `$MYMTS_ARCHIVE_DIR/deploy.log` records every build, install, health-gate result, and promotion or rollback decision.
+
+## 12. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.
