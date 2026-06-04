@@ -110,6 +110,18 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 **Why-not-now:** CNBC is paywalled cable. There is no free 24/7 FAST stream on Pluto.tv, Samsung TV Plus, Roku Channel, or Plex (verified across `iptv-org/iptv` `us.m3u`, `us_samsung.m3u`, `us_pluto.m3u`, `us_roku.m3u`). The August 2024 Warner DMCA wave took down most unofficial m3u8 mirrors. The seed entry is recorded honestly with an `.invalid` placeholder URL — the prober marks `cnbc` as `dns_failure`, the menu shows it offline, the wall renders an honest OFFLINE panel for any operator-pinned slot. This is the same honesty discipline as the prior CNN International / C-SPAN entries.
 **Reconsider when:** A free public CNBC HLS surfaces (occasionally happens with FAST platforms), or the operator wants to accept a different financial channel as a substitute. Bloomberg Originals, Yahoo Finance, and Cheddar News are catalog-available substitutes if the operator changes their mind on CNBC specifically.
 
+## Kiosk / foreground / boot story — pending the new MyMTS box (Model A confirmed 2026-06-04)
+
+**What:** Build MyMTS's long-uptime kiosk behavior — a foreground service that holds the screen for the ambient-wall role, plus a boot-receiver so it relaunches on reboot — analogous to WyzeGrid's proven pattern.
+**Why-not-now:** **Hardware is in transit.** `.182` is WyzeGrid's permanent camera box, and the operator confirmed Model A (one kiosk app per box). Testing MyMTS's foreground watchdog on `.182` would reintroduce the Stage 1 / Stage 2 two-watchdog thrash on the camera box. The kiosk story belongs on the dedicated MyMTS box; building+validating it there is the right call. Checklist for the new-box session is in `docs/OPERATIONS.md §"New MyMTS box provisioning"`.
+**Reconsider when:** The new MyMTS Onn box arrives, gets DHCP-reserved + named in `ONN-BOXES.md`, and is the active deploy target.
+
+## Helper feeds API — SQLite cross-thread bug (latent since the TLS dual-listener)
+
+**What:** Occasional `sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread` on `/api/feed` requests in the helper logs. Surfaces as HTTP 500 from the feed endpoint; the wall's feed pane retries / shows honest staleness, so it doesn't break user-visible state, but the error spam in the helper log is noise and a sign of a real bug.
+**Why-not-now:** Discovered during the at-the-box finale Step 2's helper log inspection. Latent since the Stage 6 TLS baseline (`b8240b7`) when `__main__.py` shifted to `asyncio.gather(*[s.serve() for s in servers])` — the dual-uvicorn-instance approach + FastAPI's `Depends()`-based sqlite connection (`_conn` in `feeds/api.py` and `channels/api.py`) means a connection can be opened in one thread and the `try/finally`-driven `close()` can run in a different thread via anyio's threadpool dispatch. The fix is small (use a thread-local connection / open per-request inside the route function rather than yielding via Depends, OR switch to aiosqlite). Not blocking the at-the-box finale; the wall works fine and the bug is observable.
+**Reconsider when:** Either the helper log noise becomes inconvenient OR the channel-prober / RSS-poller is extended in a way that surfaces the same threading model elsewhere. Fix should also revisit whether to keep the dual-uvicorn-instance architecture (now that HTTP is gone, the second listener exists only as a leftover comment in `__main__.py` — could be collapsed to a single `uvicorn.run`).
+
 ## Ideas that surfaced during build (add as you find them)
 
 ```

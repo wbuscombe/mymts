@@ -200,6 +200,29 @@ The decision-logic Python is fully unit-tested (`scripts/test_health_check.py`).
 
 The Operational Bar B1/B2/B5 properties (never bricks / always a way back / no silent bad-bundle cascade) are now operationally verified on real hardware.
 
+## New MyMTS box provisioning (pending — hardware in transit)
+
+### Decision recorded (2026-06-04): one kiosk app per box (Model A)
+
+Per the at-the-box finale prompt, the operator confirmed **Model A — one kiosk app per box**. `onn-office` (`.182`) is WyzeGrid's permanent home for the cameras kiosk; MyMTS gets its own dedicated Onn box (in transit, not yet arrived). The kiosk / foreground-coexistence work is therefore deferred to the new-box-provisioning session — it must NOT run on `.182`, because testing MyMTS's foreground watchdog on WyzeGrid's box would reintroduce the Stage 1 two-watchdog thrash on the camera box, pointlessly. (The Stage 2 finding documented this exact contention.)
+
+### Checklist (run when the new box arrives)
+
+1. **Physical setup.** Power on, connect HDMI/display, Wi-Fi or wired Ethernet, configure DHCP reservation on the router. Record the IP.
+2. **Update `ONN-BOXES.md`.** Add a new row for the new box with its stable location-based name (e.g. `mymts-display` or wherever it physically lives), IP, hardware (Amlogic S905Y4 / armeabi-v7a / Android 14), and role = MyMTS. Both repos' copies of `ONN-BOXES.md` get the update.
+3. **Install signed MyMTS.** Use `scripts/deploy-app.sh --device <new-ip>:5555 --archive-dir $HOME/.mymts/release` to push the current known-good APK from the dev Mac. Confirm `/api/channels` + the wall come up over HTTPS (no cleartext exception is left in the app — the cutover already happened).
+4. **Build + validate the kiosk / foreground / boot story THERE.** MyMTS gets its own long-uptime kiosk behavior on its own box — a foreground service + boot-receiver so it relaunches on reboot and holds the screen for its ambient-wall role (mirroring WyzeGrid's proven pattern — same lineage). Test:
+   - **Hold the foreground.** Run for at least 80 minutes (the Stage 1 finding's WyzeGrid eviction window) to confirm no second watchdog reclaims the foreground.
+   - **Survive a reboot.** Power-cycle the box; confirm MyMTS launches and reaches LIVE without manual intervention.
+   - **Survive a low-memory event.** Force-stop other apps + start a memory hog; confirm MyMTS is not evicted.
+5. **Confirm `.182` is unchanged.** WyzeGrid foreground + `WatchdogService` healthy; MyMTS dev install may remain on `.182` (harmless) but WyzeGrid is the intended foreground owner there.
+
+### Why this is *not* attempted on `.182`
+
+- `.182` is the camera box. A two-foreground-app contention there blinds the operator to the cameras while we test.
+- MyMTS's kiosk story tested on a borrowed box doesn't tell us anything useful — different hardware budget, different background pressure (WyzeGrid's WatchdogService present), different physical attached panel. The new box is what it'll ship on.
+- The away-from-box + safe-on-`.182` roadmap is complete after Step 4. The kiosk work waits for hardware.
+
 ## WyzeGrid coexistence (note for the record; not currently active state)
 
 During the Stage 1 gate-clearing soak window, WyzeGrid was disabled-user on `.182` because its persistent `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdog (`SYSTEM_ALLOW_LISTED`) reclaimed the foreground from MyMTS around 80 minutes into the first attempt; backgrounded MyMTS was then evicted on the 2 GB box.

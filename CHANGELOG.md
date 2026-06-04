@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## At-the-box finale Step 4 — `.182` restored to WyzeGrid + kiosk deferred (2026-06-04)
+
+The away-from-box + safe-on-`.182` roadmap is now complete. The kiosk / foreground-coexistence story waits for the new MyMTS box (hardware in transit).
+
+### Decision recorded — Model A (one kiosk app per box)
+`onn-office` (`.182`) is WyzeGrid's permanent home for the cameras kiosk; MyMTS gets its own dedicated Onn box. The kiosk / foreground-coexistence work is therefore deferred — running it on `.182` would reintroduce the Stage 1 / Stage 2 two-watchdog thrash on the camera box, pointlessly.
+
+### `.182` restored
+- Launched `com.wyzegrid/.MainActivity` to put WyzeGrid back in the foreground.
+- `topResumedActivity = com.wyzegrid/.MainActivity` (cameras UI).
+- `com.wyzegrid/.WatchdogService` `isForeground=true` (the persistent watchdog, alive).
+- MyMTS install (release-signed, on the known-good APK from Step 3) remains on `.182` — harmless, will be evicted by WyzeGrid's WatchdogService over the next ~80 min per the Stage 1 finding, and that's fine because the wall has its own box coming.
+
+### Added
+- `docs/OPERATIONS.md` — new section "New MyMTS box provisioning (pending — hardware in transit)" with the explicit checklist (DHCP reservation, `ONN-BOXES.md` row, signed-install via `deploy-app.sh`, kiosk story validation: holds the foreground ≥ 80 min, survives reboot, survives low-memory). Also documents why the kiosk work is *not* attempted on `.182`.
+- `docs/BACKLOG.md` — two new entries:
+  1. **Kiosk / foreground / boot story — pending the new MyMTS box.** Model A confirmed; build + validate the kiosk story on the dedicated MyMTS box when it arrives.
+  2. **Helper feeds API — SQLite cross-thread bug** (latent since the TLS dual-listener; surfaces as occasional HTTP 500 on `/api/feed`). Noted with the small-fix path: thread-local connection or aiosqlite; also revisit collapsing the dual-uvicorn-instance architecture now that HTTP is gone.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- **WyzeGrid foreground + `WatchdogService` healthy on `.182`** at session end — verified by `dumpsys activity activities` + `dumpsys activity services`.
+- App tests green; helper tests green: 136. No code changes in this commit (docs + BACKLOG only).
+- **The at-the-box session is now complete.** Remaining work waits for the new MyMTS hardware.
+
 ## At-the-box finale Step 3 — rollback live-test verified on `.182` (2026-06-04)
 
 The Stage 6 signed-update + auto-rollback path was operationally verified on real hardware. The dry-run had already exercised the decision logic; this session exercised the end-to-end install + health-gate + rollback flow with a deliberately-failing build.
