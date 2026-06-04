@@ -165,10 +165,24 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** Likely a **free FAST feed** (Pluto / Samsung TV Plus etc.) — good candidate, findable.
 **Reconsider when:** Next channel-resolution pass.
 
-### E3. ESPN 1000 / WSCR 670 (Twitch)
-**What:** Add Chicago sports-talk radio stations that simulcast on Twitch.
-**Why-not-now:** ⚠️ These are **radio** stations and Twitch is a **different integration** (not normal HLS; own auth / stream-resolution model). Also raises "what does a radio tile show" (logo + audio?). Genuinely different work, not a seed URL.
-**Reconsider when:** As its own scoped investigation if the operator wants it — needs design decisions (logo-card vs. visualizer tile, Twitch token handling, separate audio-only state, how it interacts with the single-audible-tile model).
+### E3. Chicago sports-talk video simulcasts (ESPN 1000 + 670 The Score) — LOWER PRIORITY
+
+*(Corrects the earlier dismissive note that suggested these don't exist as reachable feeds. The operator was right; web check confirmed the feeds. The reason this is still not a seed-URL add is the integration shape, not the existence of the feeds — caveats below.)*
+
+**What:** Both Chicago sports-talk radio stations video-simulcast their shows and are reachable:
+- **ESPN 1000 (WMVP):** YouTube channel + Twitch — `twitch.tv/espn1000chicago` (confirmed live/active 2026-06-04).
+- **670 The Score (WSCR, also 104.3 FM):** YouTube channel + Twitch — `twitch.tv/chicago670thescore` (confirmed; station's own YouTube directs viewers there).
+
+**⚠️ Why this is NOT a seed-URL add (the real integration reality):**
+- These are **Twitch/YouTube Live channels, not HLS**. The whole architecture is HLS-native (ExoPlayer plays HLS; the helper validates `#EXTM3U`). Twitch/YouTube don't expose a stable HLS URL — they sit behind their own player/auth/token systems.
+- Playing them requires **stream extraction** (yt-dlp / streamlink class of tooling): resolve the page, negotiate tokens, pull the underlying media URL — which **rotates and expires**, so it's continuous re-extraction, not resolve-once.
+- **Trust Bar implication:** running a stream-extractor against arbitrary remote sites expands the helper's attack surface — exactly the hostile-remote-content handling the SSRF-safe fetcher was built to contain. Needs a deliberate **threat-model pass**, not a casual add.
+- **ToS implication (operator-decision, like geo-block circumvention):** programmatic extraction outside official players generally violates Twitch/YouTube terms. Operator's risk call, not an engineering default — flag it, don't bake it into defaults.
+- **Cleanest likely architecture if pursued:** a **`streamlink` sidecar** that converts a Twitch/YouTube URL into a local HLS stream the helper points at — keeps extraction in a purpose-built tool rather than hand-rolled in the helper. Still a real new component with its own footprint + threat-model.
+
+**Why-not-now / PRIORITY (operator-agreed):** **Lower priority.** The HLS FAST channels (Weather Channel, AP/Reuters feeds, etc.) and the whole-wall **navigation overhaul** come first — high-value, low-risk. This extraction feature is a deliberate, scoped chapter to tackle when it's the main focus, with its own threat-model + ToS decision, not a side-quest.
+
+**Reconsider when:** Operator wants it as a focused build; budget a threat-model pass + the streamlink-sidecar design as part of that chapter.
 
 ### E4. WGN news/sports
 **What:** Add WGN news/sports as a tile option.
