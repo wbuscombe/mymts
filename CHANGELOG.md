@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## At-the-box finale Step 2 — TLS cutover complete (2026-06-04)
+
+The TLS migration staged in the Stage 6 baseline commit (`b8240b7`) is now finished. With the operator physically at the `.182` box (the camera box, MyMTS borrowed for development), the transitional cleartext path was removed in two safe phases — app first, then helper — each independently telemetry-verifiable.
+
+### Phase A — App: cleartext exception removed
+`app/src/main/res/xml/network_security_config.xml` flipped `cleartextTrafficPermitted="true"` → `false` for `<LAN_IP>`. Trust pinning to `@raw/helper_cert` unchanged: only the helper's own self-signed cert is accepted for this host; the system CA bundle is explicitly NOT a trust anchor here, so a global-CA-signed MITM cert is refused.
+
+Rebuilt + uninstalled + freshly installed on `.182`. Telemetry confirmed:
+- 4 distinct slots reached `EV=TILE_READY` over HTTPS only.
+- **Zero** `MyMTS.HelperClient` / `ChannelsRepo` / `FeedRepo` cleartext errors.
+- Lineup default (clean prefs) — Bloomberg TV / CBS Sports HQ / BBC News / CNN — all live.
+
+### Phase B — Helper: HTTPS-only listener
+`helper/deploy/docker-compose.nas.yml` updated:
+- Dropped `PORT: 8091` env var.
+- Dropped `8091:8091` port mapping.
+- Healthcheck now hits `https://127.0.0.1:8443/health` (with `-k` since the loopback fetch isn't a MITM concern).
+- HTTPS port mapping (`8443:8443`) is the only exposed port.
+
+Helper redeployed (full `docker compose up -d --build --force-recreate`):
+- Container shows `0.0.0.0:8443->8443/tcp` only — HTTP 8091 is unreachable from the LAN (curl from dev Mac to `http://<LAN_IP>:8091/health` times out).
+- `/health` over HTTPS returns deployed SHA `a21f37c` + `ready: true` + 10 live channels.
+- App on `.182` after force-stop + relaunch: all 4 tiles reach `EV=TILE_READY` over HTTPS-only helper.
+
+### Updated
+- `app/src/main/res/xml/network_security_config.xml` — cleartext exception removed; comment updated to record the cutover date.
+- `helper/deploy/docker-compose.nas.yml` — HTTP listener stripped; healthcheck moved to HTTPS.
+- `docs/THREAT-MODEL.md` — T-T4 updated to reflect "HTTPS-only, cleartext refused" rather than "transitional cleartext fallback retained." Residuals trimmed accordingly.
+- `docs/OPERATIONS.md` — the dual-port migration table flipped from "staged" to **COMPLETE 2026-06-04**.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- **WyzeGrid** still as-found on `.182` — install was `am force-stop` + `install -r` + `am start`; `WatchdogService` foreground stayed alive through the whole cutover. WyzeGrid is the camera box's intended foreground owner and is restored to foreground at session-end Step 4.
+- App tests green; helper tests green: 136. No behavior change in either test surface from this commit (compose + xml config + comment edits only).
+- Helper redeployed via the standing standard — non-root, read_only, cap_drop ALL, dedicated bridge network — **never the unrelated host container**.
+
 ## Tile controls + captions OFF by default + lineup swap (2026-06-04)
 
 The "big bite" — per-tile audio/volume controls, a captions toggle (default OFF), and a swap of the default lineup to put Bloomberg TV + CNBC at the top. Build + unit-test + telemetry-verify here; the real-remote feel pass on the controls overlay is **staged for the at-the-box finale**.

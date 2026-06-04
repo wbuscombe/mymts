@@ -41,7 +41,6 @@ services:
     mem_limit: 384m
     environment:
       PHANTOM_MODE: ${PHANTOM_MODE:-0}
-      PORT: 8091
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATA_DIR: /data
       BUILD_SHA: ${BUILD_SHA:-dev}
@@ -49,14 +48,13 @@ services:
       FEED_POLL_INTERVAL_SECONDS: ${FEED_POLL_INTERVAL_SECONDS:-300}
       FEED_RETENTION_DAYS: ${FEED_RETENTION_DAYS:-14}
       CHANNEL_PROBE_INTERVAL_SECONDS: ${CHANNEL_PROBE_INTERVAL_SECONDS:-1800}
-      # Stage 6 / TLS — the helper serves HTTPS on 8443 in addition to
-      # HTTP on 8091. The cert + key live OUTSIDE this repo on the NAS
-      # at /srv/docker/mymts-helper/_secrets/ (gitignored,
-      # mounted read-only below). The HTTP listener stays available
-      # transitionally so the TV's existing HTTP path keeps working
-      # while it migrates to HTTPS; a follow-up commit removes the
-      # HTTP listener (and the app-side cleartext exception) once the
-      # HTTPS migration is operator-confirmed.
+      # Stage 6 / TLS cutover (2026-06-04, operator at the box).
+      # The helper now serves HTTPS only — the transitional HTTP 8091
+      # path was removed after telemetry verified the TV app reaches
+      # the helper over HTTPS exclusively. `PORT` is intentionally
+      # unset; with only HTTPS_PORT configured, the entry point flips
+      # the HTTPS listener's lifespan to "on" and starts the pollers
+      # there (one listener, one app instance, no double-start).
       HTTPS_PORT: ${HTTPS_PORT:-8443}
       SSL_KEYFILE: ${SSL_KEYFILE:-/etc/ssl/mymts/helper.key}
       SSL_CERTFILE: ${SSL_CERTFILE:-/etc/ssl/mymts/helper.crt}
@@ -75,12 +73,10 @@ services:
       - /srv/docker/mymts-helper/_secrets:/etc/ssl/mymts:ro
     networks:
       - mymts-net
-    # The TV on the LAN reaches /api/feed + /api/channels at
-    # http://<nas-lan-ip>:8091 (transitional) and
-    # https://<nas-lan-ip>:8443 (target). Both LAN-only; the container
-    # is still non-root + cap-dropped + read-only-rootfs.
+    # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed
+    # + /api/channels at https://<nas-lan-ip>:8443. LAN-only; the
+    # container is still non-root + cap-dropped + read-only-rootfs.
     ports:
-      - "8091:8091"
       - "8443:8443"
     logging:
       driver: json-file
@@ -88,9 +84,10 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      # Container HEALTHCHECK lives in the Dockerfile too; this is the
-      # compose-side declaration so `docker compose ps` reflects health.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/health"]
+      # Healthcheck now hits HTTPS over loopback. `-k` skips cert
+      # verification — the container is fetching from itself, so MITM
+      # is not a concern; we just want to know if the listener is up.
+      test: ["CMD", "curl", "-fsSk", "https://127.0.0.1:8443/health"]
       interval: 30s
       timeout: 5s
       retries: 3

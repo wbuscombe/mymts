@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Stage 6 / TLS — TV ↔ helper trust pinning.
+  Stage 6 / TLS — TV ↔ helper trust pinning (cutover complete 2026-06-04).
 
   Default (all other hosts): cleartext refused, system trust anchors only.
   The TV makes no other outbound calls; the operator's own helper is the
@@ -10,10 +10,11 @@
     - Trusts ONLY the helper's own self-signed cert embedded at
       @raw/helper_cert. The system CA bundle is NOT a trust anchor for
       this host, so even a global-CA-signed MITM cert is refused.
-    - Cleartext (http://) is STILL ALLOWED as a transition fallback —
-      removed in a follow-up commit once the HTTPS path is operator-
-      confirmed on the box. The fallback exists so a botched deploy
-      while the operator is away from the box cannot strand the app.
+    - Cleartext (http://) is REFUSED. The transitional cleartext
+      exception from the prior commit was removed on 2026-06-04 with
+      the operator at the .182 box, after telemetry verified the app
+      was already on HTTPS (zero HelperClient trust failures, 245+
+      EV=TILE_READY events over HTTPS).
 
   The embedded helper_cert.pem is the PUBLIC certificate only; the
   matching private key lives only on the NAS at
@@ -25,7 +26,7 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <domain-config cleartextTrafficPermitted="true">
+    <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="false"><LAN_IP></domain>
         <trust-anchors>
             <!--

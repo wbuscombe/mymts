@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -56,6 +57,7 @@ fun VideoGrid(
     helperUnreachable: Boolean = false,
     audibleSlot: Int = -1,
     captionsOnSlots: Set<Int> = emptySet(),
+    onSoftCaptionAvailabilityChanged: (slotIndex: Int, available: Boolean) -> Unit = { _, _ -> },
 ) {
     val playingSlots = remember(slots) { slots.filterIsInstance<Slot.Playing>() }
 
@@ -95,6 +97,24 @@ fun VideoGrid(
             val slot = tile.slot as? Slot.Playing ?: return@forEach
             player.setAudible(slot.index == audibleSlot)
             player.setCaptionsEnabled(slot.index in captionsOnSlots)
+        }
+    }
+
+    // Listen for soft-caption-track availability per slot so the
+    // controls overlay can surface "not available" honestly. Each
+    // player's hasSoftCaptionTrack flips on the manifest's
+    // onTracksChanged; we forward those updates up to the caller via
+    // the callback. Re-keyed on bound + readyVersion so we re-subscribe
+    // when the player set changes.
+    LaunchedEffect(bound, readyVersion) {
+        bound.forEach { tile ->
+            val player = tile.player ?: return@forEach
+            val slot = tile.slot as? Slot.Playing ?: return@forEach
+            launch {
+                player.hasSoftCaptionTrack.collect { available ->
+                    onSoftCaptionAvailabilityChanged(slot.index, available)
+                }
+            }
         }
     }
 

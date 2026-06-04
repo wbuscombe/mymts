@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -87,6 +88,21 @@ class StreamPlayer(
 
     private val _state = MutableStateFlow(State.CONNECTING)
     val state: StateFlow<State> = _state.asStateFlow()
+
+    /**
+     * Whether this stream currently advertises a **soft caption / subtitle
+     * track** (CEA-608/708, WebVTT, etc.). Updates on `onTracksChanged`
+     * — false at construction, flips to true if the master / variant
+     * resolves to a manifest with an `#EXT-X-MEDIA:TYPE=SUBTITLES` or
+     * `TYPE=CLOSED-CAPTIONS` declaration that ExoPlayer parses.
+     *
+     * The wall's [com.mymts.ui.menu.SlotControlsOverlay] reads this so
+     * the Captions row can surface honest "not available on this
+     * channel" when the stream has no track to toggle — distinct from
+     * "captions off" (a track exists but the operator hasn't enabled it).
+     */
+    private val _hasSoftCaptionTrack = MutableStateFlow(false)
+    val hasSoftCaptionTrack: StateFlow<Boolean> = _hasSoftCaptionTrack.asStateFlow()
 
     /** Cumulative dropped frames since initialize(). Read by the soak harness. */
     @Volatile var droppedFrames: Int = 0
@@ -170,6 +186,16 @@ class StreamPlayer(
             override fun onRenderedFirstFrame() {
                 tracker.onFrameRendered()
                 SoakLog.tileReady(spec.id)
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                // Soft caption availability flips as soon as the manifest
+                // parses and ExoPlayer reports its track groups. The
+                // controls overlay observes the StateFlow we write here
+                // so the Captions row can show "not available" honestly
+                // for streams without a text track.
+                val hasText = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
+                _hasSoftCaptionTrack.value = hasText
             }
         }
         listener = pl

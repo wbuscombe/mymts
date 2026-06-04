@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -81,6 +82,15 @@ fun WallScreen(
     val overrides by lineupStore.overrides
     val audibleSlot by lineupStore.audibleSlot
     val captionsOnSlots by lineupStore.captionsOnSlots
+
+    // Per-slot soft-caption-track availability. Updated from VideoGrid's
+    // Player.Listener.onTracksChanged forwarding. Read by the controls
+    // overlay to surface honest "not available on this channel" when
+    // the stream has no text track to toggle. A missing entry means
+    // "unknown yet" — the row defaults to On/Off based on the saved
+    // preference, which is the right behaviour until the manifest
+    // parses.
+    val softCaptionAvailability = remember { mutableStateMapOf<Int, Boolean>() }
 
     DisposableEffect(channels, feed, ticker) {
         channels.start()
@@ -162,6 +172,9 @@ fun WallScreen(
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                     audibleSlot = audibleSlot,
                     captionsOnSlots = captionsOnSlots,
+                    onSoftCaptionAvailabilityChanged = { idx, available ->
+                        softCaptionAvailability[idx] = available
+                    },
                 )
             }
         }
@@ -192,20 +205,24 @@ fun WallScreen(
                 audioState = if (pending.slotIndex == audibleSlot) AudioState.Audible
                 else AudioState.Muted,
                 captionsState = run {
-                    // "Captions not available" surfaces honestly when
-                    // the tile is currently a Playing slot with no soft
-                    // text track. For Offline / Empty slots we still
-                    // surface On/Off according to the saved preference
-                    // (the toggle is a no-op until the slot starts
-                    // playing again).
+                    // Three states, honest about all three:
+                    //   - NotAvailable: the slot is currently Playing
+                    //     AND the player has reported (via onTracksChanged)
+                    //     that no text track exists in the manifest.
+                    //     Toggle is a no-op for this slot.
+                    //   - On / Off: the saved preference. Used when
+                    //     a soft track exists OR when the manifest
+                    //     hasn't parsed yet (the row will flip to
+                    //     NotAvailable as soon as onTracksChanged fires
+                    //     for a stream without a text track).
                     val playing = playingSlot
                     val isOn = pending.slotIndex in captionsOnSlots
+                    val knownNoTrack =
+                        playing != null && softCaptionAvailability[pending.slotIndex] == false
                     when {
-                        playing == null -> if (isOn) CaptionsState.On else CaptionsState.Off
-                        // Heuristic check delegated to the WallTile/player
-                        // layer at apply time — the menu surface trusts
-                        // the saved preference and the per-channel doc.
-                        else -> if (isOn) CaptionsState.On else CaptionsState.Off
+                        knownNoTrack -> CaptionsState.NotAvailable
+                        isOn -> CaptionsState.On
+                        else -> CaptionsState.Off
                     }
                 },
                 onPickChannel = { menu.pickSlot(pending.slotIndex) },

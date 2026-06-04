@@ -261,17 +261,17 @@ The directory ends up `drwxr-x---  10001:10001`, the key `-rw-------  10001:1000
 
 After rotating the cert on the NAS, `scp` the new `helper.crt` back to the dev machine, replace `app/src/main/res/raw/helper_cert.pem`, rebuild + ship the APK via `scripts/deploy-app.sh`. The next time the app launches, it'll trust the new cert. Until the new APK is installed, the old cert is the only one the app trusts — so **rotate the cert + ship the APK in a coordinated pair**, not separately.
 
-### The dual-port migration sequence
+### The dual-port migration sequence — **COMPLETE 2026-06-04**
 
 | Step | What | Where |
 |---|---|---|
-| 1 | Helper serves HTTPS 8443 + HTTP 8091 (both work) | **Done — this commit** |
-| 2 | App defaults to HTTPS 8443, cleartext exception still in place | **Done — this commit** |
-| 3 | Telemetry-verify (TILE_READY over HTTPS, no trust errors) | **Done — this commit** |
-| 4 | Remove cleartext exception, rebuild + deploy app | **Staged — at-the-box finale Step 1** |
-| 5 | Remove HTTP 8091 from compose, redeploy helper | **Staged — at-the-box finale Step 1** |
+| 1 | Helper serves HTTPS 8443 + HTTP 8091 (both work) | ✅ Stage 6 baseline (`b8240b7`) |
+| 2 | App defaults to HTTPS 8443, cleartext exception in place | ✅ Stage 6 baseline (`b8240b7`) |
+| 3 | Telemetry-verify (TILE_READY over HTTPS, no trust errors) | ✅ Stage 6 baseline (`b8240b7`) |
+| 4 | Remove cleartext exception, rebuild + deploy app | ✅ At-the-box finale Step 2A (this commit) |
+| 5 | Remove HTTP 8091 from compose, redeploy helper | ✅ At-the-box finale Step 2B (this commit) |
 
-Steps 4–5 are deferred to a session where you can physically recover the box if anything goes wrong.
+The migration's safety properties held end-to-end: when the cleartext-only APK was installed on `.182`, the helper was still serving HTTP+HTTPS and the failure mode of "app can't reach the helper" was visible via telemetry before any helper-side change. When the helper was then narrowed to HTTPS-only, the app continued to reach it.
 
 ## Helper on the NAS (Stage 2 deploy reality)
 
