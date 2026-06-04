@@ -122,6 +122,80 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 **Why-not-now:** Discovered during the at-the-box finale Step 2's helper log inspection. Latent since the Stage 6 TLS baseline (`b8240b7`) when `__main__.py` shifted to `asyncio.gather(*[s.serve() for s in servers])` — the dual-uvicorn-instance approach + FastAPI's `Depends()`-based sqlite connection (`_conn` in `feeds/api.py` and `channels/api.py`) means a connection can be opened in one thread and the `try/finally`-driven `close()` can run in a different thread via anyio's threadpool dispatch. The fix is small (use a thread-local connection / open per-request inside the route function rather than yielding via Depends, OR switch to aiosqlite). Not blocking the at-the-box finale; the wall works fine and the bug is observable.
 **Reconsider when:** Either the helper log noise becomes inconvenient OR the channel-prober / RSS-poller is extended in a way that surfaces the same threading model elsewhere. Fix should also revisit whether to keep the dual-uvicorn-instance architecture (now that HTTP is gone, the second listener exists only as a leftover comment in `__main__.py` — could be collapsed to a single `uvicorn.run`).
 
+# Usage feedback — 2026-06-04 (upstairs session)
+
+Batch of feedback the operator surfaced after actually using the wall on `.182`. Logged here so nothing evaporates; **deliberately deferred from the current session** — these are next-roadmap items, not in-flight work. Caveats below preserved verbatim where flagged because they prevent re-litigating settled foundation decisions and set honest expectations on what's feasible vs. paywalled vs. a separate scoped effort.
+
+## A. Whole-wall D-pad navigation + menu overhaul (BIG — likely the next major chapter)
+
+**What:** The wall isn't fully navigable from the couch. Operator can't D-pad into the feed to focus/select an article, can't focus a video cell to act on it; the menu "feels clunky" and "needs to be more robust / more human-friendly." Make the *whole wall* navigable: focus moves between feed items, video cells, ticker, and menu — everything reachable and actionable via D-pad.
+**Why-not-now:** Stage 5 deliberately scoped the menu to channel/lineup control and deferred the full focus/navigation system. This feedback says that deferral has come due. It's a substantial chapter, not a tweak.
+**Reconsider when:** Next major build after the current session's items land. This is the lead candidate for the next big push.
+
+## B. Feed UX — list view, live/offline sections, selectable items
+
+**What:** Feed should be a **list, not a continuous individual-scroll** ("unintuitive and inefficient"). Add **sections** (e.g. by source or grouping). Make feed items selectable (ties into A — navigation).
+**Why-not-now:** Current feed is a chronological river; restructuring + selection depends partly on the navigation overhaul (A).
+**⚠️ CAVEAT (preserve — closed-door item):** "Selecting an article" must NOT mean opening/reading the full article *in-app*. In-app article reading was ruled out in `04-TECHNICAL-APPROACH.md §5` / foundation as a security+scope dead-end (the reader-pane cross-device-auth problem). "Select" can mean focus / expand the safe summary / mark — NOT a full in-app web reader. Revisiting that is a deliberate foundation-level decision, not a feature tweak.
+**Reconsider when:** With the navigation chapter (A) — the list/sections part can also go in a "UX & config" push.
+
+## C. Layout / sizing configurability
+
+**What:** Configurable side for the video grid (left/right of feed); video grid scales to display size + the space beside the feed; overall app resolution/sizing configurable; feed width AND font configurable.
+**Why-not-now:** This is the existing "configurable panes" backlog item plus app-level sizing/resolution. Grid already autofits its region (Stage 3 polish pass) — clarify with operator what's missing vs. what exists. App-resolution-adaptiveness matters MORE once MyMTS is on its real box driving an actual TV (the in-transit hardware) vs. the small dev panel currently attached to `.182`.
+**Reconsider when:** "UX & config" push; some (feed width/font) are low-effort and could come sooner.
+
+## D. Ticker — alternate markets + curated sports scores/news
+
+**What:** Ticker eventually alternates between the markets mode (current) and a sports scores/news mode the operator curates.
+**Why-not-now:** Additive; the ticker was built to accept additional modes without rework (the `TickerSource` interface lives behind `SampleTickerSource`). Depends on a sports-data source (see G).
+**Reconsider when:** After a sports-data source is identified; clean later addition.
+
+## E. More video channels (channel-supply — recurring thread)
+
+Channel supply is the standing follow-on; these extend it with varying feasibility. Each carries its own honest caveat.
+
+### E1. League networks — MLB / NFL / NBA / NHL Network
+**What:** Add league-network feeds for the major US sports leagues.
+**Why-not-now:** ⚠️ Almost certainly **paywalled, no free public HLS** (same as CNBC). Worth a look during the next channel-resolution pass to confirm, but temper expectations.
+**Reconsider when:** If a free feed is found OR operator accepts a paid source (which would require a separate auth/source-of-truth design — these are not just-a-URL additions).
+
+### E2. The Weather Channel
+**What:** Add Weather Channel as a tile option.
+**Why-not-now:** Likely a **free FAST feed** (Pluto / Samsung TV Plus etc.) — good candidate, findable.
+**Reconsider when:** Next channel-resolution pass.
+
+### E3. ESPN 1000 / WSCR 670 (Twitch)
+**What:** Add Chicago sports-talk radio stations that simulcast on Twitch.
+**Why-not-now:** ⚠️ These are **radio** stations and Twitch is a **different integration** (not normal HLS; own auth / stream-resolution model). Also raises "what does a radio tile show" (logo + audio?). Genuinely different work, not a seed URL.
+**Reconsider when:** As its own scoped investigation if the operator wants it — needs design decisions (logo-card vs. visualizer tile, Twitch token handling, separate audio-only state, how it interacts with the single-audible-tile model).
+
+### E4. WGN news/sports
+**What:** Add WGN news/sports as a tile option.
+**Why-not-now:** WGN America largely defunct as a national entity; local WGN Chicago may still have streams.
+**Reconsider when:** Channel-resolution pass — check current availability.
+
+## F. Feed source quality — more reputable sources
+
+**What:** Add reputable feed sources — AP, Reuters, CNN, etc. Research what `monitor-the-situation.com` uses as a reference (the visual + editorial reference for this whole project).
+**Why-not-now:** Clean, high-value, low-effort — just more RSS sources in the helper seed (current: BBC World, Al Jazeera, Guardian World, NPR World). Held only to keep the current session focused.
+**Reconsider when:** Soon — pairs naturally with any helper/seed work. Research MTS's source list as input.
+
+## G. Sports-data source (enabler for D + the original ticker sports mode)
+
+**What:** A data source for live sports scores / schedules to feed the ticker's sports mode and any sports surfacing.
+**Why-not-now:** No source wired yet (markets ticker is sample data; sports is unbuilt). Enabler for D.
+**Reconsider when:** When the ticker sports mode is built; evaluate free sports-data feeds/APIs (some have free tiers with reasonable rate limits, some are paywalled — same triage shape as the channel-supply work).
+
+## H. Cross-platform profiles — ARCHITECTURE FORK, decide before building
+
+**What:** Should a user's profile (lineup + audio/caption/layout prefs) be **shared across platforms/devices** (this box, the in-transit MyMTS box, a future browser client), or stay **device/platform-specific**?
+**⚠️ This is a genuine architecture decision, NOT a tweak — flagged by the operator for a REAL discussion when we reach that chapter (operator explicitly deferred deciding).** Lay out both paths when the time comes:
+- *Device-local (current):* `LineupStore` on each box. Simple, private, no sync, no server-side user state.
+- *Helper-hosted:* prefs live in the helper (server-side); any client reads the same profile. Enables sharing, but the helper now stores user state and you need a sync / identity model. Connects to the browser-client backlog item (a second client makes shared profiles more compelling).
+**Why-not-now:** Operator wants a deliberate discussion of the tradeoff, not a snap call. Do not presuppose an answer.
+**Reconsider when:** As its own decision point — likely alongside the browser-client question OR when the second (MyMTS) box is provisioned and the "same prefs on both boxes?" question becomes concrete.
+
 ## Ideas that surfaced during build (add as you find them)
 
 ```
