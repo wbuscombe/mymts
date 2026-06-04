@@ -190,7 +190,15 @@ This reinstalls the **current known-good** (the APK named in `known-good` *befor
 
 ### Health-gate verification status (recorded honestly)
 
-The decision-logic Python is fully unit-tested (`scripts/test_health_check.py`). The end-to-end install + rollback flow has been **dry-run verified** (build + archive succeeds; no device install). A live install + force-failed-health + automatic-rollback test is **staged for when the operator is near the box** — running it now while the operator is away carries device-recovery risk if it misfires. See the Stage 6 finding for the rationale and the trigger condition.
+The decision-logic Python is fully unit-tested (`scripts/test_health_check.py`). The end-to-end install + rollback flow was **verified on `.182` on 2026-06-04** with the operator physically present:
+
+1. **Baseline established.** `./scripts/deploy-app.sh` built + signed + archived `mymts-0.0.0+5576551-20260604T230502Z.apk`, installed, launched, health-gate PASS (`117 EV=TILE_READY events ≥ 2, 0 dead`), promoted to known-good.
+2. **Deliberate failure pushed.** `gradle.properties` temporarily flipped to `MYMTS_HELPER_BASE_URL=https://192.168.99.99:9999` (unreachable). Force-clean rebuild + deploy.
+3. **Auto-rollback fired.** Health gate returned `FAIL_NOT_READY` (`0 EV=TILE_READY events; need ≥ 2`) after the 90 s capture window. Script automatically reinstalled the known-good APK (`mymts-0.0.0+5576551-20260604T230502Z.apk`) and relaunched. Wall came back up with 4 distinct slots LIVE (`bloomberg-tv / cbs-sports-hq / bbc-news / cnn`). `known-good` pointer unchanged; failed APK retained in archive for diagnosis.
+4. **Manual rollback exercised.** `./scripts/deploy-app.sh --manual-rollback` reinstalled the known-good and relaunched in ~6 seconds; wall up; `known-good` pointer unchanged.
+5. **Gotcha recorded for the runbook.** During the rollback test, the deploy script's first re-run accidentally promoted an APK whose content was stale — gradle had decided `:app:assembleRelease` was up-to-date despite a `gradle.properties` change. The fix is to add `:app:clean` to the build step (or to make the gradle config explicitly depend on `gradle.properties` mtime). For now, **always force a clean rebuild** when changing the helper URL or other config-driven `buildConfigField` values, especially before the rollback test.
+
+The Operational Bar B1/B2/B5 properties (never bricks / always a way back / no silent bad-bundle cascade) are now operationally verified on real hardware.
 
 ## WyzeGrid coexistence (note for the record; not currently active state)
 

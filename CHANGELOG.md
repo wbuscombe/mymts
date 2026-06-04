@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## At-the-box finale Step 3 — rollback live-test verified on `.182` (2026-06-04)
+
+The Stage 6 signed-update + auto-rollback path was operationally verified on real hardware. The dry-run had already exercised the decision logic; this session exercised the end-to-end install + health-gate + rollback flow with a deliberately-failing build.
+
+### Sequence on `.182`
+
+1. **Baseline established.** `./scripts/deploy-app.sh --archive-dir $HOME/.mymts/release`. Build → archive `mymts-0.0.0+5576551-20260604T230502Z.apk` → install → launch → health-gate **PASS** (`117 EV=TILE_READY events, 0 dead`) → promoted to known-good.
+2. **Deliberately-failing build pushed.** `gradle.properties` temporarily flipped to `MYMTS_HELPER_BASE_URL=https://192.168.99.99:9999` (unreachable). Force-clean rebuild (gradle's incremental build had been masking the URL change — see gotcha below) + deploy.
+3. **Auto-rollback fired.** Health gate returned `FAIL_NOT_READY` (`0 EV=TILE_READY events; need ≥ 2`) after the 90 s capture window. Script automatically reinstalled the known-good APK and relaunched.
+4. **Wall came back up.** 4 distinct slots LIVE within 60 s: `bloomberg-tv`, `cbs-sports-hq`, `bbc-news`, `cnn`. `known-good` pointer unchanged. Failed APK retained in `$MYMTS_ARCHIVE_DIR/archive/` for diagnosis.
+5. **Manual rollback exercised.** `./scripts/deploy-app.sh --manual-rollback` reinstalled the known-good in ~6 seconds; wall up; `known-good` pointer unchanged.
+
+### Operational Bar properties confirmed on hardware
+- **B1 (never bricks).** The wall was always running — either on the just-installed build (briefly, while the gate ran) or on the known-good.
+- **B2 (always a way back).** Both auto and manual rollback paths exercised; both restored the wall to a known-working state.
+- **B5 (no silent bad-bundle cascade).** A build that produced zero `EV=TILE_READY` events in 90 s was **never** declared the new known-good. The promotion gate held.
+
+### Fixes shipped this commit
+- `scripts/deploy-app.sh` — `log()` now writes to stderr instead of stdout. The prior bug: `$(archive_release)` was capturing the log line as part of the filename, producing a corrupted install path. Found at first deploy attempt; fixed before any state was persisted.
+- `docs/OPERATIONS.md` — "live device test STAGED" flipped to "**verified on `.182` on 2026-06-04**" with the exact sequence above + a gotcha about `:app:clean` being required before any `gradle.properties` change.
+
+### Gotcha — gradle incremental builds can mask config changes
+When `gradle.properties` is edited (e.g. to point at a different `MYMTS_HELPER_BASE_URL`), gradle may report `:app:assembleRelease` as up-to-date and reuse the prior APK. The generated `BuildConfig.java` correctly reflects the new value, but the assembled APK doesn't. Discovered during the rollback test: an APK that was supposed to be "the failing build pointed at 192.168.99.99" had quietly been re-archived as the prior good build. Always force `:app:clean` before changing config-driven `buildConfigField` values. Runbook addition recorded in `docs/OPERATIONS.md`.
+
 ## At-the-box finale Step 2 — TLS cutover complete (2026-06-04)
 
 The TLS migration staged in the Stage 6 baseline commit (`b8240b7`) is now finished. With the operator physically at the `.182` box (the camera box, MyMTS borrowed for development), the transitional cleartext path was removed in two safe phases — app first, then helper — each independently telemetry-verifiable.

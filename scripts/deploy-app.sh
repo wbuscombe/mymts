@@ -82,8 +82,12 @@ KNOWN_GOOD_PTR="$ARCHIVE_DIR/known-good"
 LOG_FILE="$ARCHIVE_DIR/deploy.log"
 
 log() {
+    # log to stderr (not stdout) so $(fn) command-substitution captures
+    # only the function's actual return value, not its progress messages.
+    # The 2>&1 redirect in the caller's invocation still pulls log lines
+    # into the user's terminal.
     local line; line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
-    echo "$line" | tee -a "$LOG_FILE"
+    echo "$line" | tee -a "$LOG_FILE" >&2
 }
 
 require_cmd() {
