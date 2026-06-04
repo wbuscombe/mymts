@@ -25,9 +25,31 @@ class Config:
     feed_poll_interval_seconds: int = 300
     feed_retention_days: int = 14
     channel_probe_interval_seconds: int = 30 * 60
+    # Stage 6 / TLS track — added 2026-06-03.
+    #
+    # `https_port` enables HTTPS on a second listener when paired with a
+    # cert + key path. When unset, the helper serves HTTP only (the v1
+    # behaviour). When both HTTP and HTTPS ports are configured, the
+    # helper serves both **from the same app instance** — pollers run
+    # once via the app lifespan, exposed identically on both endpoints.
+    # This is the operator-away-safe transition: the existing HTTP
+    # endpoint keeps working while the TV moves to HTTPS, and the HTTP
+    # endpoint can be removed in a follow-up commit once the move is
+    # confirmed.
+    https_port: int | None = None
+    ssl_keyfile: str | None = None
+    ssl_certfile: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
+        def _opt_int(name: str) -> int | None:
+            v = os.environ.get(name)
+            return int(v) if v and v.strip() else None
+
+        def _opt_str(name: str) -> str | None:
+            v = os.environ.get(name)
+            return v if v else None
+
         return cls(
             phantom_mode=os.environ.get("PHANTOM_MODE", "0") == "1",
             port=int(os.environ.get("PORT", "8091")),
@@ -45,4 +67,16 @@ class Config:
             channel_probe_interval_seconds=int(
                 os.environ.get("CHANNEL_PROBE_INTERVAL_SECONDS", str(30 * 60))
             ),
+            https_port=_opt_int("HTTPS_PORT"),
+            ssl_keyfile=_opt_str("SSL_KEYFILE"),
+            ssl_certfile=_opt_str("SSL_CERTFILE"),
         )
+
+    def has_https(self) -> bool:
+        """True iff HTTPS is fully configured (port + key + cert).
+
+        All three must be set; otherwise the helper serves HTTP only.
+        This keeps misconfiguration honest — a half-configured TLS
+        setup never silently degrades to "almost encrypted."
+        """
+        return bool(self.https_port and self.ssl_keyfile and self.ssl_certfile)

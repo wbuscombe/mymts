@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Stage 3 helper-host cleartext allow-list.
+  Stage 6 / TLS — TV ↔ helper trust pinning.
 
-  The TV consumes JSON from the helper at http://<LAN_IP>:8091. The
-  helper itself is LAN-bound (compose binds the host port locally only)
-  and the TV-to-helper boundary is the wired/wifi LAN behind the NAS.
-  Allowing cleartext for that single private host is narrower than the
-  alternative (app-wide `usesCleartextTraffic=true`).
+  Default (all other hosts): cleartext refused, system trust anchors only.
+  The TV makes no other outbound calls; the operator's own helper is the
+  only host the app talks to.
 
-  Stage 6 will revisit this with the production hostname/TLS story; this
-  config is the Stage 3 dev/prod compromise, not the final shape.
+  <LAN_IP> (the helper):
+    - Trusts ONLY the helper's own self-signed cert embedded at
+      @raw/helper_cert. The system CA bundle is NOT a trust anchor for
+      this host, so even a global-CA-signed MITM cert is refused.
+    - Cleartext (http://) is STILL ALLOWED as a transition fallback —
+      removed in a follow-up commit once the HTTPS path is operator-
+      confirmed on the box. The fallback exists so a botched deploy
+      while the operator is away from the box cannot strand the app.
+
+  The embedded helper_cert.pem is the PUBLIC certificate only; the
+  matching private key lives only on the NAS at
+  /srv/docker/mymts-helper/_secrets/helper.key (gitignored).
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -19,5 +27,13 @@
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false"><LAN_IP></domain>
+        <trust-anchors>
+            <!--
+              Self-signed helper cert. Only this cert is accepted for the
+              helper host — system CAs and user-installed CAs are
+              explicitly NOT trust anchors for this domain.
+            -->
+            <certificates src="@raw/helper_cert" />
+        </trust-anchors>
     </domain-config>
 </network-security-config>

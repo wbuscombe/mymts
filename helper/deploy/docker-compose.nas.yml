@@ -49,6 +49,17 @@ services:
       FEED_POLL_INTERVAL_SECONDS: ${FEED_POLL_INTERVAL_SECONDS:-300}
       FEED_RETENTION_DAYS: ${FEED_RETENTION_DAYS:-14}
       CHANNEL_PROBE_INTERVAL_SECONDS: ${CHANNEL_PROBE_INTERVAL_SECONDS:-1800}
+      # Stage 6 / TLS — the helper serves HTTPS on 8443 in addition to
+      # HTTP on 8091. The cert + key live OUTSIDE this repo on the NAS
+      # at /srv/docker/mymts-helper/_secrets/ (gitignored,
+      # mounted read-only below). The HTTP listener stays available
+      # transitionally so the TV's existing HTTP path keeps working
+      # while it migrates to HTTPS; a follow-up commit removes the
+      # HTTP listener (and the app-side cleartext exception) once the
+      # HTTPS migration is operator-confirmed.
+      HTTPS_PORT: ${HTTPS_PORT:-8443}
+      SSL_KEYFILE: ${SSL_KEYFILE:-/etc/ssl/mymts/helper.key}
+      SSL_CERTFILE: ${SSL_CERTFILE:-/etc/ssl/mymts/helper.crt}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -56,15 +67,21 @@ services:
       # backup/restore commands are documented in
       # docs/OPERATIONS.md "Helper backup/restore".
       - mymts-helper-data:/data:rw
+      # TLS cert + private key — operator-supplied on the NAS at
+      # /srv/docker/mymts-helper/_secrets/. NEVER in the repo.
+      # Mounted read-only (`:ro`) so a compromised container cannot
+      # rewrite the key; ownership inside the container is 10001:10001
+      # to match the non-root user.
+      - /srv/docker/mymts-helper/_secrets:/etc/ssl/mymts:ro
     networks:
       - mymts-net
     # The TV on the LAN reaches /api/feed + /api/channels at
-    # http://<nas-lan-ip>:8091. Exposing the port is the v1 contract; a
-    # Stage 6 hardening pass adds a reverse-proxy/auth layer if/when the
-    # operator wants something tighter. The container is still non-root
-    # + cap-dropped + read-only-rootfs, so the port surface is narrow.
+    # http://<nas-lan-ip>:8091 (transitional) and
+    # https://<nas-lan-ip>:8443 (target). Both LAN-only; the container
+    # is still non-root + cap-dropped + read-only-rootfs.
     ports:
       - "8091:8091"
+      - "8443:8443"
     logging:
       driver: json-file
       options:

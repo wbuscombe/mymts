@@ -102,12 +102,14 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 *Residual risk:* a future "add custom channel" feature would re-introduce this surface; threat-model it fresh at that point.
 *Traces to:* **A1**, **A4** (least-privilege egress).
 
-**T-T4. Cleartext HTTP to the helper on the LAN → tampering / sniffing by a LAN-local attacker.**
+**T-T4. Tampering / sniffing on the TV ↔ helper LAN link.**
 *Likelihood:* low (operator's LAN; no public-internet exposure).
 *Impact:* a LAN-local attacker could inject feed items, channel URLs, or modified `/api/feed` content. Worst case: an injected channel URL pointing at attacker-controlled HLS → wall plays attacker content.
-*Mitigation (partial):* the wall's `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host is HTTPS-only by Android policy. The helper container is bound to the LAN bridge only — not reachable from the public internet. Operator's network is single-occupant residential.
-*Residual risk:* a LAN-local attacker (e.g. a compromised IoT device on the same network) could MITM the helper response. Stage 6 hardens this with TLS to the helper + certificate pinning (operator-issued internal CA). The current state is a documented v0.1 compromise — narrower than app-wide `usesCleartextTraffic=true`, broader than TLS.
-*Traces to:* **A2**, **A4**.
+*Mitigation (Stage 6 TLS track, this commit — baseline):* the helper now serves **HTTPS on port 8443** in addition to HTTP on 8091, using a self-signed RSA-4096 certificate with SAN `IP:<LAN_IP>, DNS:mymts-helper` (10-year validity). The TV app's `network_security_config.xml` carries a domain-config for `<LAN_IP>` that pins **only the helper's own self-signed cert** as a trust anchor — the Android system CA bundle is explicitly NOT a trust anchor for this host, so even a global-CA-signed MITM cert is refused. The app's default `BuildConfig.HELPER_BASE_URL` now points at `https://<LAN_IP>:8443`; the cleartext exception for `<LAN_IP>` is **temporarily retained** as a transitional fallback so a botched HTTPS path cannot strand the app while the operator is away from the box. Telemetry-verified on `.182`: all 4 tiles fire `EV=TILE_READY` over HTTPS with zero HelperClient trust errors. The private key (`helper.key`) lives only on the NAS at `/srv/docker/mymts-helper/_secrets/`, mounted into the container read-only at `/etc/ssl/mymts/` with ownership UID 10001 and mode 600; the public certificate is committed at `app/src/main/res/raw/helper_cert.pem` (public material — committable; `.gitignore` excludes the matching private key + any other `*.key`/`*.pem` under `helper/`).
+*Residual risk (carried to the "at-the-box" finale):*
+- The cleartext-HTTP path is still open as a transitional fallback. A LAN attacker could still tamper with traffic that uses the HTTP fallback. This is removed in Step 1 of the at-the-box finale (rebuild app without the cleartext exception + drop HTTP 8091 from compose), staged to run only with the operator physically near the box so a botched cutover is recoverable.
+- Self-signed cert rotation requires an APK rebuild (the public cert is embedded as a trust anchor). Loss of the private key means generating a new cert, replacing `helper_cert.pem`, and shipping a new APK build via the Stage 6 signed-update path. This is acceptable for a single-operator-on-private-LAN posture.
+*Traces to:* **A2** (trust boundaries), **A4** (least authority), **A1** (assume hostile input).
 
 **T-T5. Wall consumes an attacker-shaped `/api/channels` or `/api/feed` JSON.**
 *Likelihood:* low-to-medium (requires either a compromised helper or T-T4 MITM).

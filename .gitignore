@@ -33,6 +33,16 @@ proguard/
 *.jks
 keystore.properties
 
+# Helper TLS material — private keys NEVER in repo. The public cert
+# *is* in app/src/main/res/raw/helper_cert.pem because the app trusts
+# it as a pinned trust anchor; only the private key (helper-side) is
+# secret. Belt-and-braces: exclude any helper.key / *.pem file outside
+# the app trust path.
+*.key
+helper/**/*.crt
+helper/**/*.pem
+!app/src/main/res/raw/helper_cert.pem
+
 # Java / Kotlin
 *.log
 hs_err_pid*

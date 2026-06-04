@@ -462,7 +462,51 @@ The "rollback" path is the same code path as `--manual-rollback`: read the `know
 - **Loss of keystore = loss of update ability** (Android refuses upgrades signed with a different key). The keystore is backed up off-device per the operator's secret-handling practice.
 - **Audit log of every deploy.** `$MYMTS_ARCHIVE_DIR/deploy.log` records every build, install, health-gate result, and promotion or rollback decision.
 
-## 12. What this document deliberately does NOT specify yet
+## 12. Stage 6 — TLS to the helper (baseline)
+
+The TV ↔ helper link is now encrypted with **certificate pinning at the app layer**. The trust posture is intentionally narrow for a single-operator LAN service:
+
+```
+                                           helper.crt (public)
+                                                  │
+                                                  │  embedded as trust anchor
+                                                  ▼
+        ┌────────────────┐                ┌──────────────────┐
+        │ TV app          │  HTTPS 8443 / │  helper          │
+        │ (network-sec-   │ ◀──pinned───▶ │  (uvicorn TLS)   │
+        │  config)        │   trust       │                  │
+        └────────────────┘                └──────────────────┘
+                                                  │
+                                                  │  reads at startup
+                                                  ▼
+                                  /etc/ssl/mymts/helper.{key,crt}
+                                  (NAS-only volume mount, UID 10001)
+```
+
+### What the app trusts
+
+The TV app's `network_security_config.xml` carries:
+
+- A `<base-config>` with `cleartextTrafficPermitted="false"` and system CAs only — the default for anywhere that isn't the helper.
+- A `<domain-config>` for `<LAN_IP>` whose `<trust-anchors>` contain **only** `@raw/helper_cert` (the helper's self-signed cert). The system CA bundle is explicitly NOT a trust anchor for this host — a global-CA-signed MITM cert is refused.
+- The cleartext exception for `<LAN_IP>` is retained transitionally as a recovery seatbelt; removed in the at-the-box finale Step 1.
+
+### What the helper does
+
+`helper/src/mymts_helper/__main__.py` builds the FastAPI app **once** and runs two `uvicorn.Server` instances concurrently sharing that one app instance:
+
+| Listener | Port | Lifespan | Pollers |
+|---|---|---|---|
+| HTTP (transitional) | 8091 | `on` — starts the RSS poller + channel prober via the app's lifespan handler | yes |
+| HTTPS (target) | 8443 | `off` — would double-start pollers if `on` | no, but serves all the same endpoints from the same app instance |
+
+When the transitional HTTP is dropped (at-the-box finale Step 1), the HTTPS listener flips its lifespan to `on` and becomes the only listener. The cert + key are mounted read-only from `/srv/docker/mymts-helper/_secrets/` (gitignored, UID 10001) into the container at `/etc/ssl/mymts/`.
+
+### Cert rotation contract
+
+Because the trust anchor is the **specific cert** (not an issuer), rotating the cert is a **coordinated APK + helper pair**: generate the new cert on the NAS, replace `app/src/main/res/raw/helper_cert.pem`, rebuild + ship the APK via the Stage 6 signed-update path. Until the new APK is installed, only the old cert is trusted. This is acceptable for a single-operator-on-private-LAN posture — the rotation cadence is "rarely" (10-year cert validity).
+
+## 13. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

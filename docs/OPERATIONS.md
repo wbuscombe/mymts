@@ -212,6 +212,67 @@ adb -s <LAN_IP>:5555 shell am start -n com.wyzegrid/.MainActivity
 
 The deeper finding — that two foreground TV apps cannot coexist on a 2 GB Onn box and MyMTS will need its own foreground-service kiosk story when it goes to production — is in `docs/STAGE-2-PLAN.md` (the production-deployment concerns section) and `docs/BACKLOG.md`.
 
+## TLS for the TV ↔ helper link (Stage 6 — baseline)
+
+### What this gives you
+
+- Helper serves **HTTPS on 8443** alongside **HTTP on 8091** (the transitional sequence so an operator-away deploy can't strand the box).
+- App's default `MYMTS_HELPER_BASE_URL` is `https://<LAN_IP>:8443`; the app trusts **only** the helper's own self-signed cert via `network_security_config.xml` (no system-CA fallback for this host, so even a global-CA MITM is refused).
+- Cleartext fallback still permitted for `<LAN_IP>` as a recovery seatbelt — **removed in the "at-the-box" finale Step 1** (deferred until you can physically recover the box if anything goes wrong).
+
+### Where the cert + key live
+
+| Path | What |
+|---|---|
+| `/srv/docker/mymts-helper/_secrets/helper.key` | Private key — **on the NAS only**, mode 600, ownership UID 10001. **Never in the repo, never in logs.** |
+| `/srv/docker/mymts-helper/_secrets/helper.crt` | Public cert — also on the NAS, mode 644. |
+| `app/src/main/res/raw/helper_cert.pem` | Public cert embedded in the APK as a pinned trust anchor. Committed (public material). |
+
+`.gitignore` excludes any `*.key`, plus `helper/**/*.crt` and `helper/**/*.pem`, with one `!app/src/main/res/raw/helper_cert.pem` re-include for the public cert that the app trusts.
+
+### Generating / rotating the cert (one-shot, on the NAS)
+
+```bash
+ssh <HOST>
+mkdir -p /srv/docker/mymts-helper/_secrets
+chmod 700 /srv/docker/mymts-helper/_secrets
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+    -keyout /srv/docker/mymts-helper/_secrets/helper.key \
+    -out   /srv/docker/mymts-helper/_secrets/helper.crt \
+    -subj "/CN=MyMTS Helper" \
+    -addext "subjectAltName=IP:<LAN_IP>,DNS:mymts-helper"
+chmod 600 /srv/docker/mymts-helper/_secrets/helper.key
+chmod 644 /srv/docker/mymts-helper/_secrets/helper.crt
+```
+
+**Gotcha (recorded):** the `cargo` host user is UID 1000 but the helper container runs as UID 10001. The cert files end up owned by `cargo`, unreadable by the container — the helper crash-loops with `PermissionError: [Errno 13]` on startup. Fix without `sudo` by using a short-lived root container (`cargo` has docker group membership):
+
+```bash
+ssh <HOST>
+docker run --rm -v /srv/docker/mymts-helper:/parent alpine sh -c \
+    "chown -R 10001:10001 /parent/_secrets && chmod 750 /parent/_secrets"
+docker run --rm -v /srv/docker/mymts-helper/_secrets:/secrets alpine sh -c \
+    "chmod 600 /secrets/helper.key && chmod 644 /secrets/helper.crt"
+```
+
+The directory ends up `drwxr-x---  10001:10001`, the key `-rw-------  10001:10001`, the cert `-rw-r--r--  10001:10001`. Container can now read them; host user `cargo` cannot list the directory directly any more (use docker to inspect — `docker exec mymts-helper ls /etc/ssl/mymts/`).
+
+### Updating the APK with a new cert
+
+After rotating the cert on the NAS, `scp` the new `helper.crt` back to the dev machine, replace `app/src/main/res/raw/helper_cert.pem`, rebuild + ship the APK via `scripts/deploy-app.sh`. The next time the app launches, it'll trust the new cert. Until the new APK is installed, the old cert is the only one the app trusts — so **rotate the cert + ship the APK in a coordinated pair**, not separately.
+
+### The dual-port migration sequence
+
+| Step | What | Where |
+|---|---|---|
+| 1 | Helper serves HTTPS 8443 + HTTP 8091 (both work) | **Done — this commit** |
+| 2 | App defaults to HTTPS 8443, cleartext exception still in place | **Done — this commit** |
+| 3 | Telemetry-verify (TILE_READY over HTTPS, no trust errors) | **Done — this commit** |
+| 4 | Remove cleartext exception, rebuild + deploy app | **Staged — at-the-box finale Step 1** |
+| 5 | Remove HTTP 8091 from compose, redeploy helper | **Staged — at-the-box finale Step 1** |
+
+Steps 4–5 are deferred to a session where you can physically recover the box if anything goes wrong.
+
 ## Helper on the NAS (Stage 2 deploy reality)
 
 ### Layout

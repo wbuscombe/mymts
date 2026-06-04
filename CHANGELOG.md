@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Stage 6 — TLS to the helper, baseline (2026-06-03)
+
+The TV ↔ helper link is now encrypted with certificate pinning at the app layer. Operator-away-safe baseline: the helper serves HTTPS 8443 **alongside** HTTP 8091, and the app keeps a cleartext fallback for `<LAN_IP>` so a botched HTTPS path can't strand the box. The full cutover (cleartext exception removed + HTTP 8091 dropped from compose) is staged for the "at-the-box" finale Step 1, where the operator can physically recover the box if anything goes wrong.
+
+### Trust mechanism — Option A (self-signed cert + pinned trust)
+
+Per the prompt's recommendation. A single-operator LAN service doesn't need a CA — the simplest correct posture is "the app trusts that specific cert, and nothing else for that host."
+
+- Self-signed RSA-4096 cert generated on the NAS, 10-year validity, SAN `IP:<LAN_IP>, DNS:mymts-helper`.
+- The private key (`helper.key`) lives **only** on the NAS at `/srv/docker/mymts-helper/_secrets/`, mounted read-only into the container at `/etc/ssl/mymts/`, owned UID 10001 mode 600.
+- The public cert (`helper.crt`) is committed at `app/src/main/res/raw/helper_cert.pem` (public material — committable). `.gitignore` excludes `*.key` and any other `*.crt`/`*.pem` under `helper/` with a narrow `!` re-include for the trust-anchor file.
+- `network_security_config.xml` carries a `<domain-config>` for `<LAN_IP>` whose `<trust-anchors>` contains **only** `@raw/helper_cert`. The system CA bundle is **explicitly NOT** a trust anchor for this host — a global-CA-signed MITM cert is refused.
+
+### Helper — dual-port serving from one app instance
+
+`helper/src/mymts_helper/__main__.py` rewritten to build the FastAPI app once and run two `uvicorn.Server` instances concurrently sharing that one app:
+
+| Listener | Port | Lifespan | Pollers |
+|---|---|---|---|
+| HTTP (transitional) | 8091 | `on` | yes — RSS poller + channel prober run once via the app's lifespan |
+| HTTPS (target) | 8443 | `off` | no, but serves identical endpoints from the same app instance |
+
+When the transitional HTTP is dropped at the finale, the HTTPS listener's lifespan flips to `on` and becomes the sole listener.
+
+### App — pinned trust + HTTPS default
+
+- `app/src/main/res/raw/helper_cert.pem` embedded (public cert, no key).
+- `app/src/main/res/xml/network_security_config.xml` rewritten: base config refuses cleartext; the `<LAN_IP>` domain-config pins only `@raw/helper_cert`. Cleartext fallback retained transitionally.
+- `gradle.properties` → `MYMTS_HELPER_BASE_URL=https://<LAN_IP>:8443`.
+
+### Telemetry — proof (operator was away from the TV)
+
+| Signal | Result |
+|---|---|
+| Helper `/health` over HTTPS 8443 from a US IP | `HTTP 200`, JSON with `build_sha`, 8 live channels reported |
+| Helper `/health` over HTTP 8091 (transitional) | `HTTP 200`, same payload |
+| App on `.182` after install + relaunch | 4 distinct `EV=TILE_READY` events: `slot-0-cnn`, `slot-1-dw-news-en`, `slot-2-livenow-fox`, `slot-3-cbs-sports-hq` |
+| `MyMTS.HelperClient` errors in logcat | **zero** — no trust failures, no SSL exceptions, no fallback into HTTP |
+
+The operator's preferred lineup (CBS Sports HQ + LiveNOW from FOX + the rest) is now actually playing over HTTPS — the channel-resolution + TLS tracks compound.
+
+### Hiccup recorded for the runbook
+
+First helper restart crash-looped with `PermissionError: [Errno 13]` on the key file — UID mismatch between the cert files (owned by host user `cargo`, UID 1000) and the container (UID 10001). Fixed without `sudo` using a short-lived root Alpine container (`cargo` has docker group membership). Documented in `OPERATIONS.md` so the next rotation doesn't trip the same way.
+
+### What's NOT in this commit (staged for the at-the-box finale)
+
+- Remove cleartext exception from `network_security_config.xml`.
+- Remove `8091:8091` port mapping + `PORT=8091` env from helper compose.
+- Flip HTTPS listener lifespan to `on`.
+- Verify on `.182` with the operator at the box.
+
+### Updated
+
+- `helper/src/mymts_helper/__main__.py` — dual-server entry point.
+- `helper/src/mymts_helper/config.py` — `https_port`, `ssl_keyfile`, `ssl_certfile` + `has_https()` predicate.
+- `helper/tests/test_config_tls.py` — 4 new tests for the TLS config surface.
+- `helper/deploy/docker-compose.nas.yml` — HTTPS port + cert mount + env wiring.
+- `app/src/main/res/raw/helper_cert.pem` — embedded public cert (trust anchor).
+- `app/src/main/res/xml/network_security_config.xml` — cert pinning + retained cleartext transitional.
+- `gradle.properties` — default URL flipped to HTTPS.
+- `.gitignore` — narrow private-key + helper-side cert/pem exclusion with `!` re-include for the app trust anchor.
+- `docs/THREAT-MODEL.md` — T-T4 rewritten from "cleartext narrow exception" to "encrypted + pinned, transitional cleartext fallback documented, full cutover staged."
+- `docs/OPERATIONS.md` — TLS section with cert generation runbook, ownership-fix gotcha, dual-port migration sequence.
+- `ARCHITECTURE.md` §12 — TLS mechanism + trust model + cert-rotation contract.
+
+### Standing rules
+- **unrelated host services: never touched** — helper continues to run on its own bridge network (`mymts-net`), never the VPN container's.
+- **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy.
+- Helper tests green: **136** (132 prior + 4 new).
+- App tests green (unchanged count — only resource + config changes on the app side).
+- Helper redeployed to `<USER>@<HOST>` per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge network, **never the unrelated host container**).
+
 ## Channel-resolution investigation (helper-side) — 8 channels live, up from 2 (2026-06-03)
 
 The deferred channel-resolution follow-on, now done. Three honest tracks:
