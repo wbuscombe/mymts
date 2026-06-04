@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import org.json.JSONArray
 import org.json.JSONException
@@ -43,7 +44,9 @@ class LineupStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _overrides = mutableStateOf(readFromDisk())
+    private val _overrides = mutableStateOf(readOverridesFromDisk())
+    private val _audibleSlot = mutableIntStateOf(readAudibleSlotFromDisk())
+    private val _captionsOnSlots = mutableStateOf(readCaptionsFromDisk())
 
     /**
      * Live state — recomposes any composable observing it on every
@@ -52,50 +55,113 @@ class LineupStore(context: Context) {
      */
     val overrides: State<Map<Int, String>> get() = _overrides
 
+    /**
+     * The slot index currently audible (single-audible-tile model), or
+     * `-1` if every tile is muted. The default is `-1` — the wall starts
+     * muted; only an explicit operator "make audible" via the controls
+     * overlay puts a slot here.
+     */
+    val audibleSlot: State<Int> get() = _audibleSlot
+
+    /**
+     * Slot indices where the operator has toggled captions ON. Soft
+     * caption tracks are off by default for every slot ([com.mymts.player.StreamPlayer]
+     * disables `C.TRACK_TYPE_TEXT` at startup); inclusion here re-enables
+     * the text track for that slot. Burned-in captions are pixels in the
+     * video and unaffected by this set — see the per-channel caption table.
+     */
+    val captionsOnSlots: State<Set<Int>> get() = _captionsOnSlots
+
     fun assign(slotIndex: Int, slug: String) {
         require(slotIndex >= 0) { "slotIndex must be >= 0" }
         require(slug.isNotBlank()) { "slug must be non-blank" }
-        update { it + (slotIndex to slug) }
+        updateOverrides { it + (slotIndex to slug) }
     }
 
     fun clearSlot(slotIndex: Int) {
-        update { it - slotIndex }
+        updateOverrides { it - slotIndex }
     }
 
     fun clearAll() {
-        update { emptyMap() }
+        updateOverrides { emptyMap() }
     }
 
-    private fun update(transform: (Map<Int, String>) -> Map<Int, String>) {
+    /**
+     * Make [slotIndex] the audible tile. If it was already audible,
+     * mutes the wall (toggle semantics). The single-audible-tile model
+     * means selecting a tile to unmute mutes every other tile — the
+     * operator never has to manually mute the prior one.
+     */
+    fun toggleAudible(slotIndex: Int) {
+        require(slotIndex >= 0) { "slotIndex must be >= 0" }
+        val next = if (_audibleSlot.intValue == slotIndex) -1 else slotIndex
+        _audibleSlot.intValue = next
+        prefs.edit().putInt(KEY_AUDIBLE_SLOT, next).apply()
+    }
+
+    fun muteAll() {
+        if (_audibleSlot.intValue == -1) return
+        _audibleSlot.intValue = -1
+        prefs.edit().putInt(KEY_AUDIBLE_SLOT, -1).apply()
+    }
+
+    /**
+     * Toggle captions for [slotIndex]. The result is the new state
+     * (true = captions now on, false = off). The actual effect depends
+     * on whether the stream carries a soft text track — see
+     * [com.mymts.player.StreamPlayer.setCaptionsEnabled]; the
+     * [SlotControlsOverlay] surfaces honest "captions not available"
+     * when the stream has no track to toggle.
+     */
+    fun toggleCaptions(slotIndex: Int): Boolean {
+        require(slotIndex >= 0) { "slotIndex must be >= 0" }
+        val current = _captionsOnSlots.value
+        val next = if (slotIndex in current) current - slotIndex else current + slotIndex
+        _captionsOnSlots.value = next
+        prefs.edit().putString(KEY_CAPTIONS_ON, encodeIntSet(next)).apply()
+        return slotIndex in next
+    }
+
+    private fun updateOverrides(transform: (Map<Int, String>) -> Map<Int, String>) {
         val next = transform(_overrides.value)
         _overrides.value = next
-        writeToDisk(next)
+        writeOverridesToDisk(next)
     }
 
-    private fun writeToDisk(map: Map<Int, String>) {
-        val arr = JSONArray()
-        map.toSortedMap().forEach { (idx, slug) ->
-            arr.put(idx)
-            arr.put(slug)
-        }
-        prefs.edit().putString(KEY_OVERRIDES, arr.toString()).apply()
+    private fun writeOverridesToDisk(map: Map<Int, String>) {
+        prefs.edit().putString(KEY_OVERRIDES, encode(map)).apply()
     }
 
-    private fun readFromDisk(): Map<Int, String> {
+    private fun readOverridesFromDisk(): Map<Int, String> {
         val raw = prefs.getString(KEY_OVERRIDES, null) ?: return emptyMap()
         return try {
             decode(raw)
         } catch (e: JSONException) {
-            // Corrupt blob — drop it and start fresh rather than crash.
             Log.w(TAG, "lineup_overrides parse failed, dropping: ${e.message}")
             prefs.edit().remove(KEY_OVERRIDES).apply()
             emptyMap()
         }
     }
 
+    private fun readAudibleSlotFromDisk(): Int =
+        prefs.getInt(KEY_AUDIBLE_SLOT, -1)
+
+    private fun readCaptionsFromDisk(): Set<Int> {
+        val raw = prefs.getString(KEY_CAPTIONS_ON, null) ?: return emptySet()
+        return try {
+            decodeIntSet(raw)
+        } catch (e: JSONException) {
+            Log.w(TAG, "captions_on parse failed, dropping: ${e.message}")
+            prefs.edit().remove(KEY_CAPTIONS_ON).apply()
+            emptySet()
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "mymts_lineup"
         private const val KEY_OVERRIDES = "lineup_overrides"
+        private const val KEY_AUDIBLE_SLOT = "audible_slot"
+        private const val KEY_CAPTIONS_ON = "captions_on_slots"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -127,6 +193,23 @@ class LineupStore(context: Context) {
                 arr.put(slug)
             }
             return arr.toString()
+        }
+
+        /** JSON array of integer slot indices, sorted for determinism. */
+        internal fun encodeIntSet(set: Set<Int>): String {
+            val arr = JSONArray()
+            set.sorted().forEach { arr.put(it) }
+            return arr.toString()
+        }
+
+        internal fun decodeIntSet(raw: String): Set<Int> {
+            val arr = JSONArray(raw)
+            val out = mutableSetOf<Int>()
+            for (i in 0 until arr.length()) {
+                val v = arr.optInt(i, -1)
+                if (v >= 0) out.add(v)
+            }
+            return out.toSet()
         }
     }
 }

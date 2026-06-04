@@ -95,6 +95,21 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 **Why-not-now:** Adding either would require either a session-token sidecar (C-SPAN), a slate-feed acceptance (CNN — and even then, the content is promotional slates, not the live broadcast), or a paid-tier integration (CNN US linear). None match the v1 single-source-of-truth-helper architecture.
 **Reconsider when:** A free public HLS surfaces for either (occasionally happens with FAST platforms), or the operator decides slate-feed-as-CNN is acceptable + tolerable to the AES-128 handling in ExoPlayer.
 
+## Video crop to hide burned-in captions — **out of scope by engineering default**
+
+**What:** Some channels render transcription text **into the video pixels** (a permanent scrolling caption bar). A future track could crop the bottom N% of the tile to hide that band.
+**Why-not-now:** Three reasons all of which are operator-decision rather than engineering defaults.
+1. **Degrades the picture for everyone.** Cropping removes the bottom band whether it carries captions, lower-thirds, the broadcaster's logo, or actual content — the wall loses information honestly visible everywhere else.
+2. **Channels rotate which content lives in which band.** A "caption strip" today is a lower-third tomorrow; the crop is wrong on most footage.
+3. **The honest answer is "different channel."** The menu's channel picker lets the operator swap a burned-in channel for one without it. The captions-OFF default + per-channel caption table document exactly which channels burn captions in vs. which expose a toggleable soft track. If the operator finds a specific burned-in channel intolerable, the right answer is to swap it, not to crop a tile.
+**Reconsider when:** A specific operator-named channel that the operator definitively wants is intolerably burned-in AND the operator chooses to accept the picture-degradation cost in exchange. Build per-tile only, never wall-wide.
+
+## CNBC — no free public HLS endpoint exists (2026-06-04)
+
+**What:** Replace the seeded placeholder URL for `cnbc` with a real working public HLS endpoint when one becomes available.
+**Why-not-now:** CNBC is paywalled cable. There is no free 24/7 FAST stream on Pluto.tv, Samsung TV Plus, Roku Channel, or Plex (verified across `iptv-org/iptv` `us.m3u`, `us_samsung.m3u`, `us_pluto.m3u`, `us_roku.m3u`). The August 2024 Warner DMCA wave took down most unofficial m3u8 mirrors. The seed entry is recorded honestly with an `.invalid` placeholder URL — the prober marks `cnbc` as `dns_failure`, the menu shows it offline, the wall renders an honest OFFLINE panel for any operator-pinned slot. This is the same honesty discipline as the prior CNN International / C-SPAN entries.
+**Reconsider when:** A free public CNBC HLS surfaces (occasionally happens with FAST platforms), or the operator wants to accept a different financial channel as a substitute. Bloomberg Originals, Yahoo Finance, and Cheddar News are catalog-available substitutes if the operator changes their mind on CNBC specifically.
+
 ## Ideas that surfaced during build (add as you find them)
 
 ```

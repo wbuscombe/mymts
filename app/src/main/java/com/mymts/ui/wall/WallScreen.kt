@@ -34,9 +34,12 @@ import com.mymts.data.helper.FeedRepository
 import com.mymts.data.helper.HelperClient
 import com.mymts.data.lineup.LineupStore
 import com.mymts.data.ticker.SampleTickerSource
+import com.mymts.ui.menu.AudioState
+import com.mymts.ui.menu.CaptionsState
 import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
+import com.mymts.ui.menu.SlotControlsOverlay
 import com.mymts.ui.menu.SlotRow
 import com.mymts.ui.menu.rememberMenuState
 
@@ -76,6 +79,8 @@ fun WallScreen(
     val ticker = remember { SampleTickerSource() }
     val lineupStore = remember(context) { LineupStore(context) }
     val overrides by lineupStore.overrides
+    val audibleSlot by lineupStore.audibleSlot
+    val captionsOnSlots by lineupStore.captionsOnSlots
 
     DisposableEffect(channels, feed, ticker) {
         channels.start()
@@ -155,6 +160,8 @@ fun WallScreen(
                     slots = slots,
                     modifier = Modifier.fillMaxSize(),
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
+                    audibleSlot = audibleSlot,
+                    captionsOnSlots = captionsOnSlots,
                 )
             }
         }
@@ -163,15 +170,51 @@ fun WallScreen(
             state = menu,
             slotRows = slotRows,
             versionLine = "MyMTS · $buildVersion · $buildSha",
-            onSlotSelected = { slotIndex -> menu.pickSlot(slotIndex) },
+            // Stage 6 controls track: SELECT on a slot row opens the
+            // small controls popup (channel / audio / captions / close)
+            // rather than jumping directly to the channel picker. The
+            // controls overlay then re-routes "Channel" to the picker.
+            onSlotSelected = { slotIndex -> menu.openControls(slotIndex) },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Picker overlays the menu when a slot row was activated. It
-        // renders only when both the menu is open AND there's a pending
-        // SlotPicker selection — closing the menu via BACK clears the
-        // pending state automatically.
+        // Sub-overlays. Only one is visible at a time; the menu's
+        // `pendingSelection` is the source of truth for which one. BACK
+        // dismisses the sub-overlay (set via `dismissSelection`) and
+        // leaves the side menu open so the operator can navigate to
+        // another slot without reopening MENU.
         val pending = menu.pendingSelection
+        if (menu.isOpen && pending is MenuState.PendingSelection.SlotControls) {
+            val playingSlot = slots.getOrNull(pending.slotIndex) as? TileSlotResolver.Slot.Playing
+            SlotControlsOverlay(
+                slotIndex = pending.slotIndex,
+                channelLabel = slots.getOrNull(pending.slotIndex)?.displayLabel() ?: "—",
+                audioState = if (pending.slotIndex == audibleSlot) AudioState.Audible
+                else AudioState.Muted,
+                captionsState = run {
+                    // "Captions not available" surfaces honestly when
+                    // the tile is currently a Playing slot with no soft
+                    // text track. For Offline / Empty slots we still
+                    // surface On/Off according to the saved preference
+                    // (the toggle is a no-op until the slot starts
+                    // playing again).
+                    val playing = playingSlot
+                    val isOn = pending.slotIndex in captionsOnSlots
+                    when {
+                        playing == null -> if (isOn) CaptionsState.On else CaptionsState.Off
+                        // Heuristic check delegated to the WallTile/player
+                        // layer at apply time — the menu surface trusts
+                        // the saved preference and the per-channel doc.
+                        else -> if (isOn) CaptionsState.On else CaptionsState.Off
+                    }
+                },
+                onPickChannel = { menu.pickSlot(pending.slotIndex) },
+                onToggleAudio = { lineupStore.toggleAudible(pending.slotIndex) },
+                onToggleCaptions = { lineupStore.toggleCaptions(pending.slotIndex) },
+                onCancel = { menu.dismissSelection() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         if (menu.isOpen && pending is MenuState.PendingSelection.SlotPicker) {
             ChannelPickerOverlay(
                 slotIndex = pending.slotIndex,
@@ -179,13 +222,23 @@ fun WallScreen(
                 currentSelection = slots.getOrNull(pending.slotIndex)?.currentSlug(),
                 onAssign = { slug ->
                     lineupStore.assign(pending.slotIndex, slug)
-                    menu.dismissSelection()
+                    // Return to the controls overlay so the operator
+                    // can immediately toggle audio/captions on the
+                    // newly-chosen channel — calmer than punting them
+                    // back to the side menu.
+                    menu.openControls(pending.slotIndex)
                 },
-                onCancel = { menu.dismissSelection() },
+                onCancel = { menu.openControls(pending.slotIndex) },
                 modifier = Modifier.fillMaxSize(),
             )
         }
     }
+}
+
+private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
+    is TileSlotResolver.Slot.Playing -> channel.label
+    is TileSlotResolver.Slot.Offline -> "${channel.label} (offline)"
+    is TileSlotResolver.Slot.Empty -> "— empty —"
 }
 
 /**

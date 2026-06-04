@@ -5,9 +5,11 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -200,6 +202,23 @@ class StreamPlayer(
         exo.addAnalyticsListener(al)
 
         exo.volume = 0f
+
+        // Captions/subtitles off by default. Where the stream carries a
+        // soft text track (CEA-608/708 or WebVTT — declared via the
+        // HLS manifest's `#EXT-X-MEDIA:TYPE=SUBTITLES` /
+        // `TYPE=CLOSED-CAPTIONS` lines), Media3 would auto-select one
+        // for the device's default language; we disable the entire
+        // TEXT renderer instead, deterministically off until the
+        // operator toggles captions on per-tile from the menu. Burned-
+        // in captions (pixels in the video itself — e.g. LiveNOW from
+        // FOX's scrolling bar) are NOT a track and are unaffected;
+        // those are an entirely separate concern documented in the
+        // per-channel caption table.
+        exo.trackSelectionParameters = exo.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            .build()
+
         val mediaItem = MediaItem.fromUri(spec.url)
         val source: MediaSource = HlsMediaSource.Factory(DefaultHttpDataSource.Factory())
             .createMediaSource(mediaItem)
@@ -208,6 +227,45 @@ class StreamPlayer(
         exo.prepare()
 
         player = exo
+    }
+
+    /**
+     * Toggle the player's volume between muted and the audible level.
+     *
+     * The wall is muted by default and only one tile is meant to be
+     * audible at a time (see `WallAudio`). This is a small surface for
+     * the controls overlay; ownership of "which tile is audible" lives
+     * one layer up.
+     */
+    fun setAudible(audible: Boolean) {
+        player?.volume = if (audible) 1f else 0f
+    }
+
+    /**
+     * Toggle the soft caption track on/off for this player.
+     *
+     * Returns `true` if the stream carries a text track at all (whether
+     * captions are now on or off); `false` if the stream has no text
+     * track to toggle. Burned-in captions are pixels in the video and
+     * cannot be removed here — see the per-channel caption table for
+     * the honest map of what's a track vs what's burned in.
+     */
+    fun setCaptionsEnabled(enabled: Boolean): Boolean {
+        val exo = player ?: return false
+        val hasTextTrack = exo.currentTracks.groups.any { group ->
+            group.type == C.TRACK_TYPE_TEXT
+        }
+        exo.trackSelectionParameters = exo.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled)
+            .build()
+        return hasTextTrack
+    }
+
+    /** True iff the underlying stream advertises a text/caption track. */
+    fun hasSoftCaptionTrack(): Boolean {
+        val exo = player ?: return false
+        return exo.currentTracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
     }
 
     fun getPlayer(): ExoPlayer? = player

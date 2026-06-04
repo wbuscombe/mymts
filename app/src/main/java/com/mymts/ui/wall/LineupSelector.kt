@@ -56,9 +56,18 @@ class LineupSelector(
 
     companion object {
         /**
-         * Operator's preferred lineup for the 2×2 default (Stage 3 polish).
+         * Operator's preferred lineup for the 2×2 default.
+         *
+         * Updated 2026-06-04 — Bloomberg TV + CNBC at the top, then the
+         * prior preferred 4 (CBS Sports HQ, BBC News, CNN, LiveNOW from
+         * FOX), then the fallback list, then the rest of the helper's
+         * playable set. DW News English is no longer in the default
+         * lineup but remains available in the menu picker for manual
+         * assignment.
          */
         val PREFERRED: List<String> = listOf(
+            "bloomberg-tv",
+            "cnbc",
             "cbs-sports-hq",
             "bbc-news",
             "cnn",

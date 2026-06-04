@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Tile controls + captions OFF by default + lineup swap (2026-06-04)
+
+The "big bite" — per-tile audio/volume controls, a captions toggle (default OFF), and a swap of the default lineup to put Bloomberg TV + CNBC at the top. Build + unit-test + telemetry-verify here; the real-remote feel pass on the controls overlay is **staged for the at-the-box finale**.
+
+### Captions OFF by default
+
+`StreamPlayer.createPlayer()` now sets `TrackSelectionParameters.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)` before `prepare()`. The wall never auto-selects a soft caption track at startup; the operator turns captions on per-tile from the new controls overlay.
+
+Burned-in captions (pixels in the video) are NOT removable here — the per-channel caption table in `docs/findings/06-tile-controls-and-captions.md` documents which channels have a soft track (toggleable) vs. which have a burned-in transcription bar (operator picks a different channel or lives with it). Per-channel mechanisms were verified by actually fetching the master manifests and looking for `#EXT-X-MEDIA:TYPE=SUBTITLES` / `TYPE=CLOSED-CAPTIONS` lines:
+
+| Channel | Mechanism | Toggle behaviour |
+|---|---|---|
+| CBS Sports HQ | Soft CEA-608 | Works |
+| CNN (slate feed) | No captions declared | "not available" |
+| LiveNOW from FOX | **Soft WebVTT** (not burned-in on this Akamai CDN) | Works |
+| Newsmax | No captions on `index.m3u8` (master with captions doesn't resolve — variant 404) | "not available" |
+| France 24 English | No captions declared | "not available" |
+| Sky News | No captions declared (single-rendition variant) | "not available" |
+| BBC News (worldwide shard) | No captions | "not available" |
+| DW News English | Soft WebVTT (DEFAULT=NO) | Works |
+| Bloomberg TV (new) | Soft track expected | Works |
+
+### Per-tile controls overlay
+
+SELECT on a slot row in the side menu now opens a small actions popup (the new `SlotControlsOverlay`) instead of jumping directly to the channel picker. WyzeGrid-family centered card, focusable rows:
+
+- **Channel** → re-enters the existing channel picker; on assign or cancel, returns to the controls overlay so the operator can immediately toggle audio/captions on the chosen channel.
+- **Audio** → toggles this tile audible. Single-audible-tile model — selecting "audible" here automatically mutes every other tile (`WallAudio` discipline enforced in `VideoGrid` via `setAudible(slot.index == audibleSlot)` for every player).
+- **Captions** → toggles the soft caption track. Surface shows `not available on this channel` when the stream has no text track to toggle.
+- **Close** → dismiss the controls overlay; the side menu stays open.
+
+BACK dismisses just the controls overlay; the side menu stays open so the operator can navigate to another slot without reopening MENU. Consistent with the Stage 5 channel-picker's BACK semantics.
+
+### Preferences persist via LineupStore
+
+Existing `SharedPreferences("mymts_lineup")` gets two new keys:
+- `audible_slot` → `Int` (`-1` = wall muted; default)
+- `captions_on_slots` → JSON array of slot indices
+
+5 new codec tests in `LineupStoreIntSetCodecTest` pin the round-trip, deterministic encoding, negative-index rejection, and non-int tolerance.
+
+### Lineup priority swap — Bloomberg TV + CNBC at the top
+
+`LineupSelector.PREFERRED` updated:
+```
+[bloomberg-tv, cnbc, cbs-sports-hq, bbc-news, cnn, livenow-fox]
+```
+
+DW News English stays seeded for manual assignment via the menu picker; it just drops out of the default cycler's preferred tier. 5 new tests in `LineupSelectorPreferredOrderTest` pin the order.
+
+### Seed updates
+
+- **Added** `bloomberg-tv` → `https://bloomberg.com/media-manifest/streams/phoenix-us.m3u8` (resolves live; Bloomberg TV+ Phoenix-us feed via the official direct origin).
+- **Added** `cnbc` → `.invalid` placeholder URL. CNBC has no free public HLS endpoint as of 2026-06-04 (paywalled cable, no FAST-platform free stream). Seeded honestly so the prober reports `dns_failure` correctly; logged to BACKLOG as a carry-forward.
+- **Reverted** `newsmax` from `master.m3u8` back to `index.m3u8` — the master exposes captions but its variants 404, taking the channel offline entirely. Honest trade-off: keep the channel playing without an optional toggle (captions default OFF anyway) rather than lose the channel for a feature off by default.
+
+### Resolution map after this push
+
+| status | count | channels |
+|---|---|---|
+| **live** | **10** | bbc-news, **bloomberg-tv** (new), cbs-sports-hq, cnn, dw-news-en, france24-en, livenow-fox, newsmax, redbull-tv, sky-news |
+| unavailable | 9 | al-jazeera-en, c-span, cgtn-en, **cnbc** (new — placeholder URL, no public HLS exists), cnn-international, iss-feed, nasa-tv, trt-world, white-house-tv |
+
+### Clean-slate default lineup on a 4-slot wall — telemetry-verified
+
+After `pm clear com.mymts` + relaunch:
+```
+slot-0 = bloomberg-tv   (PREFERRED #1 — new)
+slot-1 = cbs-sports-hq   (PREFERRED #3 — cnbc unavailable, skipped)
+slot-2 = bbc-news        (PREFERRED #4)
+slot-3 = cnn             (PREFERRED #5)
+```
+`EV=TILE_READY` fired for each within 60 s. LiveNOW from FOX sits behind CNN and would fill slot 5 at N=5; available for manual assignment.
+
+### BACKLOG additions
+- **Video crop to hide burned-in captions** — out of scope by engineering default. Three reasons all operator-decision rather than engineering defaults.
+- **CNBC — no free public HLS endpoint exists** — placeholder URL recorded; resolves honestly as unavailable.
+
+### What's staged for the at-the-box finale
+- **Tile controls real-remote pass.** D-pad logic works in the away-from-box telemetry layer (Compose focus on each `ControlRow`, focusable popups, BACK semantics), but the **felt experience** on the actual Onn remote needs the operator there.
+
+### Updated
+- `app/src/main/java/com/mymts/player/StreamPlayer.kt` — captions disabled by default; `setAudible(Boolean)`, `setCaptionsEnabled(Boolean): Boolean`, `hasSoftCaptionTrack()`.
+- `app/src/main/java/com/mymts/data/lineup/LineupStore.kt` — `audibleSlot`, `captionsOnSlots` state + `toggleAudible`, `toggleCaptions`, `muteAll`.
+- `app/src/main/java/com/mymts/ui/menu/MenuState.kt` — new `PendingSelection.SlotControls`.
+- `app/src/main/java/com/mymts/ui/menu/SlotControlsOverlay.kt` — new centered popup (Channel / Audio / Captions / Close).
+- `app/src/main/java/com/mymts/ui/wall/WallScreen.kt` — controls overlay wired in; SELECT on slot row → controls (not directly to picker); picker on dismiss → returns to controls.
+- `app/src/main/java/com/mymts/ui/wall/VideoGrid.kt` — `LaunchedEffect(bound, audibleSlot, captionsOnSlots)` applies audio + captions to each player.
+- `app/src/main/java/com/mymts/ui/wall/LineupSelector.kt` — PREFERRED list updated.
+- `helper/src/mymts_helper/channels/seed.json` — Bloomberg + CNBC added; Newsmax URL reverted.
+- 5 new app tests in `LineupStoreIntSetCodecTest`, 5 new in `LineupSelectorPreferredOrderTest`.
+- `docs/findings/06-tile-controls-and-captions.md` — new finding doc.
+- `docs/BACKLOG.md` — video-crop + CNBC entries.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- **WyzeGrid** as-found on `.182` — install was force-stop + install -r + am start; WyzeGrid foreground service stays alive.
+- App tests green: ~80+ (now includes 10 new for this push). Helper tests green: 136.
+- Helper redeployed per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container).
+
 ## Stage 6 — TLS to the helper, baseline (2026-06-03)
 
 The TV ↔ helper link is now encrypted with certificate pinning at the app layer. Operator-away-safe baseline: the helper serves HTTPS 8443 **alongside** HTTP 8091, and the app keeps a cleartext fallback for `<LAN_IP>` so a botched HTTPS path can't strand the box. The full cutover (cleartext exception removed + HTTP 8091 dropped from compose) is staged for the "at-the-box" finale Step 1, where the operator can physically recover the box if anything goes wrong.

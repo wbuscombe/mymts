@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -53,6 +54,8 @@ fun VideoGrid(
     slots: List<Slot>,
     modifier: Modifier = Modifier,
     helperUnreachable: Boolean = false,
+    audibleSlot: Int = -1,
+    captionsOnSlots: Set<Int> = emptySet(),
 ) {
     val playingSlots = remember(slots) { slots.filterIsInstance<Slot.Playing>() }
 
@@ -76,6 +79,22 @@ fun VideoGrid(
         bindTiles(slots) { specId ->
             val idx = playingSlots.indexOfFirst { it.spec.id == specId }
             if (idx >= 0) manager.player(idx) else null
+        }
+    }
+
+    // Apply audio + captions state to each player whenever the state
+    // changes. The single-audible-tile model is enforced HERE — every
+    // tile's audibility is set to `slot.index == audibleSlot` so a
+    // change to `audibleSlot` mutes the prior tile automatically. No
+    // race condition: the apply runs in a LaunchedEffect that re-keys
+    // on (bound, audibleSlot, captionsOnSlots) — the manager's
+    // `readyVersion` already gates `bound` having non-null players.
+    LaunchedEffect(bound, audibleSlot, captionsOnSlots) {
+        bound.forEach { tile ->
+            val player = tile.player ?: return@forEach
+            val slot = tile.slot as? Slot.Playing ?: return@forEach
+            player.setAudible(slot.index == audibleSlot)
+            player.setCaptionsEnabled(slot.index in captionsOnSlots)
         }
     }
 

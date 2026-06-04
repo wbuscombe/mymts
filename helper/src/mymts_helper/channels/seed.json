@@ -1,5 +1,17 @@
 [
   {
+    "slug": "bloomberg-tv",
+    "label": "Bloomberg TV",
+    "kind": "hls",
+    "source_url": "https://bloomberg.com/media-manifest/streams/phoenix-us.m3u8"
+  },
+  {
+    "slug": "cnbc",
+    "label": "CNBC",
+    "kind": "hls",
+    "source_url": "https://no-public-cnbc-hls-exists.invalid/cnbc.m3u8"
+  },
+  {
     "slug": "cbs-sports-hq",
     "label": "CBS Sports HQ",
     "kind": "hls",
