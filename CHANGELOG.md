@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Whole-wall D-pad navigation — global focus model + per-zone actions (2026-06-04)
+
+A single coherent D-pad navigation graph now covers every zone on the wall. The pure focus model (`WallFocusModel`) computes zone-to-zone transitions as a testable function, eliminating navigation traps and spatial inconsistencies that plague TVs where each layer re-invents focus independently. The per-zone action layer (cell SELECT → controls overlay, article SELECT → in-place summary expansion, ticker SELECT → pause/resume) layers orthogonally on top so navigation and action are decoupled; a future change to either layer doesn't require unpicking the other.
+
+### Added
+- `ui/nav/WallFocus.kt` — focus data class (`active`, `feedIndex`, `gridIndex`, `lastLowerZone`, `feedExpanded`, `tickerPaused`) + `WallZone` enum (Ticker, Feed, Grid).
+- `ui/nav/WallFocusModel.kt` — pure function emitting `NavResult` sum type (`Focus`, `OpenMenu`, `OpenSlotControls`, `BackBubble`, `Stay`). No Compose, no Android; the entire navigation graph is testable from a single point.
+- `nav/WallFocusModelTest.kt` — 38 invariant tests pinning no-traps (every zone reachable + exitable), spatial sense (UP from grid/feed reaches ticker; LEFT from grid col 0 lands on feed), state preservation (switching zones preserves the other zone's index), BACK collapsing feed-expand first then bubbling, and ticker SELECT toggling `tickerPaused`.
+- Focus indicators on the wall: each focused zone (feed item, grid cell, ticker) is adorned with a WyzeGrid-family green-accent border so the operator sees D-pad movement from 10 feet. PAUSED chip in the ticker when paused.
+
+### Changed
+- `ui/wall/WallScreen.kt` — owns focus state (`WallFocus`), dispatches every D-pad event + SELECT + BACK through `WallFocusModel.apply()`, wires per-zone action results into the appropriate state holders (menu, slot controls overlay, ticker pause flag).
+- `ui/wall/FeedPane.kt` — accepts `focusedIndex` (renders green-accent on that item) + `expandedIndex` (shows MORE of the helper's already-fetched plain-text `summary`; never any web fetch, WebView, or HTML render). Expanded rows handle BACK → collapse semantics. Expanded type ramps up (15 → 18 sp title, 12 → 14 sp summary) for 10-ft read.
+- `ui/wall/VideoGrid.kt` — accepts `focusedCellIndex`, applies green-accent border to the focused tile. `gridColumnsFor(slotCount)` extracted as the single source of truth for column math (same logic the focus model uses for D-pad row/column navigation).
+- `ui/wall/TickerStrip.kt` — accepts `focused` (green-accent border) + `paused` (marquee animation disabled, PAUSED chip surfaced). SELECT toggles `paused` via the model.
+- Modal overlay gating — `SlotControlsOverlay` / `ChannelPickerOverlay` now render on `pending != null` rather than `menu.isOpen && pending`, so a SELECT on a focused grid cell opens the controls modal without dragging the side menu in.
+- Root focus restoration — `DisposableEffect(menu.isOpen, menu.pendingSelection)` instead of just `menu.isOpen`, so the wall reclaims focus after a modal opened directly from a grid cell dismisses.
+
+### Tests
+Invariants pinned across the 38 navigation tests:
+- **No traps.** Every zone is reachable from every other in ≤4 moves; every zone is exitable in at least one direction.
+- **Spatial sense.** UP from feed/grid reaches ticker. LEFT from grid column 0 lands on feed at preserved `feedIndex`. DOWN from ticker returns to `lastLowerZone` (the zone the operator came up from), not always the feed.
+- **State preservation.** Switching zones does NOT clobber the other zone's index. FEED → GRID → FEED round-trips return to the same feed item; GRID → TICKER → GRID preserves `lastLowerZone`.
+- **BACK collapsing.** Feed with `feedExpanded=true` BACK collapses in place; feed with `feedExpanded=false` BACK bubbles.
+- **Action layer non-trap.** Adding SELECT actions (grid → OpenSlotControls, feed → expand, ticker → pause) preserves the no-trap property; every zone still exits via a directional intent.
+- **Ticker pause persistence.** `tickerPaused` survives zone transitions and round-trips; toggling SELECT on the ticker and leaving doesn't reset it.
+
+Full app test suite: **all green** (151 tests including the 38 new navigation tests). Helper test suite: unchanged.
+
+### Deferred (deliberately NOT in this chapter)
+- **Kiosk story** — long-uptime foreground watchdog + boot receiver. Deferred to the new MyMTS box (in transit) per Model A.
+- **Feed list/sections restructure** (BACKLOG item B). Operator's "the feed is a continuous individual-scroll, unintuitive" call needs structural decisions about grouping; this chapter delivers the navigation prerequisites.
+- **Ticker markets/sports modes** (BACKLOG item D). Sample data only in v1.
+- **QR-to-phone / send-to-phone full article read** — newly logged in BACKLOG as a closed-door-compatible alternative for richer reading; not built here.
+
+### Adversarially verified — A1 boundary holds at feed-expand
+The feed-expand path was independently verified to introduce **no** web-fetch surface and **no** HTML-render surface. The verifier checked the pure model SELECT semantics, the `FeedPane` render code, the `FeedRepository` / `HelperClient` call graph, and the helper-side parser. Result: feed-expand only flips a Boolean that changes `Text` widget `maxLines`; the summary text is the helper's already-stripped plain-text product. Full entry: `docs/THREAT-MODEL.md §"Navigation chapter — feed-expand A1 confirmation (2026-06-04)"`.
+
+### Operator-validated
+- **Feel-test STAGED** for the operator's next at-the-box session — see `docs/OPERATIONS.md §"Navigation chapter feel-test on the remote"`. The focus model logic works; the spatial feel on the real Onn remote is the operator's call at the box (WyzeGrid's 80-min foreground reclaim on `.182` defines the window).
+
+### Standing rules
+- **unrelated host services: never touched.**
+- Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
+- No secrets/absolute-paths in source.
+
 ## At-the-box finale Step 4 — `.182` restored to WyzeGrid + kiosk deferred (2026-06-04)
 
 The away-from-box + safe-on-`.182` roadmap is now complete. The kiosk / foreground-coexistence story waits for the new MyMTS box (hardware in transit).

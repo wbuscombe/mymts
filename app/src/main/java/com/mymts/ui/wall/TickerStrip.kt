@@ -3,6 +3,7 @@ package com.mymts.ui.wall
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -43,29 +44,63 @@ import com.mymts.data.ticker.TickerSource
 fun TickerStrip(
     source: TickerSource,
     modifier: Modifier = Modifier,
+    focused: Boolean = false,
+    paused: Boolean = false,
 ) {
     val entries by source.state.collectAsState()
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(Color(0xFF050505)),
+            .background(Color(0xFF050505))
+            .then(
+                if (focused) Modifier.border(width = 2.dp, color = WallColors.BadgeLive)
+                else Modifier,
+            ),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (entries.isEmpty()) {
             // C2: empty source = empty strip. No error text, no chrome.
             return@Box
         }
+        // Pause / resume: when the operator hits SELECT while the
+        // ticker is focused (per the WallFocusModel), `paused` flips.
+        // Conditionally drop basicMarquee — text renders statically
+        // from the start of the row so values can be read at the
+        // couch. A small chip in the leading edge surfaces the paused
+        // state honestly (no silent "why isn't it moving?").
+        val scrollModifier = if (paused) Modifier else {
+            Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
+                .then(scrollModifier)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            if (paused) PausedChip()
             entries.forEach { entry -> TickerCell(entry) }
         }
+    }
+}
+
+@Composable
+private fun PausedChip() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color(0x33FFFFFF))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = "PAUSED",
+            color = WallColors.BadgeLive,
+            fontSize = 9.sp,
+            letterSpacing = 1.4.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

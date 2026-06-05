@@ -1,6 +1,7 @@
 package com.mymts.ui.wall
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,19 @@ import kotlin.math.sqrt
  * from the parent. Aspect-ratio correctness lives inside the tile via
  * [com.mymts.ui.components.StreamSurface]'s RESIZE_MODE_FIT.
  */
+/**
+ * Column count the grid uses for a given slot count. Extracted as a
+ * top-level function so the wall's focus model
+ * ([com.mymts.ui.nav.WallFocusModel]) can pre-compute the same value
+ * without instantiating the composable — D-pad row/column math has to
+ * match the visible layout exactly.
+ */
+fun gridColumnsFor(slotCount: Int): Int = when (slotCount) {
+    0, 1 -> 1
+    in 2..4 -> 2
+    else -> ceil(sqrt(slotCount.toDouble())).toInt().coerceAtLeast(1)
+}
+
 @Composable
 fun VideoGrid(
     slots: List<Slot>,
@@ -58,6 +72,7 @@ fun VideoGrid(
     audibleSlot: Int = -1,
     captionsOnSlots: Set<Int> = emptySet(),
     onSoftCaptionAvailabilityChanged: (slotIndex: Int, available: Boolean) -> Unit = { _, _ -> },
+    focusedCellIndex: Int? = null,
 ) {
     val playingSlots = remember(slots) { slots.filterIsInstance<Slot.Playing>() }
 
@@ -118,13 +133,7 @@ fun VideoGrid(
         }
     }
 
-    val columns = remember(slots.size) {
-        when (slots.size) {
-            0, 1 -> 1
-            in 2..4 -> 2
-            else -> ceil(sqrt(slots.size.toDouble())).toInt().coerceAtLeast(1)
-        }
-    }
+    val columns = remember(slots.size) { gridColumnsFor(slots.size) }
 
     Box(modifier = modifier.background(WallColors.Background)) {
         if (bound.isEmpty()) {
@@ -136,6 +145,7 @@ fun VideoGrid(
             AutofitGrid(
                 columns = columns,
                 bound = bound,
+                focusedCellIndex = focusedCellIndex,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -146,6 +156,7 @@ fun VideoGrid(
 private fun AutofitGrid(
     columns: Int,
     bound: List<BoundTile>,
+    focusedCellIndex: Int?,
     modifier: Modifier = Modifier,
 ) {
     val rows = ceil(bound.size / columns.toDouble()).toInt().coerceAtLeast(1)
@@ -164,11 +175,32 @@ private fun AutofitGrid(
                     val idx = r * columns + c
                     if (idx < bound.size) {
                         val tile = bound[idx]
+                        // Focus highlight: the `bound` list only contains
+                        // Playing slots — the focused cell's index is the
+                        // grid slot index, which equals the bound list
+                        // index when the grid only has playing tiles.
+                        // For a mixed list (Playing/Offline/Empty) the
+                        // bound index still represents this visible cell.
+                        val isFocused = focusedCellIndex == idx
                         key(tile.key) {
-                            WallTile(
-                                bound = tile,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .then(
+                                        if (isFocused) {
+                                            Modifier.border(
+                                                width = 3.dp,
+                                                color = WallColors.BadgeLive,
+                                            )
+                                        } else Modifier,
+                                    ),
+                            ) {
+                                WallTile(
+                                    bound = tile,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     } else {
                         Box(modifier = Modifier.weight(1f).fillMaxHeight())

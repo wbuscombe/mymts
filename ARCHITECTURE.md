@@ -506,7 +506,133 @@ When the transitional HTTP is dropped (at-the-box finale Step 1), the HTTPS list
 
 Because the trust anchor is the **specific cert** (not an issuer), rotating the cert is a **coordinated APK + helper pair**: generate the new cert on the NAS, replace `app/src/main/res/raw/helper_cert.pem`, rebuild + ship the APK via the Stage 6 signed-update path. Until the new APK is installed, only the old cert is trusted. This is acceptable for a single-operator-on-private-LAN posture — the rotation cadence is "rarely" (10-year cert validity).
 
-## 13. What this document deliberately does NOT specify yet
+## 13. Stage 6.x — whole-wall D-pad focus model + per-zone actions
+
+The wall gains a **unified, global focus model** — a pure function that consumes every D-pad event and computes where focus should move next. This isolates focus bugs to a single, unit-tested layer, making navigation regressions visible at test time rather than from the couch. Per-zone actions (what SELECT does in each zone) layer on top of the pure model, kept deliberately separate so a focus tweak never entangles the action semantics and vice versa.
+
+```
+app/src/main/java/com/mymts/ui/nav/
+├── WallFocus.kt                ← data class: active zone + preserved indices + in-place state
+├── WallFocusModel.kt           ← pure function: (focus, intent, counts, gridColumns) → NavResult
+└── NavIntent + NavResult       ← enum for input; sealed class for output (sum type)
+
+app/src/test/java/com/mymts/nav/
+├── WallFocusModelTest.kt       ← 38 unit tests covering every transition + no-trap invariants
+
+app/src/main/java/com/mymts/ui/wall/
+├── WallScreen.kt              ← owns focus state; dispatches D-pad through the model
+├── VideoGrid.kt               ← gridColumnsFor() = single source of truth for column math
+├── FeedPane.kt                ← accepts focusedIndex + expandedIndex (in-place state)
+└── TickerStrip.kt             ← accepts focused + paused (in-place state)
+```
+
+### The three zones and their screen layout
+
+The wall is spatially organized into three navigable zones — **Ticker, Feed, Grid** — arranged to match how the operator scans from the couch.
+
+```
+    +-------------------------------+
+    |         TICKER (top)          |   thin strip, 40 dp; marquee or static
+    +-----+-------------------------+
+    |     |                         |
+    | FEED|       GRID (right)      |   ~28% feed width, rest fills grid
+    |     |                         |   2×2 default per device budget
+    +-----+-------------------------+
+```
+
+**Ticker** (top strip, 40 dp) — a horizontal marquee or static row. One focus position; no intra-zone navigation. Accessible via UP from feed/grid; returns DOWN to whichever zone the operator came up from (`lastLowerZone` memo).
+
+**Feed** (left column, 28% width) — vertical list of news items. Each item renders as a collapsed row (title + summary clipped). UP/DOWN move within the list or to/from the ticker. RIGHT enters the grid at the grid's preserved index. LEFT opens the menu.
+
+**Grid** (right, remainder) — rows × columns of video tiles. LEFT/RIGHT move within a row (never wrap); UP/DOWN move between rows at the same column. TOP row UP goes to ticker. LEFTMOST column LEFT spills back to the feed. Grid's column count (`gridColumns`) is computed once via `gridColumnsFor(slotCount)` — the single source of truth so the focus model's row/col math and the visible layout never disagree.
+
+### Pure function + immutable result
+
+`WallFocusModel.apply(focus, intent, feedItemCount, gridTileCount, gridColumns)` is **entirely pure** — no Compose, no Android, no side effects — returning a `NavResult` sum type:
+
+```kotlin
+sealed class NavResult {
+    data object Stay                          // no state change
+    data class Focus(val focus: WallFocus)    // new focus state
+    data object OpenMenu                      // request menu overlay
+    data class OpenSlotControls(slotIndex)    // request per-tile controls overlay
+    data object BackBubble                    // no deeper state; caller handles BACK
+}
+```
+
+The **reason for this separation**: focus model changes (adding a zone, tweaking boundary conditions) do not touch action logic, and vice versa. The action layer (what SELECT does in each zone) is driven by `NavResult.Focus` variants; if a future change swaps SELECT behavior for a zone, the model's transition graph stays intact.
+
+### Focus state ownership: WallScreen as the single holder
+
+`WallScreen` owns the `WallFocus` state via a `mutableStateOf`. Every D-pad event flows through the model and updates the state:
+
+```kotlin
+var focus by remember { mutableStateOf(WallFocus.Initial) }
+
+// In the key-event handler:
+val result = WallFocusModel.apply(
+    focus = focus,
+    intent = navIntent,
+    feedItemCount = feedItemCount,
+    gridTileCount = slots.size,
+    gridColumns = gridColumnsFor(slots.size),
+)
+when (result) {
+    is NavResult.Focus -> focus = result.focus
+    is NavResult.OpenMenu -> menu.open()
+    is NavResult.OpenSlotControls(slotIndex) -> menu.openControls(slotIndex)
+    // ...
+}
+```
+
+The model is passed the **current** counts and column math because those are derived data (feed size, grid tile count, column layout depend on the data sources). The model does not hold them. This lets the model be tested in isolation — the test suite is free to pass any counts and verify the transitions work correctly regardless of what the wall is currently rendering.
+
+### gridColumnsFor: single source of truth for column layout
+
+Both the focus model and the visible grid must agree on how many columns exist. `gridColumnsFor(slotCount)` is a **top-level function**, not a method, so it can be called before the composable runs:
+
+```kotlin
+fun gridColumnsFor(slotCount: Int): Int = when (slotCount) {
+    0, 1 -> 1
+    in 2..4 -> 2
+    else -> ceil(sqrt(slotCount.toDouble())).toInt().coerceAtLeast(1)
+}
+```
+
+Every row/column calculation in the focus model uses this exact function. The visible grid also uses it to lay out tiles via `weight()`. This single source of truth is **enforced by code, not by convention** — if the grid's column count drifts from the model's math, D-pad navigation will trap.
+
+### Per-zone actions: the action layer
+
+Each zone has a **SELECT action** and **BACK semantics**, kept separate from the pure transition function:
+
+| Zone | SELECT | BACK |
+|---|---|---|
+| **Ticker** | Toggle `tickerPaused` in place. No zone change, no scroll, no side effect beyond the pause flag. Useful at 10 ft when a ticker value is sliding off-screen — operator presses OK to stop, reads, presses OK again to resume. | Bubbles to caller (e.g., to close a modal if one is open). |
+| **Feed** | Toggle `feedExpanded` in place. When true, the focused item shows its full plain-text summary (already fetched and stored by the helper; no web fetch, no HTML parse, no WebView). Expanding is a **structural no-op** — only the `expanded` render property changes; focus stays, item stays, feed doesn't scroll. | If expanded, collapse; then bubbles. So BACK collapses first, then (if already collapsed) bubbles. Mirrors the Stage 5 menu's BACK nesting. |
+| **Grid** | Open the `SlotControlsOverlay` for the focused tile. Allows the operator to reassign the channel or adjust audio/captions. Overlay is a modal; wall focus is preserved but inactive. | Bubbles (no nested state in the grid itself). |
+
+All three zones obey the **no-trap invariant**: every zone is reachable from every other, and every zone has at least one direction that exits it (either into another zone or by opening the menu). The invariant is verified by two tests: `every zone is reachable from every other zone` (BFS through the graph) and `every zone is exitable` (each zone can reach ≥1 of {new zone, menu, controls modal}).
+
+### Feed expansion: the closed-door load-bearing boundary
+
+The feed-expand action is where **Trust Bar A1** (hostile input assumed) meets **Trust Bar C3** (staleness never silent). When the operator SELECTs a feed item and `feedExpanded` flips to true:
+
+- `FeedPane` renders the item's `summary` field — **plain text**, pre-stripped of HTML by the helper's `feeds/parser.py`.
+- No WebView, no HTML parser, no fetch, no async network call. The summary is already in the app's memory, safe and ready.
+- The A1 boundary is: the helper did the parsing and stripping; the TV renders only what the helper gave. An operator can read an excerpt safely, offline, without triggering a web fetch.
+
+This is the "safe excerpt is the v1 answer; richer reading is deferred" principle from `docs/BUILD-PROMPT.md §4` (lines 81 / 130 / 178). It satisfies A1 while keeping the feed interactive. No compromise. Adversarially verified in `docs/THREAT-MODEL.md §"Navigation chapter — feed-expand A1 confirmation"`.
+
+### What's deliberately NOT in this chapter
+
+- **Kiosk story** — long-uptime foreground watchdog + boot receiver. Deferred to the new MyMTS box (in transit) per Model A. Focus model is unaffected by kiosk mechanics.
+- **Feed list/sections restructure** — the feed could later gain sub-lists (by source, by topic), changing how UP/DOWN behave and what `feedIndex` means. Decision deferred (BACKLOG item B).
+- **Ticker markets/sports modes** — real ticker source plug-in. Future extension; the current stub is a single-row marquee that participates in the focus model cleanly (BACKLOG item D).
+- **QR-to-phone for richer reading** — a future closed-door-compatible alternative for reading the full article on the operator's phone. The TV never fetches HTML; the phone is the operator's own device. Logged in BACKLOG.
+
+---
+
+## 14. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

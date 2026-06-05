@@ -223,6 +223,53 @@ Per the at-the-box finale prompt, the operator confirmed **Model A — one kiosk
 - MyMTS's kiosk story tested on a borrowed box doesn't tell us anything useful — different hardware budget, different background pressure (WyzeGrid's WatchdogService present), different physical attached panel. The new box is what it'll ship on.
 - The away-from-box + safe-on-`.182` roadmap is complete after Step 4. The kiosk work waits for hardware.
 
+## Navigation chapter feel-test on the remote (staged — operator runs at the box)
+
+### Pre-flight
+
+- **Current state.** MyMTS APK installed on `.182` (`onn-office`); operator at the couch with the Onn remote.
+- **Timing constraint.** WyzeGrid reclaims the foreground after ~80 min on `.182` (per the Stage 1 finding; see "WyzeGrid coexistence" below). Plan the session to complete inside that window, OR disable WyzeGrid beforehand per the recipe in the next section — restore at the end either way.
+- **Standing rule — unrelated host services.** Never touched. The unrelated host container is never modified, restarted, or reconfigured by this session.
+
+### Checkpoint-1 skeleton — zone movement + no-trap + BACK semantics
+
+For each, focus should be visible as a WyzeGrid-green accent on the active zone (3 dp left-edge bar in feed; 3 dp border on a grid cell; 2 dp border on the ticker).
+
+1. **Feed UP at row 0** → focus to ticker (green border lights the top strip).
+2. **Feed DOWN** → next feed row (left accent moves down). Expanded items collapse first.
+3. **Feed RIGHT** → focus enters the grid (top-left tile gets a green border).
+4. **Feed LEFT** → side menu opens.
+5. **Grid UP at top row** → focus to ticker; `lastLowerZone` should be Grid.
+6. **Grid DOWN at last row** → stays (no wrap).
+7. **Grid LEFT at column 0** → focus spills back to feed at the preserved feed row.
+8. **Grid LEFT in interior** → previous cell in the same row.
+9. **Grid RIGHT at row's last cell** → stays (no wrap to next row).
+10. **Grid RIGHT in interior** → next cell in same row.
+11. **Ticker DOWN** → returns to whichever zone the operator came up from (feed if from feed; grid if from grid). Round-trip ticker ↔ grid a few times — it should keep returning to the grid, not drift to the feed.
+12. **Ticker UP** → stays.
+13. **Ticker LEFT** → side menu opens.
+14. **BACK with feed item collapsed** → app handles back (closes / exits). With expanded → collapses first.
+
+### Checkpoint #124 actions — cell → controls, article → expand, ticker pause, menu robustness
+
+1. **Grid cell SELECT.** Focus a grid cell, press OK → `SlotControlsOverlay` opens **without** the side menu sliding in. Channel/Audio/Captions/Close rows. BACK dismisses straight back to the wall (focus returns to that same grid cell).
+2. **Feed article SELECT.** Focus a feed item, press OK → row expands in place: title steps up (15 → 18 sp), full summary text appears (no clipping), "OK to collapse · BACK to collapse" hint at the bottom. OK again → collapses; BACK → also collapses.
+3. **Ticker SELECT.** Focus the ticker, press OK → marquee stops; a small green "PAUSED" chip appears at the leading edge. OK again → marquee resumes, chip disappears. Navigate away (DOWN to feed/grid), come back UP — the pause state should be **remembered** (preserved across the zone round-trip).
+4. **Menu polish.** Open menu (LEFT from any non-modal zone, or KEY_MENU if the remote has it). Pick a slot row → controls open over the menu. Pick "Channel" → picker opens. BACK → returns to controls. BACK → returns to side menu. BACK → menu closes; wall focus is restored to whichever zone was last active. No focus loss.
+
+### Restore WyzeGrid to camera-box state
+
+`.182` is WyzeGrid's box per Model A. Whether or not you disabled WyzeGrid for the session, end the session by relaunching it:
+
+```
+adb -s <LAN_IP>:5555 shell am start -n com.wyzegrid/.MainActivity
+adb -s <LAN_IP>:5555 shell dumpsys activity activities | grep -E 'topResumedActivity|com.wyzegrid'
+```
+
+Expected: `topResumedActivity = com.wyzegrid/.MainActivity` and the WatchdogService alive. The MyMTS install can remain on the box (harmless; will be evicted by WyzeGrid's watchdog within ~80 min if the operator leaves it).
+
+---
+
 ## WyzeGrid coexistence (note for the record; not currently active state)
 
 During the Stage 1 gate-clearing soak window, WyzeGrid was disabled-user on `.182` because its persistent `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdog (`SYSTEM_ALLOW_LISTED`) reclaimed the foreground from MyMTS around 80 minutes into the first attempt; backgrounded MyMTS was then evicted on the 2 GB box.

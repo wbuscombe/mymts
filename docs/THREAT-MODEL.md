@@ -158,6 +158,47 @@ Each will be filled in with **likelihood**, **impact**, **mitigation**, **residu
 
 ---
 
+## Navigation chapter — feed-expand A1 confirmation (2026-06-04)
+
+**Claim:** The whole-wall D-pad navigation chapter introduces a focused-feed-item SELECT action that expands the item's summary in place. The expansion path:
+  - Shows more of the **same** pre-fetched plain-text summary already in the `FeedItem`, without re-fetching from the network.
+  - Renders expansion via a Compose `Text` widget `maxLines` toggle (collapsed: 2 lines; expanded: `Int.MAX_VALUE`) — no `WebView`, no HTML render, no browser engine.
+  - Never introduces a fetch surface, a network call, or any HTML-interpretation layer that could become a vector for hostile-markup injection.
+
+The A1 boundary **holds**: hostile-feed input remains neutralized by the helper's prior HTML stripping, and the TV-side code enforces "inert text only" by construction.
+
+**Load-bearing code paths checked (adversarially):**
+
+- **Focus model SELECT for Feed:** `app/src/main/java/com/mymts/ui/nav/WallFocusModel.kt` — `WallZone.Feed -> NavResult.Focus(focus.copy(feedExpanded = !focus.feedExpanded))`. The toggle is a stateless Boolean flip — no side-effects, no network calls, no fetcher invocation.
+- **Expansion rendering in `FeedPane`:** `app/src/main/java/com/mymts/ui/wall/FeedPane.kt` — the `expanded` Boolean only adjusts `Text` widget properties (`fontSize`, `lineHeight`, `maxLines`, `color`). Same `item.summary` plain-text source either way. No new composable, no new render path.
+- **No HTML rendering capability in the wall layer:** a grep across `app/src/main/java/com/mymts/ui/wall/` for `WebView`, `HtmlCompat`, `Html.from`, `Markwon`, or `AndroidView` finds zero matches. The expansion path cannot reach a markup interpreter because none exists in the wall classpath.
+- **No new fetch on expand:** `FeedRepository.start()` polls on a fixed timer; `expandedIndex` is not a `LaunchedEffect` key on the repository or `HelperClient.fetchFeed()`. State change does not trigger a request.
+- **Helper-side HTML strip (upstream):** `helper/src/mymts_helper/feeds/parser.py` `_StripHTML` class drops markup at parse time before storage. The TV never sees raw markup; it only receives the safe plain-text product the helper validated.
+
+**Connection to T-T2 and T-H1:** This entry **does not change** the existing T-T2 (HTML smuggled into the feed pane via RSS title/summary → XSS-equivalent on the TV) or T-H1 (hostile RSS feed content) mitigations. The feed-expand path is a *consumer* of the helper's already-stripped output; it neither extends nor weakens those mitigations. The boundary they pin (no HTML interpretation on the TV) is the same boundary feed-expand respects by construction.
+
+**Connection to BUILD-PROMPT §4 closed door:**
+
+BUILD-PROMPT line 81 states: *"Opening an item on the TV shows whatever the helper safely provides (e.g., a text excerpt). Do **not** build a flow that requires the TV to fetch arbitrary web pages or that depends on a cross-device auth handoff — that path is forbidden. A simple, safe on-screen excerpt is the v1 answer; richer reading is deferred."*
+
+The feed-expand implementation honors this closed door exactly: safe on-screen excerpt (the summary field from the helper's `FeedItem`), no TV-side fetch (expansion only flips render properties), richer reading deferred (a future "open on phone via QR" is logged in BACKLOG as a closed-door-compatible alternative, not as in-app HTML reading).
+
+**What could break this in future code review:**
+
+Red flags that must be caught at PR time:
+1. **WebView mount on feed items.** `AndroidView { WebView(...) }` to render the summary as clickable-HTML would breach A1. Reject; re-threat-model the change.
+2. **Fetch on expand.** `LaunchedEffect(expandedIndex) { repository.fetchFullArticle(...) }` would breach the closed door. Reject; require a fresh threat-model and a foundation-level decision.
+3. **HTML-interpretation library.** Markwon, JSoup, `HtmlCompat.fromHtml`, or any markup parser added to the wall's classpath for feed rendering is a signal that someone is attempting structured-content rendering. Flag and require justification against A1.
+4. **Summary mutation on expand.** If `item.summary` is conditionally modified (links inlined, additional text loaded from cache or network), the "same inert text" assumption is broken.
+
+Future feed-expand changes must continue to render the summary as Compose `Text` (or equivalent inert widget), never fetch on expand, never mount a WebView, never mutate summary content based on expansion state. If any of these is violated, re-open this entry and assess.
+
+**Residual risk:**
+
+None beyond the existing T-H1 / T-T2 mitigations. Expansion adds no new vector and does not weaken the existing boundary. The risk to the feed system remains the helper's parser (T-H1); expansion does not compound it.
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

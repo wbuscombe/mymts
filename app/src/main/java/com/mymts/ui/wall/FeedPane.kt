@@ -5,14 +5,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -51,10 +56,24 @@ import com.mymts.data.helper.FeedRepository
 fun FeedPane(
     repository: FeedRepository,
     modifier: Modifier = Modifier,
+    focusedIndex: Int? = null,
+    expandedIndex: Int? = null,
+    onItemCountChanged: (Int) -> Unit = {},
 ) {
     val state by repository.state.collectAsState()
     val items = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
     val stale = repository.isStale()
+
+    LaunchedEffect(items.size) { onItemCountChanged(items.size) }
+
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(focusedIndex) {
+        // Keep the focused row visible. animateScrollToItem is a no-op
+        // when the item is already inside the viewport, so this is
+        // safe to call on every focus change.
+        focusedIndex?.takeIf { it in items.indices }?.let { listState.animateScrollToItem(it) }
+    }
 
     Column(
         modifier = modifier
@@ -67,11 +86,19 @@ fun FeedPane(
             EmptyFeed(stale = stale, fetchOk = state.lastFetchOk)
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                items(items, key = { it.id.takeIf { x -> x >= 0 } ?: it.title.hashCode() }) { item ->
-                    FeedRow(item)
+                items(
+                    count = items.size,
+                    key = { idx -> items[idx].id.takeIf { x -> x >= 0 } ?: items[idx].title.hashCode() },
+                ) { idx ->
+                    FeedRow(
+                        item = items[idx],
+                        focused = focusedIndex == idx,
+                        expanded = expandedIndex == idx,
+                    )
                     Divider(color = Color(0x14FFFFFF), thickness = 1.dp)
                 }
             }
@@ -107,58 +134,96 @@ private fun PaneHeader(stale: Boolean, fetchOk: Boolean, itemCount: Int) {
 }
 
 @Composable
-private fun FeedRow(item: FeedItem) {
+private fun FeedRow(
+    item: FeedItem,
+    focused: Boolean = false,
+    expanded: Boolean = false,
+) {
     val timeChip = remember(item.publishedAtIso, item.fetchedAtIso) {
         RelativeTime.render(item.publishedAtIso) ?: RelativeTime.render(item.fetchedAtIso)
     }
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .background(if (focused) Color(0x14FFFFFF) else Color.Transparent),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        // 3dp green accent on the left edge for the focused row. The
+        // colour matches WallColors.BadgeLive — the WyzeGrid-family
+        // accent — and is the same focus signal used by the grid and
+        // ticker so a 10-foot read of "where am I" stays consistent.
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(if (focused) WallColors.BadgeLive else Color.Transparent),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = item.source.uppercase(),
-                color = WallColors.LabelGhost,
-                fontSize = 10.sp,
-                letterSpacing = 1.2.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (timeChip != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = timeChip,
+                    text = item.source.uppercase(),
                     color = WallColors.LabelGhost,
                     fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.2.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (timeChip != null) {
+                    Text(
+                        text = timeChip,
+                        color = WallColors.LabelGhost,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
-        }
-        Text(
-            text = item.title,
-            color = WallColors.LabelPrimary,
-            fontSize = 15.sp,
-            lineHeight = 19.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!item.summary.isNullOrBlank()) {
             Text(
-                text = item.summary,
-                color = WallColors.LabelMuted,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                maxLines = 2,
+                text = item.title,
+                color = WallColors.LabelPrimary,
+                // Expanded headlines step up to be readable from the
+                // couch (the wall's primary viewing distance). Same
+                // type ramp as the SlotControlsOverlay's panel title.
+                fontSize = if (expanded) 18.sp else 15.sp,
+                lineHeight = if (expanded) 23.sp else 19.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (!item.summary.isNullOrBlank()) {
+                // Trust Bar A1 (boundary): the summary is the
+                // helper's pre-rendered plain text — `feeds/parser.py`
+                // strips HTML and we treat it as inert. Expand here
+                // just shows MORE of the same plain text in place; we
+                // never WebView, never re-fetch (BUILD-PROMPT §4 closed
+                // door — confirmed in THREAT-MODEL §"feed-expand").
+                Text(
+                    text = item.summary,
+                    color = if (expanded) WallColors.LabelPrimary else WallColors.LabelMuted,
+                    fontSize = if (expanded) 14.sp else 12.sp,
+                    lineHeight = if (expanded) 19.sp else 16.sp,
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.padding(top = 4.dp))
+                Text(
+                    text = "OK to collapse · BACK to collapse",
+                    color = WallColors.LabelGhost,
+                    fontSize = 10.sp,
+                    letterSpacing = 0.6.sp,
+                )
+            }
         }
     }
 }

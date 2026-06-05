@@ -195,6 +195,26 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** Clean, high-value, low-effort — just more RSS sources in the helper seed (current: BBC World, Al Jazeera, Guardian World, NPR World). Held only to keep the current session focused.
 **Reconsider when:** Soon — pairs naturally with any helper/seed work. Research MTS's source list as input.
 
+## Ground News as a feed source — NOT pursued (security + no API); use more public RSS instead
+
+- **What was asked:** source MyMTS feed articles from the operator's Ground News subscription.
+- **Finding (checked 2026-06-04):** Ground News has **no public API and no RSS export of a personalized/custom feed.** Custom Feeds (a Premium/Vantage feature) are **Ground Web-only** — a web-app feature, not a data feed. Notably the relationship is inverted: Ground News *ingests* RSS from sources and lets users *suggest* sources via RSS link; it does not *publish* your feed as RSS. So there is no tokened feed URL to drop into the helper seed.
+- **⚠️ Why NOT to pursue it even via workaround (the important part):**
+  - The only way to get the personalized feed would be **authenticating as the operator** (their subscription login) inside the helper and **scraping Ground Web's HTML**. That requires storing the operator's Ground News credentials/session on the NAS and having the helper act as them.
+  - This **crosses the credential line the helper has deliberately NOT crossed** (A7 / Trust Bar): the helper does defensive, anonymous, public-RSS parsing, holds no operator secrets, and uses the SSRF-safe fetcher. Pulling an authenticated personal feed would mean real credential-handling pointed at a service that doesn't want programmatic access — the most security-fraught possible feed source for a project whose #1 value is "never a path into the home network."
+  - It's the same class as the Twitch/YouTube extraction, but **worse** — it needs the operator's authenticated session, not just a public page; fragile (breaks on markup changes); against Ground's ToS.
+  - **Low payoff anyway:** Ground's value is the *bias/source-comparison/blindspot/ownership* layer, which a scraped headline feed wouldn't carry. The underlying articles mostly come from public sources (Ground aggregates 60,000+) that have their own public RSS.
+- **Sanctioned alternative (what actually delivers the intent):** add more reputable **public RSS sources** to the helper seed — AP, Reuters, the wire services, a politically-balanced spread (this is feedback item F, already flagged low-effort/soon). Delivers the source-diversity that makes Ground valuable, via the public-RSS path the helper is built for, zero credential/ToS risk.
+- **Optional future feature in the same spirit:** MyMTS could maintain its *own* per-source bias/lean tags in the helper's source list (a home-grown bias layer, not Ground's) — log as a possible future feed enhancement if the operator wants the bias-awareness concept without Ground.
+- **Reconsider when:** Only if Ground News ever ships a real public API / personal-feed RSS export. Until then, the public-RSS-expansion path (F) is the answer.
+
+## Send-to-phone for richer article reading (QR pair) — closed-door-compatible
+
+**What:** A future feature for the focused-feed-item SELECT path: alongside the current safe in-place expansion of the helper's plain-text summary, surface a small QR (and/or operator-pre-paired phone notification) that opens the article URL on the operator's phone. The full article is read on the phone's browser — a context where the operator's existing browser hygiene + the article's own platform already apply — not in MyMTS.
+**Why this respects the closed door:** the in-app full-article web reading path is permanently closed (BUILD-PROMPT §4, lines 81/130/178). This entry is **not** that path: MyMTS never fetches the article HTML, never renders it, never proxies through the helper for the operator's session. The QR/notification is a *handoff to the phone*, the phone owns the read — same shape as "scan to open on phone" patterns in news apps. A1 / B4 hold because nothing about the article ever crosses into the TV or helper's render layer.
+**Why-not-now:** Out of scope for the navigation chapter (chapter is whole-wall D-pad UX, not reading flow). Cross-device handoff also needs care: QR is the simple form (no auth, no pairing), notification-to-phone requires a one-time pairing flow which is a small but real surface. Decide which form (or both) at design time.
+**Reconsider when:** Operator wants a richer reading flow than the in-place safe summary. Likely pairs with item B (feed UX list/sections) since "select to send to phone" is the natural next action verb once feed items are selectable.
+
 ## G. Sports-data source (enabler for D + the original ticker sports mode)
 
 **What:** A data source for live sports scores / schedules to feed the ticker's sports mode and any sports surfacing.
