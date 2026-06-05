@@ -132,3 +132,59 @@ def test_api_channels_pinned_fields(phantom_client: TestClient) -> None:
     for field in ("slug", "label", "kind", "current_url", "status", "enabled",
                   "last_check_at", "last_success_at", "last_error", "error_count"):
         assert field in item, f"missing field: {field}"
+
+
+# ---- SQLite cross-thread regression (feed-sources expansion) ----
+
+
+def test_feed_endpoint_survives_concurrent_threaded_requests(phantom_client: TestClient) -> None:
+    """Regression for the intermittent `sqlite3.ProgrammingError: SQLite
+    objects created in a thread can only be used in that same thread` on
+    /api/feed.
+
+    Root cause was the `Depends(_conn)` yield-dependency: a sync route runs
+    in Starlette's anyio threadpool, and FastAPI drove the dependency's
+    open and close through two `run_in_threadpool` calls that could land on
+    different threadpool threads — closing a sqlite3 connection on a
+    different thread than it was opened on raises ProgrammingError. The fix
+    opens + closes the connection inside the route body via
+    `db.connection_scope` so the lifecycle stays on one thread.
+
+    Hammering the endpoint from many client threads concurrently maximises
+    the chance the threadpool reuses/rotates worker threads across a
+    request's open/close — the exact condition that used to flake. Every
+    response must be a clean 200 with the pinned envelope; a single 500
+    (or a connection-thread error bubbling up) fails the test.
+    """
+    import concurrent.futures
+
+    def hit(_: int) -> tuple[int, bool]:
+        r = phantom_client.get("/api/feed?limit=50")
+        ok_shape = r.status_code == 200 and r.json().get("schema_version") == 1
+        return r.status_code, ok_shape
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(hit, range(64)))
+
+    statuses = [s for s, _ in results]
+    assert all(s == 200 for s in statuses), (
+        f"expected all 200, got a non-200 (cross-thread sqlite regression?): "
+        f"{sorted(set(statuses))}"
+    )
+    assert all(shape for _, shape in results), "envelope shape drifted under concurrency"
+
+
+def test_channels_endpoint_survives_concurrent_threaded_requests(phantom_client: TestClient) -> None:
+    """Same cross-thread regression guard for /api/channels, which shared
+    the identical `Depends(_conn)` pattern before the fix."""
+    import concurrent.futures
+
+    def hit(_: int) -> int:
+        return phantom_client.get("/api/channels").status_code
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        statuses = list(pool.map(hit, range(64)))
+
+    assert all(s == 200 for s in statuses), (
+        f"expected all 200, got: {sorted(set(statuses))}"
+    )

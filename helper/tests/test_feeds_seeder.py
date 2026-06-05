@@ -106,3 +106,52 @@ def test_entry_with_empty_url_is_skipped(conn, tmp_path: Path) -> None:
     )
     n = seeder.seed_from_file(conn, f)
     assert n == 1
+
+
+# ---- shipped seed.json validity (feed-sources expansion) ----
+
+
+def _load_shipped_seed() -> list[dict[str, str]]:
+    from importlib.resources import files
+
+    raw = files("mymts_helper.feeds").joinpath("seed.json").read_text(encoding="utf-8")
+    return json.loads(raw)
+
+
+def test_shipped_seed_is_wellformed_https_and_unique() -> None:
+    """Guard the packaged feed seed after the source-set expansion.
+
+    Every shipped source must be a non-empty https URL with a non-empty
+    label; URLs and labels must be unique (a dup label would collapse two
+    sources into one feed section). The SSRF-safe fetcher rejects non-https
+    at runtime, but catching it here keeps a bad edit out of the image.
+    """
+    entries = _load_shipped_seed()
+    assert isinstance(entries, list) and entries, "seed.json must be a non-empty list"
+
+    urls = [e["url"] for e in entries]
+    labels = [e["label"] for e in entries]
+
+    for e in entries:
+        assert e["url"].startswith("https://"), f"non-https source in seed: {e['url']}"
+        assert e["label"].strip(), f"empty label for {e['url']}"
+
+    assert len(urls) == len(set(urls)), "duplicate source URL in seed.json"
+    assert len(labels) == len(set(labels)), "duplicate source label in seed.json"
+
+
+def test_shipped_seed_seeds_every_source(conn) -> None:
+    """The shipped seed must upsert every entry — no silent drops — and the
+    count must match the file (a regression guard for the expanded set)."""
+    from importlib.resources import files
+
+    seed_path = Path(str(files("mymts_helper.feeds").joinpath("seed.json")))
+    expected = len(_load_shipped_seed())
+    seeded = seeder.seed_from_file(conn, seed_path)
+    assert seeded == expected, f"seeded {seeded} but seed.json has {expected} entries"
+    assert len(store.list_sources(conn)) == expected
+
+    # The four original sources are still present after the expansion.
+    labels = {s.label for s in store.list_sources(conn)}
+    for original in ("BBC World", "Al Jazeera", "Guardian World", "NPR World"):
+        assert original in labels, f"expansion dropped original source: {original}"

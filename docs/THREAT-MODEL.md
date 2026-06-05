@@ -292,6 +292,41 @@ None beyond the existing T-H1 / T-T2 mitigations. The UX & Config chapter adds n
 
 ---
 
+## Feed-sources expansion + SQLite cross-thread fix (2026-06-05)
+
+**Claim:** The feed-sources expansion (4 → 13 reputable public RSS sources seeded in `feeds/seed.json`) introduces no new attack surface. The SQLite cross-thread robustness fix is a correctness improvement that does not weaken any security boundary.
+
+**Feed-sources expansion — A1 boundary holds:**
+
+The helper's feed-handling layer treats all upstream sources as hostile by policy (T-H1). The expansion adds 9 new sources to the original 4, but does *not* introduce a new code path:
+- **Same SSRF-safe fetcher:** `mymts_helper.fetcher.fetch()` (https-only, DNS-pinned, RFC1918/loopback/CGNAT/ULA rejection, userinfo rejection, bounded body + time, redirects re-validated) remains the single egress mechanism. Every source, old and new, goes through the same defensive boundary.
+- **Same defensive parser:** `mymts_helper.feeds.parser.parse()` (feedparser + defusedxml; `script`/`style`/`iframe`/`object`/`embed` dropped, entities decoded, plain text only) processes every item. Hostile RSS content is neutralised at parse time before storage.
+- **Per-source error isolation:** one broken feed does not stall the others. Seeding 13 sources instead of 4 increases the number of items flowing through the SAME handling path.
+- **All 13 sources pre-verified:** each was fetched through the real helper fetcher and parsed through the real parser before commit — only feeds returning valid plain-text items were seeded. No surprise feed format reaches production.
+
+**Seeded set (13):** Original — BBC World, Al Jazeera, Guardian World, NPR World. Added — PBS NewsHour, Christian Science Monitor, CBS News, NBC News, Politico, Bloomberg Markets, The Dispatch, National Review, Reason.
+
+**Honesty call (C3-adjacent):** AP was rejected because its official feed is broken and the only working feed is a third-party mirror — labeling a relay "AP" would misrepresent provenance. Reuters was rejected because its public RSS was discontinued (returns HTML). Neither was seeded with a misleading label.
+
+**Connection to T-H1:** this expansion does *not* change the existing T-H1 mitigation. More sources = more items through the same defensive parser and the same SSRF-safe fetcher. No new code path, no parser variant, no relaxation of HTML stripping or entity decoding. The boundary is preserved by construction.
+
+**SQLite cross-thread fix — robustness without boundary change:**
+
+The logged intermittent `sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread` → HTTP 500 on `/api/feed` was caused by a FastAPI `Depends()` yield-dependency (`_conn` in `feeds/api.py` and `channels/api.py`) whose setup (open) and teardown (`close()`) ran through two separate `run_in_threadpool` calls that could land on different anyio threadpool threads — closing a connection on a different thread than it was opened on raises the error.
+
+**Fix + boundary verification:**
+- Added `db.connection_scope(path)` `@contextmanager`; `feeds/api.py` and `channels/api.py` now open + use + close the connection **inside the sync route body** (one `run_in_threadpool` call = one thread). The connection never crosses a thread boundary.
+- The fix keeps sqlite's thread guard ON — it does **not** use `check_same_thread=False`.
+- **SSRF fetcher unchanged** (T-H2 egress boundary untouched). **Parser unchanged** (T-H1). **Response envelope identical** (`schema_version` + field structure unchanged; no new endpoint, no new exposed field). **No credential surface** — the connection is a local SQLite file handle (T-H7 logging discipline unchanged).
+
+**Tests:** 2 concurrency regression tests in `tests/test_api.py` (8 client threads × 64 requests on `/api/feed` and `/api/channels`, all 200 + stable envelope); 2 shipped-seed guard tests in `tests/test_feeds_seeder.py` (all-https, unique URLs/labels, every entry seeds, originals retained). Full helper suite: 140 passed.
+
+**Residual risk:** none beyond the existing boundaries. The fix improves correctness (eliminating the intermittent 500) without loosening the SSRF boundary, the parser boundary, or the response contract. The dual-uvicorn-instance tidy-up remains a separate, independent BACKLOG sub-item.
+
+**Traces to:** **A1** (defensive parse, unchanged), **T-H1** (hostile RSS, unchanged mitigation), **T-H2** (SSRF egress, unchanged), **C3** (honest provenance — AP/Reuters rejection).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

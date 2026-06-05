@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from .. import db
 from . import registry
@@ -16,16 +16,16 @@ API_SCHEMA_VERSION = 1
 def get_router(db_path: Path) -> APIRouter:
     router = APIRouter(prefix="/api/channels", tags=["channels"])
 
-    def _conn():
-        c = db.connect(db_path)
-        try:
-            yield c
-        finally:
-            c.close()
+    # Connection opened + closed inside the route body via
+    # `db.connection_scope` (not a `Depends()` yield-dependency) so the
+    # sqlite3 connection never crosses an anyio-threadpool thread
+    # boundary. See the matching note in feeds/api.py and
+    # db.connection_scope's docstring.
 
     @router.get("")
-    def list_channels(conn=Depends(_conn)) -> dict[str, Any]:
-        rows = registry.list_channels(conn)
+    def list_channels() -> dict[str, Any]:
+        with db.connection_scope(db_path) as conn:
+            rows = registry.list_channels(conn)
         return {
             "schema_version": API_SCHEMA_VERSION,
             "channels": [

@@ -120,6 +120,33 @@ def migrate(path: str | Path) -> int:
 
 
 @contextmanager
+def connection_scope(path: str | Path) -> Iterator[sqlite3.Connection]:
+    """Open a connection, yield it, and close it in the SAME call frame.
+
+    This is the read-path replacement for a FastAPI `Depends()` generator
+    that yields a connection. The bug it fixes: a *sync* route function
+    runs in Starlette's anyio threadpool, and FastAPI drives a sync
+    `yield`-dependency's setup (open) and teardown (`close()`) through
+    two separate `run_in_threadpool` calls — which can land on two
+    different threadpool threads. sqlite3 connection objects are bound to
+    the thread that created them, so closing on a different thread raises
+    `sqlite3.ProgrammingError: SQLite objects created in a thread can
+    only be used in that same thread`, surfacing as an intermittent
+    HTTP 500 on `/api/feed`.
+
+    Using this `with`-scope *inside* the route body keeps open + use +
+    close within the single threadpool thread that runs the route, so
+    the connection never crosses a thread boundary. (The whole sync route
+    body is one `run_in_threadpool` invocation, hence one thread.)
+    """
+    conn = connect(path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """BEGIN/COMMIT/ROLLBACK helper. Use for any multi-statement write."""
     conn.execute("BEGIN;")

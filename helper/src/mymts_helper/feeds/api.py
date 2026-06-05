@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from .. import db
 from . import store
@@ -25,20 +25,23 @@ API_SCHEMA_VERSION = 1
 def get_router(db_path: Path) -> APIRouter:
     router = APIRouter(prefix="/api/feed", tags=["feed"])
 
-    def _conn():
-        c = db.connect(db_path)
-        try:
-            yield c
-        finally:
-            c.close()
+    # NOTE: the connection is opened + closed *inside* each route body via
+    # `db.connection_scope`, NOT through a `Depends()` yield-dependency.
+    # A sync route runs in one anyio threadpool thread, but FastAPI drives
+    # a sync yield-dependency's open and close through two separate
+    # `run_in_threadpool` calls that can land on different threads — and a
+    # sqlite3 connection closed on a different thread than it was opened on
+    # raises ProgrammingError, surfacing as intermittent 500s here. Opening
+    # in the body keeps the whole connection lifecycle on the one thread
+    # that runs the route. See db.connection_scope.
 
     @router.get("")
     def list_feed(
-        conn=Depends(_conn),
         limit: int = Query(default=200, ge=1, le=500),
         since: str | None = Query(default=None, description="ISO 8601 UTC; items after this"),
     ) -> dict[str, Any]:
-        items = store.recent_items(conn, limit=limit, since=since)
+        with db.connection_scope(db_path) as conn:
+            items = store.recent_items(conn, limit=limit, since=since)
         return {
             "schema_version": API_SCHEMA_VERSION,
             "items": [
@@ -58,8 +61,9 @@ def get_router(db_path: Path) -> APIRouter:
         }
 
     @router.get("/sources")
-    def list_sources(conn=Depends(_conn)) -> dict[str, Any]:
-        rows = store.list_sources(conn)
+    def list_sources() -> dict[str, Any]:
+        with db.connection_scope(db_path) as conn:
+            rows = store.list_sources(conn)
         return {
             "schema_version": API_SCHEMA_VERSION,
             "sources": [

@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Feed sources — expanded to 13 reputable balanced RSS sources + SQLite cross-thread fix (2026-06-05)
+
+The helper feed seed grows from 4 to 13 verified public RSS sources with a deliberate left/center/right balance, and the intermittent SQLite cross-thread 500 on `/api/feed` is fixed. Every new source was verified by fetching through the helper's real SSRF-safe fetcher and parsing through the real defensive parser before commit — only feeds returning valid plain-text items were seeded.
+
+### Added
+- 9 new seeded RSS sources in `feeds/seed.json`: PBS NewsHour, Christian Science Monitor, CBS News, NBC News, Politico, Bloomberg Markets, The Dispatch, National Review, Reason. (Original 4 retained: BBC World, Al Jazeera, Guardian World, NPR World.)
+- `db.connection_scope(path)` — a context manager that opens, uses, and closes the SQLite connection inside the sync route body (one `run_in_threadpool` call = one thread), so the connection never crosses an anyio threadpool thread boundary.
+- 2 shipped-seed guard tests in `tests/test_feeds_seeder.py` — all-https + unique URLs/labels validation; seeds every entry; originals retained.
+- 2 SQLite concurrency regression tests in `tests/test_api.py` — `/api/feed` and `/api/channels` hammered by 8 client threads × 64 requests; all 200 + stable envelope asserted.
+
+### Fixed
+- **SQLite cross-thread bug** (resolves the logged BACKLOG entry). Root cause: the FastAPI `Depends()` yield-dependency (`_conn`) drove the connection's open and close through two separate `run_in_threadpool` calls that could land on different threadpool threads — closing a `sqlite3.Connection` on a different thread than it was opened on raised `ProgrammingError` → HTTP 500. `connection_scope()` keeps the whole lifecycle on one thread. The fix keeps sqlite's thread guard ON (no `check_same_thread=False`).
+
+### Changed
+- `feeds/api.py` and `channels/api.py` — removed the `_conn()` yield-dependency; both routes open the connection via `db.connection_scope(db_path)` inside the route body. No change to the SSRF fetcher, parser, store, or response envelope.
+
+### Verification
+Every seeded feed was fetched through the real SSRF-safe fetcher and parsed through the real defensive parser before commit. Two candidates were tested and deliberately left out:
+- **Associated Press** (`apnews.com/index.rss`): official feed returns a SAXParseException; the only working feed is a third-party mirror (feedx.net), which would misrepresent provenance → rejected on honesty grounds.
+- **Reuters** (`reutersagency.com/feed`): returns HTML; Reuters discontinued public RSS years ago → no clean public feed exists.
+Verified-but-omitted (operator can swap in via `seed.json`): ABC News, CNBC, The Hill, Axios, The Atlantic, Vox, MarketWatch, Washington Examiner.
+
+### Tests
+Helper suite: **140 passed** (was 136). The new regression tests confirm `/api/feed` and `/api/channels` are stable under concurrent threaded load.
+
+### Deferred
+- Per-source bias tags / bias-labeling UI — future backlog idea; this chapter chooses a balanced set without labels.
+- Dual-uvicorn-instance tidy-up — separate low-priority BACKLOG sub-item, independent of this fix.
+- AP / Reuters — reconsider if either ships a clean public RSS feed.
+
+### Operator action
+Helper redeploy required to pick up the new sources: pull → rebuild → restart → verify `/health` returns 200 and `feeds.sources_count` reads **13**. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container**.
+
+### Standing rules
+- **unrelated host services: never touched.** Helper runs on its own bridge network.
+- A1: every source treated as hostile, parsed defensively, served as inert plain text — same parser path, more sources.
+- No secrets / absolute paths committed or logged.
+
 ## UX & Config — configurable feed width / font / side, settings overlay in menu (2026-06-04)
 
 The operator can now tune the wall layout to their space and eyesight without code changes. Three new discrete-preset settings (feed width, feed font scale, feed side) are exposed in a Settings overlay accessed from the side menu. Each setting cycles through operator-chosen presets; LEFT/RIGHT on a focused setting advances to the next preset, applies it live, and persists it to the device's SharedPreferences. The focus model derives LEFT/RIGHT spatial rules from the configured feed side — when the feed is on the right, the grid's spatial-right direction spills to the feed (not off-wall), and the menu slides in from the right instead. Navigation stays spatially correct and trap-free in both orientations.

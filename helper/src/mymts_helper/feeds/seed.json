@@ -14,5 +14,41 @@
   {
     "url": "https://feeds.npr.org/1004/rss.xml",
     "label": "NPR World"
+  },
+  {
+    "url": "https://www.pbs.org/newshour/feeds/rss/headlines",
+    "label": "PBS NewsHour"
+  },
+  {
+    "url": "https://rss.csmonitor.com/feeds/usa",
+    "label": "Christian Science Monitor"
+  },
+  {
+    "url": "https://www.cbsnews.com/latest/rss/main",
+    "label": "CBS News"
+  },
+  {
+    "url": "https://feeds.nbcnews.com/nbcnews/public/news",
+    "label": "NBC News"
+  },
+  {
+    "url": "https://rss.politico.com/politics-news.xml",
+    "label": "Politico"
+  },
+  {
+    "url": "https://feeds.bloomberg.com/markets/news.rss",
+    "label": "Bloomberg Markets"
+  },
+  {
+    "url": "https://thedispatch.com/feed/",
+    "label": "The Dispatch"
+  },
+  {
+    "url": "https://www.nationalreview.com/feed/",
+    "label": "National Review"
+  },
+  {
+    "url": "https://reason.com/latest/feed/",
+    "label": "Reason"
   }
 ]
