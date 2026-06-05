@@ -199,6 +199,43 @@ None beyond the existing T-H1 / T-T2 mitigations. Expansion adds no new vector a
 
 ---
 
+## Feed restructure — A1 reverify (2026-06-04)
+
+**Claim:** Stage 7's sectioned-feed restructure (grouping items by source, displaying per-source freshness chips, rendering section headers with item counts) introduces no new web-fetch or HTML-render surface. The A1 boundary holds: hostile-feed input remains neutralized by the helper's prior HTML stripping, and the TV-side code enforces "inert text only" by construction.
+
+**Prior work connection:** This entry reverifies the closed door confirmed in "Navigation chapter — feed-expand A1 confirmation" (2026-06-04). The feed-expand path (SELECT toggles `Text` widget `maxLines`) remains unchanged; the restructure layers sectioning atop it without breaching the boundary.
+
+**Load-bearing code paths checked (adversarially):**
+
+- **Grouping logic (pure Kotlin, no fetch):** `app/src/main/java/com/mymts/ui/wall/feed/FeedListBuilder.kt` — the `build()` function transforms `List<FeedItem>` into `List<FeedListEntry>` via a case-insensitive alphabetical sort and nested newest-first ordering. No network calls, no fetcher invocation, no `LaunchedEffect` keys on `FeedRepository.start()` or `HelperClient.fetchFeed()`. State change does not trigger a request. `entriesIndexForFocus()` maps focus indices over headers; the focus model's integer index remains the same flat feed order.
+
+- **Section header rendering (pure Compose Text):** `app/src/main/java/com/mymts/ui/wall/FeedPane.kt` — `SectionHeader` composable renders the source name (`entry.source.uppercase()`) and item count as `Text` widgets. `FreshnessChip()` renders the per-source staleness signal (freshness enum → plain-text labels: "now", "Xm", "Xh", "not updating", "no items") in `Text` with no HTML interpretation.
+
+- **Item expansion (unchanged from navigation chapter):** `FeedPane.kt` — `FeedRow` composable. SELECT-on-focused-item still toggles the `expanded` Boolean, which adjusts the summary `Text` widget's `fontSize`, `lineHeight`, `maxLines` (`if (expanded) Int.MAX_VALUE else 2`), and `color`. Same `item.summary` plain-text source (already HTML-stripped by the helper's `feeds/parser.py`). No WebView, no re-fetch on expand, no summary mutation.
+
+- **Channel-picker orientation chip (pure local math):** `app/src/main/java/com/mymts/ui/menu/ChannelPickerOverlay.kt` — `pickerGroupAt()` function classifies cursor position within the live/offline grouping via a single `channels.count { it.isPlayable }` scan. No new helper calls, no new endpoints. Renders as a `Text` label ("LIVE 3/8" / "OFFLINE 2/5") in a `Row`. Tests at `app/src/test/java/com/mymts/ui/menu/PickerGroupTest.kt` pin the math.
+
+- **No HTML rendering capability in the wall layer:** `FeedPane.kt` and `FeedListBuilder.kt` contain no imports for `WebView`, `HtmlCompat`, `Html.from`, `Markwon`, `JSoup`, or `AndroidView`. The expansion path cannot reach a markup interpreter because none exists in the wall classpath.
+
+- **No new fetch surface on grouping changes:** `FeedPane.kt` — the `entries` list is `remember(state.snapshot)`, memoized on the helper's snapshot identity. The snapshot is fetched by the existing fixed-timer poll in `FeedRepository.start()` (unchanged). No new keys, no side-effects on freshness thresholds or section transitions.
+
+- **Flat-item invariant preserved:** `FeedListBuilderTest.kt` (19 tests) pins that the order of `FeedListEntry.Item` in the output list matches the focus navigation order. The focus model's `feedIndex` 0..N-1 still traverses items in visible order; `entriesIndexForFocus()` skips headers. No focus-model change.
+
+**Connection to T-T2 and T-H1:** This entry **does not change** the existing T-T2 (HTML smuggled into the feed pane → XSS-equivalent) or T-H1 (hostile RSS feed content) mitigations. The restructure is a *consumer* of the helper's already-stripped output; it neither extends nor weakens those mitigations. The boundary they pin (no HTML interpretation on the TV) is the same boundary the sectioning respects by construction.
+
+**Four red-flag patterns from the prior feed-expand entry (still apply):**
+
+1. **WebView mount on feed items.** `AndroidView { WebView(...) }` to render summaries as clickable-HTML would breach A1. Not present; must be rejected at PR time if introduced.
+2. **Fetch on section transition.** `LaunchedEffect(freshness) { repository.fetchFullArticle(...) }` would breach the closed door. Not present; grouping changes trigger no fetches.
+3. **HTML-interpretation library.** Markwon, JSoup, `HtmlCompat.fromHtml`, or any markup parser added to the wall's classpath for feed rendering signals a breach. Not imported.
+4. **Section-header or freshness-chip text mutation from network state.** If freshness chips fetch external data (e.g., a "last-check time" from the API, a remote status message), the "inert local math only" assumption breaks. The freshness classification is computed locally from the helper's `FeedItem.publishedAtIso` / `fetchedAtIso` timestamps (already in-memory) and `now` (wall-clock). No mutation, no fetch.
+
+**Residual risk:**
+
+None beyond the existing T-H1 / T-T2 mitigations. Restructuring adds no new vector and does not weaken the existing boundary. The risk to the feed system remains the helper's parser (T-H1); restructuring does not compound it.
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

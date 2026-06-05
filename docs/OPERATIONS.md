@@ -257,6 +257,21 @@ For each, focus should be visible as a WyzeGrid-green accent on the active zone 
 3. **Ticker SELECT.** Focus the ticker, press OK → marquee stops; a small green "PAUSED" chip appears at the leading edge. OK again → marquee resumes, chip disappears. Navigate away (DOWN to feed/grid), come back UP — the pause state should be **remembered** (preserved across the zone round-trip).
 4. **Menu polish.** Open menu (LEFT from any non-modal zone, or KEY_MENU if the remote has it). Pick a slot row → controls open over the menu. Pick "Channel" → picker opens. BACK → returns to controls. BACK → returns to side menu. BACK → menu closes; wall focus is restored to whichever zone was last active. No focus loss.
 
+### Feed restructure
+
+The feed now groups items by source (case-insensitive alphabetical). Each source gets a section header with the source name (uppercase), item count, and a freshness chip. Verify the following within the same at-the-box session as the navigation chapter's feel-test:
+
+1. **Section headers visible.** Feed pane displays a header before each source's items: uppercase source name (e.g., "BBC NEWS", "BLOOMBERG TV"), item count (e.g., "3 items"), and a small freshness chip to the right.
+2. **Freshness chip color.** Chip color reflects the source's newest item age: green for items updated in the last 2 hours; amber for 2–12 hours; "not updating" text (warm-colored) when the source is past 12 hours.
+3. **Section order is alphabetical and stable.** Sources appear in case-insensitive alphabetical order. Navigate away from the feed and back (e.g., to the grid and back to the feed) — the order should not reshuffle.
+4. **Within-section sort is newest-first.** Items under each source appear newest-first (by published time, or fetched time as fallback). Scroll through a populated source section to confirm.
+5. **Focus traversal skips headers.** Press DOWN through the feed: focus moves item-to-item, skipping over section headers (headers are visual only, never focusable). Focus should jump from the last item in one section directly to the first item of the next.
+6. **Auto-scroll across sections.** With a focused item near the bottom of a section, press DOWN to move to the first item of the next section — the view should scroll to keep the focused row visible, even across section boundaries.
+7. **SELECT on focused item.** Focus a feed item and press OK — the row should expand in place (title steps up, full summary appears, "OK to collapse · BACK to collapse" hint shown). Behavior is unchanged from the navigation chapter's feel-test.
+8. **BACK collapses.** With an expanded item, press BACK — the item collapses back to summary form (preserved from the navigation chapter).
+9. **Channel picker shows group chip.** Open the channel picker overlay (navigate to the grid, press SELECT on a cell for controls, press OK on "Channel"). The overlay header shows "SLOT n · LIVE i/j" (i = current live-channel group position, j = total live channels) or "SLOT n · OFFLINE i/k" with appropriate chip color. Cycling LEFT/RIGHT past the boundary flips the chip (e.g., from "LIVE 4/4" past the last live channel to "OFFLINE 1/k").
+10. **Channel picker cycling is robust.** Cycle LEFT/RIGHT repeatedly to wrap between live and offline groups — no crashes, focus stays on the active entry, chip updates correctly each cycle.
+
 ### Restore WyzeGrid to camera-box state
 
 `.182` is WyzeGrid's box per Model A. Whether or not you disabled WyzeGrid for the session, end the session by relaunching it:

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Text
@@ -31,26 +30,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mymts.data.helper.FeedItem
 import com.mymts.data.helper.FeedRepository
+import com.mymts.ui.wall.feed.FeedListBuilder
+import com.mymts.ui.wall.feed.FeedListEntry
+import com.mymts.ui.wall.feed.SectionFreshness
 
 /**
- * Feed pane — the dark, dense, chronological news column on the left.
+ * Feed pane — a structured, sectioned list of news items, grouped by
+ * source.
  *
- * Composed in three layers:
- *   - a fixed pane header carrying a calm staleness indicator (Trust
- *     Bar **C3** — if the helper hasn't refreshed within the staleness
- *     window or is unreachable, the pane says so).
- *   - a thin divider.
- *   - a `LazyColumn` of [FeedRow]s, newest first.
+ * Stage 7 (the feed-restructure chapter) replaced the prior continuous
+ * chronological river with a sectioned list per the operator's "list,
+ * not individual-scroll, very unintuitive and inefficient" feedback.
+ * Each source (BBC, Guardian, Al Jazeera, NPR, …) gets its own labelled
+ * section with a per-source freshness chip (Trust Bar **C3** applied
+ * per source) — the operator can see at a 10-foot glance which sources
+ * are flowing and which have gone quiet. Items within a section stay
+ * newest-first.
  *
- * 10-foot legibility is the design constraint. Type sizes are larger
- * than a desktop-list equivalent; line spacing is generous; the
- * summary clips after two lines so a tile of items shows enough to
- * scan from across the room without scrolling.
+ * **Focus is unchanged:** the wall focus model (`WallFocusModel`)
+ * keeps treating the feed as a single contiguous list indexed
+ * 0..itemCount-1. Headers are **visual only** — never focusable.
+ * `feedIndex` traverses items in the same order they appear in the
+ * visible list (alphabetical-source, newest-first-within-source); a
+ * `LaunchedEffect(focusedIndex)` uses
+ * [FeedListBuilder.entriesIndexForFocus] to scroll the right row into
+ * view. **No focus-model change** — the navigation chapter's no-trap
+ * invariants are preserved without modification.
  *
- * **A1 boundary:** every field renders as native `Text`. There is no
- * code path that mounts a `WebView` or interprets HTML. The helper
- * already strips HTML in `feeds/parser.py` (Trust Bar A1) and we
- * treat the rendered string as inert.
+ * **A1 boundary (unchanged from the navigation chapter):** every field
+ * renders as native Compose `Text`. There is no code path that mounts
+ * a `WebView` or interprets HTML. Section headers are inert-text
+ * labels. SELECT-on-focused-item expands the item's `summary` (already
+ * HTML-stripped by the helper's `feeds/parser.py`) by flipping the
+ * `Text` widget's `maxLines` to `Int.MAX_VALUE` — no fetch, no markup
+ * render. The feed-restructure adds **no new input surface**.
  */
 @Composable
 fun FeedPane(
@@ -64,15 +77,31 @@ fun FeedPane(
     val items = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
     val stale = repository.isStale()
 
+    // Build the sectioned entries. We memoize on the snapshot identity
+    // so freshness chips refresh whenever the helper's poll lands a new
+    // snapshot; between polls the chip ages naturally with `now`
+    // baked in at build time. A subsequent polish pass could add a
+    // periodic re-classification to age chips smoothly without a
+    // network poll, but the operator's primary need is "is this source
+    // flowing or not?", which the current per-poll rebuild already
+    // answers.
+    val entries = remember(state.snapshot) {
+        FeedListBuilder.build(items = items, now = System.currentTimeMillis())
+    }
+
     LaunchedEffect(items.size) { onItemCountChanged(items.size) }
 
     val listState = rememberLazyListState()
 
-    LaunchedEffect(focusedIndex) {
-        // Keep the focused row visible. animateScrollToItem is a no-op
-        // when the item is already inside the viewport, so this is
-        // safe to call on every focus change.
-        focusedIndex?.takeIf { it in items.indices }?.let { listState.animateScrollToItem(it) }
+    LaunchedEffect(focusedIndex, entries) {
+        // Keep the focused row visible. Use `entriesIndexForFocus` to
+        // skip over the visible-but-non-focusable headers so we scroll
+        // to the right row in the layout. animateScrollToItem is a
+        // no-op when the item is already visible.
+        val target = focusedIndex
+            ?.let { FeedListBuilder.entriesIndexForFocus(entries, it) }
+            ?.takeIf { it >= 0 }
+        if (target != null) listState.animateScrollToItem(target)
     }
 
     Column(
@@ -82,7 +111,7 @@ fun FeedPane(
     ) {
         PaneHeader(stale = stale, fetchOk = state.lastFetchOk, itemCount = items.size)
         Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
-        if (items.isEmpty()) {
+        if (entries.isEmpty()) {
             EmptyFeed(stale = stale, fetchOk = state.lastFetchOk)
         } else {
             LazyColumn(
@@ -90,20 +119,62 @@ fun FeedPane(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                items(
-                    count = items.size,
-                    key = { idx -> items[idx].id.takeIf { x -> x >= 0 } ?: items[idx].title.hashCode() },
-                ) { idx ->
-                    FeedRow(
-                        item = items[idx],
-                        focused = focusedIndex == idx,
-                        expanded = expandedIndex == idx,
-                    )
-                    Divider(color = Color(0x14FFFFFF), thickness = 1.dp)
+                itemsIndexed(entries) { entryIndex, entry ->
+                    when (entry) {
+                        is FeedListEntry.Header -> SectionHeader(entry)
+                        is FeedListEntry.Item -> {
+                            // Map back from entries-list index to flat
+                            // focus index so the focused-row check is
+                            // consistent with WallFocusModel's
+                            // feedIndex.
+                            val focusIndex = entriesIndexToFeedIndex(entries, entryIndex)
+                            FeedRow(
+                                item = entry.item,
+                                focused = focusedIndex == focusIndex,
+                                expanded = expandedIndex == focusIndex,
+                            )
+                            Divider(color = Color(0x14FFFFFF), thickness = 1.dp)
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * Map a position in the entries list back to the feed focus index
+ * (which counts items only, not headers). Pure helper kept inline so
+ * the call site reads naturally — same semantics as
+ * [FeedListBuilder.entriesIndexForFocus] in the opposite direction.
+ */
+private fun entriesIndexToFeedIndex(entries: List<FeedListEntry>, entryIndex: Int): Int {
+    var focusIndex = 0
+    for (i in 0 until entryIndex) {
+        if (entries[i] is FeedListEntry.Item) focusIndex++
+    }
+    return focusIndex
+}
+
+/**
+ * LazyListScope helper. Compose's `itemsIndexed` does not take a
+ * `List<T>` of a sealed type cleanly with a stable key, so we wire it
+ * here against [FeedListEntry] explicitly.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexed(
+    entries: List<FeedListEntry>,
+    content: @Composable (Int, FeedListEntry) -> Unit,
+) {
+    items(
+        count = entries.size,
+        key = { idx ->
+            when (val e = entries[idx]) {
+                is FeedListEntry.Header -> "h:${e.source}"
+                is FeedListEntry.Item -> e.item.id.takeIf { it >= 0 }
+                    ?: "t:${e.item.title.hashCode()}"
+            }
+        },
+    ) { idx -> content(idx, entries[idx]) }
 }
 
 @Composable
@@ -130,6 +201,74 @@ private fun PaneHeader(stale: Boolean, fetchOk: Boolean, itemCount: Int) {
             else -> "$itemCount items" to WallColors.LabelMuted
         }
         Text(text = label, color = color, fontSize = 11.sp)
+    }
+}
+
+/**
+ * Per-source section header. Honest staleness applied per source
+ * (Trust Bar **C3** at the section layer) — when a source goes quiet,
+ * its header changes the chip color and text so the operator sees the
+ * gap rather than reading old items as current.
+ */
+@Composable
+private fun SectionHeader(entry: FeedListEntry.Header) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF080808))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = entry.source.uppercase(),
+                color = WallColors.LabelPrimary,
+                fontSize = 12.sp,
+                letterSpacing = 1.6.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            FreshnessChip(entry)
+        }
+        Text(
+            text = "${entry.itemCount} ${if (entry.itemCount == 1) "item" else "items"}",
+            color = WallColors.LabelGhost,
+            fontSize = 10.sp,
+            letterSpacing = 0.8.sp,
+        )
+    }
+}
+
+@Composable
+private fun FreshnessChip(entry: FeedListEntry.Header) {
+    val (text, color) = when (entry.freshness) {
+        SectionFreshness.Fresh -> formatAge(entry.newestAgeMs) to WallColors.BadgeLive
+        SectionFreshness.Warm -> formatAge(entry.newestAgeMs) to WallColors.BadgeStale
+        SectionFreshness.NotUpdating -> "not updating" to WallColors.BadgeRecovering
+        SectionFreshness.Unknown -> "no items" to WallColors.LabelGhost
+    }
+    Text(
+        text = text,
+        color = color,
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+}
+
+private fun formatAge(ageMs: Long?): String {
+    if (ageMs == null) return ""
+    val sec = ageMs / 1000
+    return when {
+        sec < 60 -> "now"
+        sec < 3_600 -> "${sec / 60}m"
+        sec < 86_400 -> "${sec / 3_600}h"
+        else -> "${sec / 86_400}d"
     }
 }
 
@@ -163,22 +302,15 @@ private fun FeedRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = item.source.uppercase(),
-                    color = WallColors.LabelGhost,
-                    fontSize = 10.sp,
-                    letterSpacing = 1.2.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (timeChip != null) {
+            // Per-item time chip lives at the top-right; the SECTION
+            // header carries the source, so we no longer repeat source
+            // on every row (less visual noise, more density for the
+            // headline itself).
+            if (timeChip != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
                     Text(
                         text = timeChip,
                         color = WallColors.LabelGhost,

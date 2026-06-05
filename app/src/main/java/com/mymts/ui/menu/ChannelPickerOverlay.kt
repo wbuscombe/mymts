@@ -100,9 +100,11 @@ fun ChannelPickerOverlay(
             enter = scaleIn(tween(160), initialScale = 0.92f) + fadeIn(tween(160)),
             exit = scaleOut(tween(120), targetScale = 0.92f) + fadeOut(tween(120)),
         ) {
+            val bounded = cursor.coerceIn(0, channels.lastIndex)
             PickerCard(
                 slotIndex = slotIndex,
-                channel = channels[cursor.coerceIn(0, channels.lastIndex)],
+                channel = channels[bounded],
+                group = pickerGroupAt(channels, bounded),
                 onLeft = { cursor = (cursor - 1 + channels.size) % channels.size },
                 onRight = { cursor = (cursor + 1) % channels.size },
                 onAssign = { onAssign(channels[cursor.coerceIn(0, channels.lastIndex)].slug) },
@@ -115,10 +117,45 @@ fun ChannelPickerOverlay(
     }
 }
 
+/**
+ * One channel's position within the live/offline groups the picker
+ * surfaces.
+ *
+ * The picker's channel list is sorted live-first by the call site, so
+ * the live channels form a contiguous prefix and the offline ones a
+ * contiguous suffix. This small data class lets the picker render a
+ * "LIVE 3/8" / "OFFLINE 2/5" orientation chip — the operator's
+ * "sections for live and offline" feedback applied at the cycler's
+ * orientation layer (the channels themselves are already grouped by
+ * sort order; the chip surfaces the grouping legibly from 10 ft).
+ */
+internal data class PickerGroup(
+    val isLive: Boolean,
+    /** 1-based position within the group. */
+    val positionWithinGroup: Int,
+    val groupSize: Int,
+)
+
+internal fun pickerGroupAt(channels: List<Channel>, cursor: Int): PickerGroup {
+    val liveCount = channels.count { it.isPlayable }
+    val isLive = cursor < liveCount
+    return if (isLive) {
+        PickerGroup(isLive = true, positionWithinGroup = cursor + 1, groupSize = liveCount)
+    } else {
+        val offlineCount = channels.size - liveCount
+        PickerGroup(
+            isLive = false,
+            positionWithinGroup = (cursor - liveCount) + 1,
+            groupSize = offlineCount.coerceAtLeast(1),
+        )
+    }
+}
+
 @Composable
 private fun PickerCard(
     slotIndex: Int,
     channel: Channel,
+    group: PickerGroup,
     onLeft: () -> Unit,
     onRight: () -> Unit,
     onAssign: () -> Unit,
@@ -147,13 +184,35 @@ private fun PickerCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = "SLOT ${slotIndex + 1}",
-            color = MenuColors.RowLabelMuted,
-            fontSize = 11.sp,
-            letterSpacing = 3.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        // "SLOT 1   ·   LIVE 3/8" — the group chip orients the operator
+        // inside the cycler: which of the two groups they're in (live
+        // or offline) and where within it. As the cursor crosses the
+        // live↔offline boundary the chip flips colour + label.
+        val (groupLabel, groupColor) = if (group.isLive) {
+            "LIVE ${group.positionWithinGroup}/${group.groupSize}" to MenuColors.RowDetail
+        } else {
+            "OFFLINE ${group.positionWithinGroup}/${group.groupSize}" to MenuColors.RowDetailOffline
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "SLOT ${slotIndex + 1}",
+                color = MenuColors.RowLabelMuted,
+                fontSize = 11.sp,
+                letterSpacing = 3.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(text = "·", color = MenuColors.RowLabelMuted, fontSize = 11.sp)
+            Text(
+                text = groupLabel,
+                color = groupColor,
+                fontSize = 11.sp,
+                letterSpacing = 2.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

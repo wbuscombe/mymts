@@ -215,6 +215,18 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** Out of scope for the navigation chapter (chapter is whole-wall D-pad UX, not reading flow). Cross-device handoff also needs care: QR is the simple form (no auth, no pairing), notification-to-phone requires a one-time pairing flow which is a small but real surface. Decide which form (or both) at design time.
 **Reconsider when:** Operator wants a richer reading flow than the in-place safe summary. Likely pairs with item B (feed UX list/sections) since "select to send to phone" is the natural next action verb once feed items are selectable.
 
+## Feed filtering / search UI — deferred (Stage 7 closeout)
+
+**What:** A D-pad-driven filter or search bar in the feed pane — filter by source (toggle which sections show), by keyword, by category if the helper ever surfaces one. Stage 7 (the feed restructure) deliberately did NOT build this — it shipped sectioned-by-source as the structural change without adding interactive filtering on top.
+**Why-not-now:** Sectioned grouping already delivers most of the "skimmable" win the operator asked for. Adding filtering UI is its own chapter: it needs a focus surface for the filter chips, semantics for "filter while focus is on an item" (does focus reset? hide-and-collapse?), and decisions about whether filter state persists across helper polls. Keeping it as a separate chapter avoids entangling those decisions with the structural rewrite.
+**Reconsider when:** Operator finds source-grouping alone insufficient — usually a sign the source list grew (item F adds AP/Reuters etc.) and visual density needs trimming. Filter UI is natural to pair with item F.
+
+## Feed section collapse / jump-by-source — deferred (Stage 7 closeout)
+
+**What:** Make section headers focusable / collapsible so the operator can collapse a section to hide its items, or press LEFT/RIGHT on a header to jump to the previous/next section.
+**Why-not-now:** The current restructure keeps headers visual-only — the focus model didn't change, no-trap invariants stayed pinned without modification. Adding section-jump or collapse semantics expands the focus model (a new "header" focus position, or a new intent for section-jump). Worth doing if the operator finds DOWN-DOWN-DOWN inefficient through a 20+ item section, but the visible sectioning alone should already help orientation. Defer as a focused follow-on.
+**Reconsider when:** Operator's at-the-box feel-test surfaces "I can see the sections but DOWN-by-one through them is still slow."
+
 ## G. Sports-data source (enabler for D + the original ticker sports mode)
 
 **What:** A data source for live sports scores / schedules to feed the ticker's sports mode and any sports surfacing.

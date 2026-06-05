@@ -632,7 +632,50 @@ This is the "safe excerpt is the v1 answer; richer reading is deferred" principl
 
 ---
 
-## 14. What this document deliberately does NOT specify yet
+## 14. Stage 7 — feed restructure (sectioned list + per-source freshness)
+
+The wall's feed pane moves from a flat chronological river to a **sectioned list grouped by source**, with per-source freshness signals. This addresses the operator's feedback on the continuous-scroll feed — "list, not individual-scroll, very unintuitive and inefficient" — while preserving the navigation chapter's focus invariants without model changes.
+
+### Section structure and ordering
+
+Each **source** (BBC, Guardian, Al Jazeera, NPR, etc.) becomes a labelled section with:
+- A header carrying the uppercase source name, item count within the section, and a per-section freshness chip (see below).
+- Items within the section sorted newest-first by published time, falling back to fetched time for items with missing published timestamps.
+
+**Section order is alphabetical case-insensitive on source name** — predictable so the layout does not reshuffle on every poll. The operator's muscle memory survives: a source always appears in the same screen position relative to others, not scattered by recency. Within-section recency is still visible (newest item at the top of each source's subsection); the global newest item across all sources is no longer necessarily at the top, but the tradeoff — "can I skim what X is reporting?" — wins for a 10-foot viewing distance.
+
+### The flat-item invariant (no focus-model change)
+
+The wall's focus model (`WallFocusModel`) **continues to treat the feed as a single flat list indexed 0..N-1**. Headers are visual only — never focusable. The flat-item order (after dropping headers) is the navigation order: `feedIndex` traverses items in the same sequence they appear in the visible list (alphabetical-source, newest-first-within-source).
+
+`FeedListBuilder.entriesIndexForFocus()` maps a focus index to the correct row in the entries list, skipping over non-focusable headers. This preserves the no-trap invariants the navigation chapter pinned without touching the focus model's transition graph or tests.
+
+### Per-section freshness (C3 at the section layer)
+
+Each source gets its own `SectionFreshness` signal derived from the **newest item's age**. The type is a simple sum:
+
+```
+Fresh        (< 2h)       ← operator-visible "now/Nm/Nh" age chip
+Warm         (< 12h)      ← operator-visible age chip with warm-colored badge
+NotUpdating  (≥ 12h)      ← honest "not updating" text instead of age
+Unknown      (no items)   ← "no items" label; should not occur for a real source
+```
+
+Thresholds default to **2h / 12h** and are configurable (tests pin classification at each boundary). A source that goes quiet — because the helper's poller failed, or the source itself stopped publishing — is honest at the section layer: the operator sees "not updating" and does not mistake stale items for current news.
+
+### The channel-picker companion: live/offline orientation
+
+The menu's channel picker gains a small parallel feature: a "LIVE n/m" / "OFFLINE n/m" orientation chip in the slot header. The channel list is sorted live-first by the call site, so live channels form a contiguous prefix and offline ones a contiguous suffix. As the operator cycles through channels, the chip reflects which group the cursor is in — same "sections for live and offline" feedback applied at the cycler's orientation layer rather than the feed itself. This is a low-cost win: visible orientation without changing the picker's core behavior.
+
+### What's deliberately NOT here
+
+- **Feed filtering / search UI** — a future chapter will layer search + source filtering on top of the sectioned list. Deferred to a separate workflow.
+- **Section collapse / jump-to-source** — the current navigation (UP/DOWN within a section) suffices for pilot-phase workflows. Future enhancement if the operator wants quick access to a specific source header.
+- **Configurable feed width / font** — grouped with general "UX & config push" (Stage 7's scope is grouping logic; typography polish follows later).
+
+---
+
+## 15. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

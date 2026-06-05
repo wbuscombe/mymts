@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Feed restructure — sectioned by source + per-source honest staleness (2026-06-04)
+
+The continuous chronological feed scroll is replaced with a sectioned list grouped by news source. Each source (BBC, Guardian, Al Jazeera, NPR, …) gets its own labelled section with a per-source freshness chip applying Trust Bar **C3** at the section layer — the operator sees at a glance which sources are flowing and which have gone quiet. Items within each section stay newest-first (published time when present, fetched time as fallback). The flat-item invariant is preserved: `WallFocusModel`'s `feedIndex` still traverses 0..itemCount-1 in visible list order; headers are visual only, never focusable.
+
+### Added
+- `ui/wall/feed/FeedListBuilder.kt` — pure transform from `List<FeedItem>` to `List<FeedListEntry>` (sealed `Header | Item`). Groups by source (case-insensitive alphabetical), sorts within section newest-first by published time falling back to fetched time. Per-section freshness classified (`Fresh` < 2h, `Warm` < 12h, `NotUpdating`, `Unknown`).
+- `ui/wall/feed/FeedListBuilderTest.kt` — 18 invariant tests pinning grouping, sorting, freshness boundaries, flat-item order = focus traversal order, `entriesIndexForFocus` mapping (entries-list index to focus index past headers).
+- `SectionFreshness` enum — per-section staleness signal (`Fresh`, `Warm`, `NotUpdating`, `Unknown`) applied independently per source rather than once for the whole feed.
+- `PickerGroupTest.kt` — 6 tests pinning live/offline position math for the picker's new orientation chip.
+- `pickerGroupAt()` helper in `ChannelPickerOverlay` — computes 1-based position within the live/offline group for the cycler cursor, drives the slot header's "LIVE n/m" / "OFFLINE n/m" orientation chip.
+
+### Changed
+- `ui/wall/FeedPane.kt` — **rewritten**. Renders the sectioned `LazyColumn`: per-source `SectionHeader` (uppercase source name, item count, freshness chip with coloured age badge) + `FeedRow` with per-item time chip (source label removed from rows since it now lives in the header). Auto-scroll uses `entriesIndexForFocus` to map the focus model's `feedIndex` into the entries-list position even with intervening headers. Headers are visual only — never focusable; focus model unchanged.
+- `ChannelPickerOverlay` slot header — now shows "SLOT n · LIVE i/j" or "SLOT n · OFFLINE i/j" — the orientation chip flips color and label text as the cursor crosses the live↔offline boundary so the operator always knows which group they're in.
+
+### Tests
+24 new app tests:
+- **FeedListBuilderTest (18):** sections alphabetical + stable, within-section newest-first, freshness computed from newest item's age, boundaries sharp at thresholds, flat-item order matches focus traversal, `entriesIndexForFocus` maps past headers, out-of-range focus returns -1, flat item count equals input item count, `newestAgeMs` on header equals NOW minus newest item's timestamp.
+- **PickerGroupTest (6):** cursor position on live/offline boundaries, all-live and all-offline lists, group-size and position-within-group correct at edges.
+- **Navigation chapter (38 WallFocusModelTest cases):** re-run **green** without change. The focus model is unchanged; the flat-item invariant holds (test "flat-item order matches focus traversal order" pins this); no-trap and state-preservation properties survive the restructure.
+
+Full app test suite: **all green** (175 tests including 18 new FeedListBuilder + 6 new PickerGroup + 38 navigation).
+
+### Deferred (deliberately NOT in this chapter)
+- **Feed filtering / search UI** — separate later chapter; logged in BACKLOG.
+- **Section collapse / jump-by-source** — logged in BACKLOG as the operator-feedback-driven follow-on.
+- **Configurable feed width, font, item-count-per-scroll** — typographic polish; "UX & config" push.
+- **Ticker markets / sports modes** — sample data only in v1; deferred to the ticker-modes chapter.
+- **Kiosk story** — long-uptime foreground watchdog + boot receiver; deferred to the new MyMTS box per Model A.
+
+### Adversarially verified — A1 boundary unchanged
+The feed-restructure introduces **no** new web-fetch, **no** new WebView, **no** new HTML render. The new code is pure Kotlin (grouping logic in `FeedListBuilder`) + Compose `Text` widgets (rendering headers and items). Section headers are inert-text labels. SELECT-on-focused-item expands the item's `summary` (already HTML-stripped by the helper's `feeds/parser.py`) by flipping the `Text` widget's `maxLines` — no fetch, no markup render. The feed-restructure adds **no new input surface**. Full entry: `docs/THREAT-MODEL.md §"Feed restructure — A1 reverify (2026-06-04)"`.
+
+### Operator-validated
+- **Feel-test STAGED** for the operator's next at-the-box session — folded into the existing nav-feel-test in `docs/OPERATIONS.md`. The sectioned layout and per-source freshness chips work; the skim-ability and muscle-memory delta on the real Onn remote is the operator's call at the box.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
+- No secrets / absolute paths in source.
+
 ## Whole-wall D-pad navigation — global focus model + per-zone actions (2026-06-04)
 
 A single coherent D-pad navigation graph now covers every zone on the wall. The pure focus model (`WallFocusModel`) computes zone-to-zone transitions as a testable function, eliminating navigation traps and spatial inconsistencies that plague TVs where each layer re-invents focus independently. The per-zone action layer (cell SELECT → controls overlay, article SELECT → in-place summary expansion, ticker SELECT → pause/resume) layers orthogonally on top so navigation and action are decoupled; a future change to either layer doesn't require unpicking the other.
