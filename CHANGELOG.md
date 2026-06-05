@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Ticker — real markets data + sports mode + markets/sports rotation (2026-06-05)
+
+The ticker now shows REAL keyless data and alternates between a markets mode and a sports mode; honest SAMPLE is retained where no free keyless source exists; no new secret was added. Every source was verified live through the helper's SSRF-safe fetcher before commit — only clean public endpoints were built.
+
+### Added
+- **Helper package `mymts_helper/ticker/`** with strict defensive parsers + honest fallback:
+  - `__init__.py` — `TickerEntryDTO(symbol, display, direction, is_sample)`; `DIR_{UP,DOWN,FLAT,NONE}`; `TICKER_SCHEMA_VERSION=1`.
+  - `markets.py` — `parse_stooq_csv()` + `parse_coingecko()` strict parsers; `build_snapshot()` mixes real + sample honestly per symbol and always emits the full canonical list; `all_sample_snapshot()` for pre-poll / phantom.
+  - `sports.py` — `parse_scoreboard()` strict ESPN JSON parser (caps games/league, sanitizes scores); `SAMPLE_SPORTS` slate (`is_sample=true`); `no_games_entry()` (true state, `is_sample=false`).
+  - `pollers.py` — `MarketsPoller` + `SportsPoller`: async loops, in-memory latest snapshot (ephemeral — no DB table/migration, no cross-thread sqlite exposure), per-source isolation, `real_as_of` tracking.
+  - `api.py` — `GET /api/ticker/markets` + `/api/ticker/sports`, envelope `{schema_version, mode, as_of, stale, entries[]}`. `stale` true only when real data aged past 15 min; all-sample pre-poll is NOT stale.
+  - `config.py` — `markets_poll_interval_seconds=120`, `sports_poll_interval_seconds=180` (env-overridable).
+- **App** — `TickerSnapshot.kt`; `HelperClient.fetchMarketsTicker()/fetchSportsTicker()/parseTicker()` (schema_version pinned, missing `is_sample` defaults TRUE = fail-safe toward honesty, unknown direction → FLAT); `HelperTickerSource.kt` (polls both endpoints @60 s, rotates markets 22 s / sports 14 s, publishes via StateFlow, pure `entriesFor()` honest-fallback rules); `TickerEntry.Direction.NONE`.
+- Tests: helper **164 passed** (+24: `test_ticker_markets`, `test_ticker_sports`, `test_ticker_api` incl. phantom + blocked-egress all-sample). App **217 passed** (+14: `HelperClientTickerParseTest`, `HelperTickerSourceTest`).
+
+### Changed
+- `WallScreen.kt` — swapped `SampleTickerSource` → `HelperTickerSource(client)` (SampleTickerSource retained as the honest fallback).
+- `TickerStrip.kt` — `Direction.NONE` renders no arrow (sports scores are non-directional).
+
+### Source investigation (verified live through the SSRF-safe fetcher before commit)
+- **Markets:** Stooq keyless CSV (indices/FX/gold) + CoinGecko keyless (BTC/ETH). Brent/WTI/10Y-UST stay honest SAMPLE (no clean free keyless source). Yahoo Finance evaluated and rejected (unofficial/ToS-gray, blocks datacenter IPs).
+- **Sports:** ESPN public scoreboard JSON (MLB/NFL/NBA/NHL), keyless. TheSportsDB evaluated; ESPN chosen (richer, keyless). ESPN endpoint is undocumented/public — ToS-gray, operator gave the nod for personal non-commercial use.
+- **No API key for anything → the helper holds NO NEW SECRET.**
+
+### Honesty (C3)
+Real shown real (pill dropped); sample/unsupported kept sample (pill); stale real surfaced via the envelope `stale` flag; unreachable → honest sample (markets) / "scores unavailable" (sports), never frozen old numbers as current. `is_sample` travels per-entry helper→TV untouched.
+
+### Adversarially verified
+Two independent verifiers (not refuted): (1) the ticker never presents sample/stale data as live-real in any path; (2) the new sources go through the SSRF-safe fetcher unchanged, add no secret, and the parsers are strict/fail-closed. Full record: `docs/THREAT-MODEL.md §"Ticker real data — markets + sports external sources"`.
+
+### Operator action
+Helper redeploy required to serve the new endpoints: pull → rebuild → restart → verify `/health` 200 and `/api/ticker/markets` + `/api/ticker/sports` return valid envelopes. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container**.
+
+### Deferred
+- Per-team/league curation UI (default leagues + mechanism shipped). Sample-only symbols (Brent/WTI/10Y). BACKLOG items D + G marked DONE.
+
+### Standing rules
+- **unrelated host services: never touched.** A1: every external response treated as hostile — same SSRF-safe fetcher, strict parse, fail-closed, bounded. No secrets / absolute paths committed or logged.
+
 ## Feed sources — expanded to 13 reputable balanced RSS sources + SQLite cross-thread fix (2026-06-05)
 
 The helper feed seed grows from 4 to 13 verified public RSS sources with a deliberate left/center/right balance, and the intermittent SQLite cross-thread 500 on `/api/feed` is fixed. Every new source was verified by fetching through the helper's real SSRF-safe fetcher and parsing through the real defensive parser before commit — only feeds returning valid plain-text items were seeded.

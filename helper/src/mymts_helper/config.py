@@ -25,6 +25,11 @@ class Config:
     feed_poll_interval_seconds: int = 300
     feed_retention_days: int = 14
     channel_probe_interval_seconds: int = 30 * 60
+    # Ticker (markets + sports) — added 2026-06-05. Polite intervals on
+    # keyless public sources (Stooq, CoinGecko, ESPN scoreboard): markets
+    # move minute-to-minute; sports scores update on a slower cadence.
+    markets_poll_interval_seconds: int = 120
+    sports_poll_interval_seconds: int = 180
     # Stage 6 / TLS track — added 2026-06-03.
     #
     # `https_port` enables HTTPS on a second listener when paired with a
@@ -66,6 +71,12 @@ class Config:
             feed_retention_days=int(os.environ.get("FEED_RETENTION_DAYS", "14")),
             channel_probe_interval_seconds=int(
                 os.environ.get("CHANNEL_PROBE_INTERVAL_SECONDS", str(30 * 60))
+            ),
+            markets_poll_interval_seconds=int(
+                os.environ.get("MARKETS_POLL_INTERVAL_SECONDS", "120")
+            ),
+            sports_poll_interval_seconds=int(
+                os.environ.get("SPORTS_POLL_INTERVAL_SECONDS", "180")
             ),
             https_port=_opt_int("HTTPS_PORT"),
             ssl_keyfile=_opt_str("SSL_KEYFILE"),

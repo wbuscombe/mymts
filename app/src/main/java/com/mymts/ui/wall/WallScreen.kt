@@ -37,7 +37,7 @@ import com.mymts.data.helper.FeedRepository
 import com.mymts.data.helper.HelperClient
 import com.mymts.data.lineup.LineupStore
 import com.mymts.data.settings.FeedSide
-import com.mymts.data.ticker.SampleTickerSource
+import com.mymts.data.ticker.HelperTickerSource
 import com.mymts.ui.menu.AudioState
 import com.mymts.ui.menu.CaptionsState
 import com.mymts.ui.menu.ChannelPickerOverlay
@@ -86,7 +86,11 @@ fun WallScreen(
     val client = remember(helperBaseUrl) { HelperClient(helperBaseUrl) }
     val channels = remember(client) { ChannelsRepository(client) }
     val feed = remember(client) { FeedRepository(client) }
-    val ticker = remember { SampleTickerSource() }
+    // Real ticker: the helper serves markets (Stooq + CoinGecko) and
+    // sports (ESPN) data; this source polls both and alternates modes.
+    // SampleTickerSource remains the honest fallback inside it when the
+    // helper is unreachable (markets → SAMPLE pills, never frozen-live).
+    val ticker = remember(client) { HelperTickerSource(client) }
     val lineupStore = remember(context) { LineupStore(context) }
     val overrides by lineupStore.overrides
     val audibleSlot by lineupStore.audibleSlot

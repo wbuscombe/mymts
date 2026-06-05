@@ -721,7 +721,79 @@ Each enum is discrete. `FeedWidth` multipliers {0.22, 0.28, 0.36} are applied at
 
 ---
 
-## 16. What this document deliberately does NOT specify yet
+## 16. Stage 9 — ticker real data + modes (markets + sports)
+
+The ticker previously showed **SAMPLE markets data** behind honest SAMPLE pills (via `SampleTickerSource`). This stage makes it **REAL** and adds a **sports mode** plus **markets/sports rotation**. The operator chose "build both" at the source-investigation checkpoint.
+
+### Data flow: helper poller to TV TickerStrip
+
+The helper's `mymts_helper/ticker/` package owns ticker data via **in-memory snapshots** — ephemeral by design, no DB table, no cross-thread sqlite exposure:
+
+```
+Stooq CSV          ┐
+CoinGecko JSON     ├─▶ MarketsPoller ──▶ in-memory snapshot ──▶ /api/ticker/markets
+ESPN scoreboard    │                     SportsPoller      ──▶ /api/ticker/sports
+(+ SAMPLE entries) ┘
+
+/api/ticker/{markets,sports} ─▶ HelperClient (parse, pin schema_version) ─▶ HelperTickerSource
+                                                       (rotate modes: 22s markets, 14s sports)
+                                                                    ↓
+                                                            TickerStrip (render real + sample pills)
+```
+
+The TV **never** fetches market/sports data directly — same boundary as feed/channels. The helper is the source-of-truth gatekeeper.
+
+### Why in-memory, not a DB table
+
+Ticker data is **ephemeral** (only the latest snapshot matters). No history is kept; no retention sweep runs. This eliminates the schema-migration burden, keeps the ticker path free of the feed path's cross-thread sqlite exposure, and is fail-closed: a restart wipes the snapshot and the next poll refills it.
+
+### Sources: all keyless, no new secret
+
+| Source | Symbols | Fetch | Direction |
+|--------|---------|-------|-----------|
+| Stooq | ^SPX, ^DJI, ^NDQ, ^FTM, ^DAX, ^NKX, ^HSI (indices); EURUSD, GBPUSD, USDJPY (FX); XAUUSD (gold) | CSV (`/q/l/?s=…&f=sd2t2ohlcvn`) | `open` vs `close` |
+| CoinGecko | BTC, ETH spot + 24h change | JSON (`/api/v3/simple/price`) | 24h change sign |
+| SAMPLE-ONLY | Brent, WTI, 10Y UST | — | stay `is_sample=true`, never faked |
+| ESPN | MLB, NFL, NBA, NHL scoreboards | JSON (`/apis/site/v2/sports/SPORT/LEAGUE/scoreboard`) | `NONE` (no arrow) |
+
+Stooq occasionally throttles rapid repeats; pollers isolate per-source, falling back to honest SAMPLE for that cycle and recovering next cycle. **No API key**, so the helper holds **zero new secret** — the helper-holds-a-secret line was deliberately not crossed.
+
+### Real-vs-sample + honesty (C3)
+
+Each `TickerEntryDTO` carries `is_sample` (helper decides, TV renders verbatim):
+- **Real** → pill dropped, live value shown.
+- **Sample** → SAMPLE pill stays visible.
+- **Unreachable** (markets) → honest all-SAMPLE fallback, never frozen old numbers as current.
+- **Sports unavailable** (ESPN unreachable) → a `"scores unavailable"` entry (`is_sample=false` — a true state, not sample data).
+
+The envelope carries a `stale` flag (set when real data aged past 15 min) so staleness is never silent. An all-sample pre-poll snapshot is **not** stale — sample is honest, not stale.
+
+### Modes + rotation
+
+`HelperTickerSource` polls both endpoints (60 s) and rotates presentation on a calm timer — markets dwell ~22 s, sports dwell ~14 s. The marquee restart on each swap is the intended "mode changed" cue. The `TickerSource` abstraction (built in Stage 3 for exactly this) needed no change at the consuming `TickerStrip`. In phantom mode no pollers run: markets render all-SAMPLE, sports render the SAMPLE slate, zero outbound.
+
+### Code structure
+
+```
+helper/src/mymts_helper/ticker/
+├── __init__.py   TickerEntryDTO, DIR_{UP,DOWN,FLAT,NONE}, TICKER_SCHEMA_VERSION=1
+├── markets.py    parse_stooq_csv, parse_coingecko, build_snapshot (honest mix)
+├── sports.py     parse_scoreboard, SAMPLE_SPORTS slate, no_games_entry
+├── pollers.py    MarketsPoller, SportsPoller (latest snapshot, no DB)
+└── api.py        GET /api/ticker/markets + /api/ticker/sports
+```
+
+App side: `TickerEntry.Direction.NONE` (no arrow for sports); `HelperClient.parseTicker` (schema_version pinned, missing `is_sample` defaults TRUE = fail-safe, unknown direction → FLAT); `TickerSnapshot`; `HelperTickerSource` (rotation + the pure `entriesFor` fallback rules); `WallScreen` swapped `SampleTickerSource` → `HelperTickerSource(client)`.
+
+### What's deliberately NOT here
+
+- **Per-team / per-league curation UI** — a default league set (MLB/NFL/NBA/NHL) + the mechanism ship now; richer curation is deferred (BACKLOG).
+- **Sample-only symbols** — Brent/WTI/10Y UST stay honest SAMPLE pending a keyless source.
+- **Paid market/sports sources** — keyless-only by policy; if only paid exists for something, it stays sample.
+
+---
+
+## 17. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

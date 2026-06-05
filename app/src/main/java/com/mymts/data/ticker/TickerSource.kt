@@ -43,5 +43,10 @@ data class TickerEntry(
     /** True iff this value is placeholder/sample, NOT a live quote. */
     val isSample: Boolean,
 ) {
-    enum class Direction { UP, DOWN, FLAT }
+    /**
+     * [NONE] is for non-directional data (sports scores) — the UI draws
+     * no arrow glyph at all, since up/down is meaningless for a score
+     * line. Markets entries use UP/DOWN/FLAT.
+     */
+    enum class Direction { UP, DOWN, FLAT, NONE }
 }

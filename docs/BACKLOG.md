@@ -145,11 +145,12 @@ Batch of feedback the operator surfaced after actually using the wall on `.182`.
 **Why-not-now:** This is the existing "configurable panes" backlog item plus app-level sizing/resolution. Grid already autofits its region (Stage 3 polish pass) — clarify with operator what's missing vs. what exists. App-resolution-adaptiveness matters MORE once MyMTS is on its real box driving an actual TV (the in-transit hardware) vs. the small dev panel currently attached to `.182`.
 **Reconsider when:** "UX & config" push; some (feed width/font) are low-effort and could come sooner.
 
-## D. Ticker — alternate markets + curated sports scores/news
+## ~~D. Ticker — alternate markets + curated sports scores/news~~ — DONE (ticker real-data chapter, 2026-06-05)
 
-**What:** Ticker eventually alternates between the markets mode (current) and a sports scores/news mode the operator curates.
-**Why-not-now:** Additive; the ticker was built to accept additional modes without rework (the `TickerSource` interface lives behind `SampleTickerSource`). Depends on a sports-data source (see G).
-**Reconsider when:** After a sports-data source is identified; clean later addition.
+**Done.** The ticker now shows REAL data and alternates between a markets mode (Stooq indices/FX/gold + CoinGecko BTC/ETH, all keyless) and a sports mode (ESPN public scoreboard JSON for MLB/NFL/NBA/NHL, keyless), rotating on a calm timer (markets ~22 s, sports ~14 s) via `HelperTickerSource` behind the `TickerSource` interface. Honest labeling held: real entries drop the SAMPLE pill; symbols with no free keyless source (Brent, WTI, 10Y UST) stay sample; an unreachable helper falls back to honest sample (markets) / "scores unavailable" (sports), never frozen-live.
+**Remaining (deferred sub-items):**
+- **Per-team / per-league curation UI** — the chapter ships a sensible default league set (MLB/NFL/NBA/NHL) + the mechanism; a UI for the operator to pick leagues/teams is the follow-on. Until then, the league set is edited in `ticker/sports.py::DEFAULT_LEAGUES`.
+- **Sample-only market symbols** — Brent, WTI, 10Y UST remain honest SAMPLE (no clean free keyless source verified). Revisit if a keyless source surfaces (Stooq may cover oil/rates under symbols worth re-checking).
 
 ## E. More video channels (channel-supply — recurring thread)
 
@@ -233,11 +234,9 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** The current restructure keeps headers visual-only — the focus model didn't change, no-trap invariants stayed pinned without modification. Adding section-jump or collapse semantics expands the focus model (a new "header" focus position, or a new intent for section-jump). Worth doing if the operator finds DOWN-DOWN-DOWN inefficient through a 20+ item section, but the visible sectioning alone should already help orientation. Defer as a focused follow-on.
 **Reconsider when:** Operator's at-the-box feel-test surfaces "I can see the sections but DOWN-by-one through them is still slow."
 
-## G. Sports-data source (enabler for D + the original ticker sports mode)
+## ~~G. Sports-data source (enabler for D + the original ticker sports mode)~~ — DONE (ticker real-data chapter, 2026-06-05)
 
-**What:** A data source for live sports scores / schedules to feed the ticker's sports mode and any sports surfacing.
-**Why-not-now:** No source wired yet (markets ticker is sample data; sports is unbuilt). Enabler for D.
-**Reconsider when:** When the ticker sports mode is built; evaluate free sports-data feeds/APIs (some have free tiers with reasonable rate limits, some are paywalled — same triage shape as the channel-supply work).
+**Done.** Identified + wired a free, keyless sports source: **ESPN's public scoreboard JSON** (`site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`) for MLB/NFL/NBA/NHL — no API key, parsed defensively through the SSRF-safe fetcher. ToS posture (undocumented-but-public endpoint, personal non-commercial use) confirmed with the operator. No new secret crosses the helper. Honest staleness covers the "endpoint vanished" case. Investigation also evaluated TheSportsDB (test-key works but ESPN is richer/keyless) — recorded in `docs/findings/11-ticker-real-data.md`.
 
 ## H. Cross-platform profiles — ARCHITECTURE FORK, decide before building
 

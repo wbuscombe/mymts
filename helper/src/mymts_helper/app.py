@@ -32,6 +32,8 @@ from .feeds.seeder import seed_from_file as seed_feeds_from_file
 from .fetcher import Resolver
 from .health import FreshnessSnapshotter, HealthState
 from .log import configure_logging
+from .ticker.api import get_router as ticker_router
+from .ticker.pollers import MarketsPoller, SportsPoller
 
 log = logging.getLogger("mymts_helper")
 
@@ -110,6 +112,14 @@ def create_app(
         interval_seconds=cfg.channel_probe_interval_seconds,
         resolver=active_resolver,
     )
+    markets_poller = MarketsPoller(
+        interval_seconds=cfg.markets_poll_interval_seconds,
+        resolver=active_resolver,
+    )
+    sports_poller = SportsPoller(
+        interval_seconds=cfg.sports_poll_interval_seconds,
+        resolver=active_resolver,
+    )
 
     snapshotter = FreshnessSnapshotter(db_path=db_path)
     health_state = HealthState(started_at=time.monotonic(), snapshotter=snapshotter)
@@ -122,13 +132,21 @@ def create_app(
         if not cfg.phantom_mode:
             await poller.start()
             await prober.start()
+            await markets_poller.start()
+            await sports_poller.start()
         else:
             await phantom.preload(db_path)
+            # Phantom = no outbound traffic: the ticker pollers are NOT
+            # started. Markets already holds an all-sample snapshot;
+            # seed the sports sample slate so that mode renders too.
+            sports_poller.seed_sample_slate()
         try:
             yield
         finally:
             await poller.stop()
             await prober.stop()
+            await markets_poller.stop()
+            await sports_poller.stop()
 
     app = FastAPI(
         title="MyMTS Helper",
@@ -149,6 +167,7 @@ def create_app(
 
     app.include_router(feed_router(db_path))
     app.include_router(channels_router(db_path))
+    app.include_router(ticker_router(markets_poller, sports_poller))
 
     log.info(
         "helper_started",

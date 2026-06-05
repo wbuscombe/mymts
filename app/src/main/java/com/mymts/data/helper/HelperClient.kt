@@ -1,6 +1,8 @@
 package com.mymts.data.helper
 
 import android.util.Log
+import com.mymts.data.ticker.TickerEntry
+import com.mymts.data.ticker.TickerSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
@@ -45,6 +47,14 @@ class HelperClient(
      */
     suspend fun fetchFeed(limit: Int = 100): Result<FeedSnapshot> =
         request("/api/feed?limit=$limit") { json -> parseFeed(json) }
+
+    /** Fetch + parse `/api/ticker/markets` — real quotes + honest sample. */
+    suspend fun fetchMarketsTicker(): Result<TickerSnapshot> =
+        request("/api/ticker/markets") { json -> parseTicker(json) }
+
+    /** Fetch + parse `/api/ticker/sports` — curated scores, honest staleness. */
+    suspend fun fetchSportsTicker(): Result<TickerSnapshot> =
+        request("/api/ticker/sports") { json -> parseTicker(json) }
 
     private suspend fun <T> request(path: String, parse: (JSONObject) -> T): Result<T> = try {
         val body = openGet(path)
@@ -111,6 +121,46 @@ class HelperClient(
                 )
             }
             return FeedSnapshot(version, list)
+        }
+
+        /**
+         * Parse a `/api/ticker/{markets,sports}` JSON body into a
+         * [TickerSnapshot]. The helper owns the real-vs-sample decision
+         * per entry (`is_sample`); the TV renders exactly what it's told
+         * and never upgrades a sample entry to "live". Unknown direction
+         * tokens degrade to FLAT rather than throwing — forward-compatible.
+         */
+        fun parseTicker(json: JSONObject): TickerSnapshot {
+            val version = json.optInt("schema_version", -1)
+            if (version != SUPPORTED_SCHEMA_VERSION) {
+                throw HelperException("ticker schema_version=$version not supported")
+            }
+            val arr = json.optJSONArray("entries")
+                ?: throw HelperException("entries field missing")
+            val entries = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val symbol = o.optStringOrNull("symbol") ?: return@mapNotNull null
+                val display = o.optStringOrNull("display") ?: return@mapNotNull null
+                TickerEntry(
+                    symbol = symbol,
+                    display = display,
+                    direction = parseDirection(o.optString("direction", "flat")),
+                    isSample = o.optBoolean("is_sample", true),
+                )
+            }
+            return TickerSnapshot(
+                mode = json.optString("mode", "markets"),
+                asOfIso = json.optStringOrNull("as_of"),
+                stale = json.optBoolean("stale", false),
+                entries = entries,
+            )
+        }
+
+        internal fun parseDirection(raw: String): TickerEntry.Direction = when (raw.lowercase()) {
+            "up" -> TickerEntry.Direction.UP
+            "down" -> TickerEntry.Direction.DOWN
+            "none" -> TickerEntry.Direction.NONE
+            else -> TickerEntry.Direction.FLAT  // "flat" + any unknown token
         }
 
         /**

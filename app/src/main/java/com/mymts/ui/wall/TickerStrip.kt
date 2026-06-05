@@ -127,8 +127,12 @@ private fun TickerCell(entry: TickerEntry) {
             TickerEntry.Direction.UP -> "▲" to WallColors.BadgeLive
             TickerEntry.Direction.DOWN -> "▼" to Color(0xFFEF5350)
             TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
+            // Sports scores are non-directional — draw no glyph.
+            TickerEntry.Direction.NONE -> null to WallColors.LabelMuted
         }
-        Text(text = arrow, color = color, fontSize = 11.sp)
+        if (arrow != null) {
+            Text(text = arrow, color = color, fontSize = 11.sp)
+        }
         if (entry.isSample) {
             Box(
                 modifier = Modifier

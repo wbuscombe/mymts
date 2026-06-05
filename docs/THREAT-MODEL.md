@@ -327,6 +327,32 @@ The logged intermittent `sqlite3.ProgrammingError: SQLite objects created in a t
 
 ---
 
+## Ticker real data — markets + sports external sources (2026-06-05)
+
+**Claim:** The ticker previously showed SAMPLE markets data behind honest SAMPLE pills. This chapter makes markets real (Stooq CSV + CoinGecko JSON) and adds a sports mode (ESPN scoreboard JSON), rotated on the TV. All three sources are keyless. The A1 boundary holds: external responses are fetched through the same SSRF-safe fetcher as feeds/channels, parsed strictly (never eval/exec, malformed dropped), and honesty (C3) is preserved per-entry.
+
+**New external data boundaries (all keyless):**
+- **Markets — Stooq CSV + CoinGecko JSON:** Stooq indices (`^SPX`, `^DJI`, `^NDQ`, `^FTM`, `^DAX`, `^NKX`, `^HSI`), FX (`EURUSD`, `GBPUSD`, `USDJPY`), gold (`XAUUSD`); direction from open-vs-close. CoinGecko spot + 24h change for BTC/ETH. Stooq CSV parse is strict (float-guarded fields; N/D + malformed rows dropped). CoinGecko via `json.loads()` with type checks; missing/null fields omit the symbol, never raise. Stooq throttle on rapid repeats → that cycle falls back to honest sample (per-source isolation).
+- **Sports — ESPN scoreboard JSON:** MLB/NFL/NBA/NHL scores from `site.api.espn.com/apis/site/v2/sports/SPORT/LEAGUE/scoreboard`. Public, undocumented, keyless. ToS-gray, accepted for personal non-commercial single-box use (operator nod). Strict parse: `competitions`/`status`/`score` fields `.get()`-guarded, malformed games dropped, games-per-league capped, scores sanitized to digits. Honest staleness covers disappearance.
+
+**A1 boundary — same defensive shape as T-H1 (hostile RSS):**
+- **Single SSRF-safe egress:** `mymts_helper.fetcher.fetch()` (https-only, DNS-pinned, RFC1918/loopback/CGNAT/ULA rejection, userinfo rejection, bounded body [8 MB] + bounded time, redirects re-validated) is the sole outbound path. Every source goes through the same boundary. The fetcher itself was **not modified** this chapter.
+- **Strict parse, never eval/exec:** CSV split with float guards; JSON via `json.loads()` with `isinstance` checks; ESPN via `.get()`-guarded access. No `eval`/`exec`/`pickle`/`yaml.load`, no untrusted deserialization. Malformed payloads drop the entry rather than surface an error.
+- **Fail-closed:** a source that throttles, 5xx's, or returns malformed produces an empty real set for that cycle; the snapshot falls back to honest sample (and the envelope marks `stale` once real data aged past 15 min). The endpoint never 500s on bad upstream data — verified by the blocked-egress test.
+- **No new secret:** every source is keyless. The helper-holds-a-secret line was deliberately NOT crossed. A future keyed source would follow the `.env` secret discipline (documented as the path, not taken here).
+
+**Honesty (C3):** `is_sample` per entry travels helper→TV untouched; the TV never upgrades a sample entry to live. Stale real data is surfaced via the envelope `stale` flag, never shown frozen as current. Unreachable → honest sample (markets) / "scores unavailable" (sports, `is_sample=false` true state), never fabricated.
+
+**In-memory snapshot — no DB reintroduction:** both pollers hold an in-process latest snapshot read on the event loop; the ticker path does **not** reintroduce the cross-thread sqlite exposure the feed path had (fixed in the feed-sources chapter).
+
+**Rate-limit politeness:** markets poll 120 s, sports poll 180 s (env-overridable) — a courtesy/anti-abuse cadence on keyless public endpoints.
+
+**Residual risk:** a source could change shape, rate-limit harder, or (ESPN) disappear. Mitigation = strict parse drops bad data + per-source isolation falls back to honest sample; disappearance surfaces as honest staleness/"scores unavailable", never fabricated values.
+
+**Traces to:** **A1** (external sources hostile; SSRF-safe fetcher; strict, fail-closed parse), **A2** (per-source isolation; in-memory, no DB), **C3** (real-vs-sample per entry; stale surfaced; unreachable → honest fallback).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.
