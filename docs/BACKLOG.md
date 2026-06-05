@@ -234,6 +234,29 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** The current restructure keeps headers visual-only — the focus model didn't change, no-trap invariants stayed pinned without modification. Adding section-jump or collapse semantics expands the focus model (a new "header" focus position, or a new intent for section-jump). Worth doing if the operator finds DOWN-DOWN-DOWN inefficient through a 20+ item section, but the visible sectioning alone should already help orientation. Defer as a focused follow-on.
 **Reconsider when:** Operator's at-the-box feel-test surfaces "I can see the sections but DOWN-by-one through them is still slow."
 
+## Curation & preferences pass (future chapter — groups the "tune what I see" controls)
+
+The data plumbing is being built (real markets + sports ticker, 13 feed sources, channel lineup). The operator wants control over *what* flows through it. These curation controls belong together, likely as a settings-menu expansion (Stage 5 / UX-config lineage).
+
+### A. Sports curation (refines the ticker sports mode)
+- **What:** The ticker-data chapter ships a default sports set (MLB/NFL/NBA/NHL) + mechanism, with full curation deferred. The operator wants to narrow it to the sports/teams they care about.
+- **Open question for the operator (capture, don't presuppose):** curation at the **league** level (toggle which leagues), the **team** level (pick favorite teams — note operator's Chicago context from other feeds: likely Blackhawks/Cubs/Bears/Bulls/etc.), or **both** (leagues for breadth + favorite teams pinned/prioritized). The answer shapes whether it's a simple league-toggle list or a richer team-picker.
+- **Reconsider when:** After the ticker sports mode is live and the operator has seen scores flow; pairs with the settings-menu curation surface.
+
+### B. Ticker news parameters (new — news in the ticker)
+- **What:** The operator wants news in the ticker (currently markets, soon + sports). Could be a third rotation mode (markets → sports → news) and/or breaking-news interrupts.
+- **Open design questions (capture for the discussion):**
+  - Separate news *mode* the ticker rotates to, vs. breaking-news *interrupts* that push in regardless of current mode (or both)?
+  - "Parameters" = which *sources* feed ticker news (a subset of the 13 RSS sources?) and/or *filtering* (only breaking/urgent, certain topics)?
+- **Ties into:** the queued feed filtering/search chapter — "what counts as ticker-worthy news" overlaps with "how to filter the feed pane," so these may be designed together.
+- **Reconsider when:** Alongside the feed-filtering chapter and/or the curation pass.
+
+### C. (Cross-ref) Feed source enable/disable
+- The 13 feed sources are all enabled by default (`enabled=1`). A natural companion to the above curation controls: let the operator toggle which sources appear in the feed (and potentially which feed the ticker). Cross-ref the existing settings-menu surface (Stage 8 UX-config) and the feed-filtering/search deferral above.
+
+### Framing note
+- These three (sports curation, ticker news params, feed-source toggles) cohere into a **"curation & preferences" chapter** — the "tune what I see" controls, living in the settings menu (Stage 5 / UX-config lineage). Logged together so they're scoped as one coherent future chapter rather than scattered tweaks.
+
 ## ~~G. Sports-data source (enabler for D + the original ticker sports mode)~~ — DONE (ticker real-data chapter, 2026-06-05)
 
 **Done.** Identified + wired a free, keyless sports source: **ESPN's public scoreboard JSON** (`site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`) for MLB/NFL/NBA/NHL — no API key, parsed defensively through the SSRF-safe fetcher. ToS posture (undocumented-but-public endpoint, personal non-commercial use) confirmed with the operator. No new secret crosses the helper. Honest staleness covers the "endpoint vanished" case. Investigation also evaluated TheSportsDB (test-key works but ESPN is richer/keyless) — recorded in `docs/findings/11-ticker-real-data.md`.
