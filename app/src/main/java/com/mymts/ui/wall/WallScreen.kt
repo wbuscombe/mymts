@@ -36,12 +36,14 @@ import com.mymts.data.helper.ChannelsRepository
 import com.mymts.data.helper.FeedRepository
 import com.mymts.data.helper.HelperClient
 import com.mymts.data.lineup.LineupStore
+import com.mymts.data.settings.FeedSide
 import com.mymts.data.ticker.SampleTickerSource
 import com.mymts.ui.menu.AudioState
 import com.mymts.ui.menu.CaptionsState
 import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
+import com.mymts.ui.menu.SettingsOverlay
 import com.mymts.ui.menu.SlotControlsOverlay
 import com.mymts.ui.menu.SlotRow
 import com.mymts.ui.menu.rememberMenuState
@@ -89,6 +91,7 @@ fun WallScreen(
     val overrides by lineupStore.overrides
     val audibleSlot by lineupStore.audibleSlot
     val captionsOnSlots by lineupStore.captionsOnSlots
+    val wallSettings by lineupStore.wallSettings
 
     // Per-slot soft-caption-track availability. Updated from VideoGrid's
     // Player.Listener.onTracksChanged forwarding. Read by the controls
@@ -187,6 +190,27 @@ fun WallScreen(
         }
     }
 
+    // Side-aware dispatch wrapper — pass the operator's current
+    // feedSide into the focus model so LEFT/RIGHT spatial rules match
+    // the visible layout.
+    fun dispatchNavWithSide(intent: NavIntent): Boolean {
+        val result = WallFocusModel.apply(
+            focus = focus,
+            intent = intent,
+            feedItemCount = feedItemCount,
+            gridTileCount = slots.size,
+            gridColumns = gridColumns,
+            feedSide = wallSettings.feedSide,
+        )
+        return when (result) {
+            is NavResult.Stay -> true
+            is NavResult.Focus -> { focus = result.focus; true }
+            is NavResult.OpenMenu -> { menu.open(); true }
+            is NavResult.OpenSlotControls -> { menu.openControls(result.slotIndex); true }
+            is NavResult.BackBubble -> false
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -212,14 +236,16 @@ fun WallScreen(
                         menu.close(); true
                     } else false
                 }
-                // Side menu closed → route through the wall focus model.
+                // Side menu closed → route through the wall focus
+                // model, passing the operator's current feedSide so
+                // LEFT/RIGHT spatial rules match the visible layout.
                 when (event.key) {
-                    Key.DirectionUp -> dispatchNav(NavIntent.Up)
-                    Key.DirectionDown -> dispatchNav(NavIntent.Down)
-                    Key.DirectionLeft -> dispatchNav(NavIntent.Left)
-                    Key.DirectionRight -> dispatchNav(NavIntent.Right)
-                    Key.DirectionCenter, Key.Enter -> dispatchNav(NavIntent.Select)
-                    Key.Back -> dispatchNav(NavIntent.Back)
+                    Key.DirectionUp -> dispatchNavWithSide(NavIntent.Up)
+                    Key.DirectionDown -> dispatchNavWithSide(NavIntent.Down)
+                    Key.DirectionLeft -> dispatchNavWithSide(NavIntent.Left)
+                    Key.DirectionRight -> dispatchNavWithSide(NavIntent.Right)
+                    Key.DirectionCenter, Key.Enter -> dispatchNavWithSide(NavIntent.Select)
+                    Key.Back -> dispatchNavWithSide(NavIntent.Back)
                     else -> false
                 }
             },
@@ -232,22 +258,35 @@ fun WallScreen(
                 paused = focus.tickerPaused,
             )
             Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
-            Row(modifier = Modifier.fillMaxSize()) {
+            // Compose three children — the feed pane, a thin divider,
+            // and the video grid — and lay them out in the order
+            // dictated by the operator's `feedSide` setting. Defining
+            // them once and choosing the order at the Row's call site
+            // keeps the children's modifiers (focus/recompose keys,
+            // weights, focus binding) identical across orientations —
+            // a side-swap doesn't recreate the FeedRepository
+            // subscription or the StreamPlayerManager.
+            val feedPane = @Composable {
                 FeedPane(
                     repository = feed,
-                    modifier = Modifier.fillMaxHeight().fillMaxWidth(0.28f),
+                    modifier = Modifier.fillMaxHeight().fillMaxWidth(wallSettings.feedWidth.fraction),
                     focusedIndex = if (focus.active == WallZone.Feed) focus.feedIndex else null,
                     expandedIndex = if (focus.active == WallZone.Feed && focus.feedExpanded) {
                         focus.feedIndex
                     } else null,
                     onItemCountChanged = { feedItemCount = it },
+                    fontScale = wallSettings.feedFontScale.multiplier,
                 )
+            }
+            val divider = @Composable {
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
                         .background(Color(0x22FFFFFF)),
                 )
+            }
+            val videoGrid = @Composable {
                 VideoGrid(
                     slots = slots,
                     modifier = Modifier.fillMaxSize(),
@@ -260,6 +299,13 @@ fun WallScreen(
                     focusedCellIndex = if (focus.active == WallZone.Grid) focus.gridIndex else null,
                 )
             }
+            Row(modifier = Modifier.fillMaxSize()) {
+                if (wallSettings.feedSide == FeedSide.Left) {
+                    feedPane(); divider(); videoGrid()
+                } else {
+                    videoGrid(); divider(); feedPane()
+                }
+            }
         }
 
         MenuOverlay(
@@ -271,7 +317,9 @@ fun WallScreen(
             // rather than jumping directly to the channel picker. The
             // controls overlay then re-routes "Channel" to the picker.
             onSlotSelected = { slotIndex -> menu.openControls(slotIndex) },
+            onSettingsSelected = { menu.openSettings() },
             modifier = Modifier.fillMaxSize(),
+            feedSide = wallSettings.feedSide,
         )
 
         // Sub-overlays. Only one is visible at a time; the menu's
@@ -329,6 +377,16 @@ fun WallScreen(
                     menu.openControls(pending.slotIndex)
                 },
                 onCancel = { menu.openControls(pending.slotIndex) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (pending is MenuState.PendingSelection.Settings) {
+            SettingsOverlay(
+                settings = wallSettings,
+                onCycleFeedWidth = { lineupStore.cycleFeedWidth() },
+                onCycleFeedFontScale = { lineupStore.cycleFeedFontScale() },
+                onCycleFeedSide = { lineupStore.cycleFeedSide() },
+                onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )
         }

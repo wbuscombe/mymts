@@ -6,6 +6,13 @@ import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import com.mymts.data.settings.FeedFontScale
+import com.mymts.data.settings.FeedSide
+import com.mymts.data.settings.FeedWidth
+import com.mymts.data.settings.WallSettings
+import com.mymts.data.settings.feedFontScaleFromOrdinal
+import com.mymts.data.settings.feedSideFromOrdinal
+import com.mymts.data.settings.feedWidthFromOrdinal
 import org.json.JSONArray
 import org.json.JSONException
 
@@ -47,6 +54,7 @@ class LineupStore(context: Context) {
     private val _overrides = mutableStateOf(readOverridesFromDisk())
     private val _audibleSlot = mutableIntStateOf(readAudibleSlotFromDisk())
     private val _captionsOnSlots = mutableStateOf(readCaptionsFromDisk())
+    private val _wallSettings = mutableStateOf(readWallSettingsFromDisk())
 
     /**
      * Live state — recomposes any composable observing it on every
@@ -71,6 +79,39 @@ class LineupStore(context: Context) {
      * video and unaffected by this set — see the per-channel caption table.
      */
     val captionsOnSlots: State<Set<Int>> get() = _captionsOnSlots
+
+    /**
+     * The operator's wall layout settings — feed width, feed font
+     * scale, which side the feed lives on. Persisted alongside the
+     * lineup; restored on app launch with safe defaults if missing or
+     * corrupt. Live state recomposes any composable observing it on
+     * every [updateWallSettings].
+     */
+    val wallSettings: State<WallSettings> get() = _wallSettings
+
+    fun updateWallSettings(settings: WallSettings) {
+        _wallSettings.value = settings
+        prefs.edit()
+            .putInt(KEY_FEED_WIDTH, settings.feedWidth.ordinal)
+            .putInt(KEY_FEED_FONT, settings.feedFontScale.ordinal)
+            .putInt(KEY_FEED_SIDE, settings.feedSide.ordinal)
+            .apply()
+    }
+
+    fun cycleFeedWidth() {
+        val next = FeedWidth.values().let { it[(_wallSettings.value.feedWidth.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(feedWidth = next))
+    }
+
+    fun cycleFeedFontScale() {
+        val next = FeedFontScale.values().let { it[(_wallSettings.value.feedFontScale.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(feedFontScale = next))
+    }
+
+    fun cycleFeedSide() {
+        val next = FeedSide.values().let { it[(_wallSettings.value.feedSide.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(feedSide = next))
+    }
 
     fun assign(slotIndex: Int, slug: String) {
         require(slotIndex >= 0) { "slotIndex must be >= 0" }
@@ -146,6 +187,24 @@ class LineupStore(context: Context) {
     private fun readAudibleSlotFromDisk(): Int =
         prefs.getInt(KEY_AUDIBLE_SLOT, -1)
 
+    private fun readWallSettingsFromDisk(): WallSettings {
+        // Each component falls back to its own default if absent or
+        // out-of-range — partial corruption (e.g. a stored width
+        // ordinal that no longer exists after a refactor) doesn't
+        // discard the other two values.
+        if (!prefs.contains(KEY_FEED_WIDTH) &&
+            !prefs.contains(KEY_FEED_FONT) &&
+            !prefs.contains(KEY_FEED_SIDE)
+        ) {
+            return WallSettings.Default
+        }
+        return WallSettings(
+            feedWidth = feedWidthFromOrdinal(prefs.getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
+            feedFontScale = feedFontScaleFromOrdinal(prefs.getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
+            feedSide = feedSideFromOrdinal(prefs.getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
+        )
+    }
+
     private fun readCaptionsFromDisk(): Set<Int> {
         val raw = prefs.getString(KEY_CAPTIONS_ON, null) ?: return emptySet()
         return try {
@@ -162,6 +221,9 @@ class LineupStore(context: Context) {
         private const val KEY_OVERRIDES = "lineup_overrides"
         private const val KEY_AUDIBLE_SLOT = "audible_slot"
         private const val KEY_CAPTIONS_ON = "captions_on_slots"
+        private const val KEY_FEED_WIDTH = "wall_settings_feed_width"
+        private const val KEY_FEED_FONT = "wall_settings_feed_font"
+        private const val KEY_FEED_SIDE = "wall_settings_feed_side"
         private const val TAG = "MyMTS.LineupStore"
 
         /**

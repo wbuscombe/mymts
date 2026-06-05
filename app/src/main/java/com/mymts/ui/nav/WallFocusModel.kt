@@ -1,5 +1,7 @@
 package com.mymts.ui.nav
 
+import com.mymts.data.settings.FeedSide
+
 /**
  * Pure focus-transition logic for the wall. No Compose, no Android —
  * the whole navigation model is a single function the call site
@@ -53,6 +55,7 @@ object WallFocusModel {
         feedItemCount: Int,
         gridTileCount: Int,
         gridColumns: Int,
+        feedSide: FeedSide = FeedSide.Left,
     ): NavResult {
         require(feedItemCount >= 0)
         require(gridTileCount >= 0)
@@ -63,9 +66,9 @@ object WallFocusModel {
         if (intent == NavIntent.Back) return applyBack(focus)
 
         return when (focus.active) {
-            WallZone.Ticker -> applyTicker(focus, intent, feedItemCount, gridTileCount)
-            WallZone.Feed -> applyFeed(focus, intent, feedItemCount, gridTileCount)
-            WallZone.Grid -> applyGrid(focus, intent, feedItemCount, gridTileCount, gridColumns)
+            WallZone.Ticker -> applyTicker(focus, intent, feedItemCount, gridTileCount, feedSide)
+            WallZone.Feed -> applyFeed(focus, intent, feedItemCount, gridTileCount, feedSide)
+            WallZone.Grid -> applyGrid(focus, intent, feedItemCount, gridTileCount, gridColumns, feedSide)
         }
     }
 
@@ -101,6 +104,7 @@ object WallFocusModel {
         intent: NavIntent,
         feedItemCount: Int,
         gridTileCount: Int,
+        feedSide: FeedSide,
     ): NavResult = when (intent) {
         NavIntent.Down -> {
             // Return to whichever zone we came up from. If the lower
@@ -116,8 +120,11 @@ object WallFocusModel {
             NavResult.Focus(focus.copy(active = target))
         }
         NavIntent.Up -> NavResult.Stay  // already at the top of the screen
-        NavIntent.Left -> NavResult.OpenMenu  // ticker's left-edge gesture opens the menu
-        NavIntent.Right -> NavResult.Stay  // ticker is one focus position; no intra-navigation in v1
+        // The menu sits off the feed's outer edge (the same edge the
+        // feed pane animates from). When the feed is on the LEFT, that
+        // edge is LEFT; when on the RIGHT, it's RIGHT.
+        NavIntent.Left -> if (feedSide == FeedSide.Left) NavResult.OpenMenu else NavResult.Stay
+        NavIntent.Right -> if (feedSide == FeedSide.Right) NavResult.OpenMenu else NavResult.Stay
         else -> NavResult.Stay
     }
 
@@ -128,32 +135,41 @@ object WallFocusModel {
         intent: NavIntent,
         feedItemCount: Int,
         gridTileCount: Int,
-    ): NavResult = when (intent) {
-        NavIntent.Up -> {
-            // If at top item OR feed is empty: go to ticker. Otherwise
-            // move within the feed.
-            if (focus.feedIndex <= 0 || feedItemCount == 0) {
-                NavResult.Focus(focus.copy(active = WallZone.Ticker, lastLowerZone = WallZone.Feed))
-            } else {
-                NavResult.Focus(focus.copy(feedIndex = focus.feedIndex - 1, feedExpanded = false))
+        feedSide: FeedSide,
+    ): NavResult {
+        // Spatial directions derive from feedSide so navigation feels
+        // right in both orientations: the gesture toward the grid
+        // always means "off the feed's INNER edge" and the gesture
+        // toward the menu always means "off the feed's OUTER edge".
+        val toGrid = if (feedSide == FeedSide.Left) NavIntent.Right else NavIntent.Left
+        val toMenu = if (feedSide == FeedSide.Left) NavIntent.Left else NavIntent.Right
+        return when (intent) {
+            NavIntent.Up -> {
+                // If at top item OR feed is empty: go to ticker. Otherwise
+                // move within the feed.
+                if (focus.feedIndex <= 0 || feedItemCount == 0) {
+                    NavResult.Focus(focus.copy(active = WallZone.Ticker, lastLowerZone = WallZone.Feed))
+                } else {
+                    NavResult.Focus(focus.copy(feedIndex = focus.feedIndex - 1, feedExpanded = false))
+                }
             }
+            NavIntent.Down -> {
+                // Move within the feed (clamp at last). If feed is empty,
+                // stay (no lower-zone fallback — DOWN from feed never
+                // jumps to grid because that's a spatially-orthogonal move).
+                val next = (focus.feedIndex + 1).coerceAtMost((feedItemCount - 1).coerceAtLeast(0))
+                if (next == focus.feedIndex) NavResult.Stay
+                else NavResult.Focus(focus.copy(feedIndex = next, feedExpanded = false))
+            }
+            toGrid -> {
+                // Enter the grid. Land on the grid's preserved index so a
+                // FEED → GRID → FEED round-trip returns to the same feed item.
+                if (gridTileCount == 0) NavResult.Stay
+                else NavResult.Focus(focus.copy(active = WallZone.Grid, feedExpanded = false))
+            }
+            toMenu -> NavResult.OpenMenu
+            else -> NavResult.Stay
         }
-        NavIntent.Down -> {
-            // Move within the feed (clamp at last). If feed is empty,
-            // stay (no lower-zone fallback — DOWN from feed never
-            // jumps to grid because that's a spatially-orthogonal move).
-            val next = (focus.feedIndex + 1).coerceAtMost((feedItemCount - 1).coerceAtLeast(0))
-            if (next == focus.feedIndex) NavResult.Stay
-            else NavResult.Focus(focus.copy(feedIndex = next, feedExpanded = false))
-        }
-        NavIntent.Right -> {
-            // Enter the grid. Land on the grid's preserved index so a
-            // FEED → GRID → FEED round-trip returns to the same feed item.
-            if (gridTileCount == 0) NavResult.Stay
-            else NavResult.Focus(focus.copy(active = WallZone.Grid, feedExpanded = false))
-        }
-        NavIntent.Left -> NavResult.OpenMenu  // feed's left edge = menu trigger
-        else -> NavResult.Stay
     }
 
     // ============== GRID ==============
@@ -164,9 +180,19 @@ object WallFocusModel {
         feedItemCount: Int,
         gridTileCount: Int,
         gridColumns: Int,
+        feedSide: FeedSide,
     ): NavResult {
         val row = focus.gridIndex / gridColumns
         val col = focus.gridIndex % gridColumns
+        val lastCol = gridColumns - 1
+        // Spatial sense: the feed sits on the OUTER edge of the wall,
+        // so the gesture that spills from grid back to feed is the
+        // gesture toward that edge. Feed-Left → LEFT-from-col-0;
+        // Feed-Right → RIGHT-from-last-col.
+        val toFeed = if (feedSide == FeedSide.Left) NavIntent.Left else NavIntent.Right
+        // The opposite direction is "deeper into the grid" against the
+        // outer wall — stays at the edge, no wrap, no trap.
+        val intoGrid = if (feedSide == FeedSide.Left) NavIntent.Right else NavIntent.Left
         return when (intent) {
             NavIntent.Up -> {
                 if (row == 0) {
@@ -180,24 +206,30 @@ object WallFocusModel {
                 if (candidateIndex >= gridTileCount) NavResult.Stay
                 else NavResult.Focus(focus.copy(gridIndex = candidateIndex))
             }
-            NavIntent.Left -> {
-                if (col == 0) {
-                    // Spill back into the feed at its preserved index.
-                    // If feed is empty, stay rather than trapping the
-                    // operator in column 0.
+            toFeed -> {
+                // From the column adjacent to the feed, spill back to
+                // it at its preserved index. From any other column,
+                // step toward the feed within the grid (one column).
+                val atFeedEdge = if (feedSide == FeedSide.Left) (col == 0) else (col == lastCol)
+                if (atFeedEdge) {
                     if (feedItemCount == 0) NavResult.Stay
                     else NavResult.Focus(focus.copy(active = WallZone.Feed))
                 } else {
-                    NavResult.Focus(focus.copy(gridIndex = focus.gridIndex - 1))
+                    val step = if (feedSide == FeedSide.Left) -1 else 1
+                    NavResult.Focus(focus.copy(gridIndex = focus.gridIndex + step))
                 }
             }
-            NavIntent.Right -> {
-                val candidateIndex = focus.gridIndex + 1
-                val candidateRow = candidateIndex / gridColumns
-                // Stay on the same row — RIGHT must not wrap to the
-                // next row, that's a focus-trap-adjacent surprise.
-                if (candidateRow != row || candidateIndex >= gridTileCount) NavResult.Stay
-                else NavResult.Focus(focus.copy(gridIndex = candidateIndex))
+            intoGrid -> {
+                // The gesture AWAY from the feed within the row — move
+                // one column or stay at the outer edge. Never wrap.
+                val step = if (feedSide == FeedSide.Left) 1 else -1
+                val candidateIndex = focus.gridIndex + step
+                val candidateRow = if (candidateIndex < 0) -1 else candidateIndex / gridColumns
+                if (candidateIndex < 0 || candidateRow != row || candidateIndex >= gridTileCount) {
+                    NavResult.Stay
+                } else {
+                    NavResult.Focus(focus.copy(gridIndex = candidateIndex))
+                }
             }
             else -> NavResult.Stay
         }

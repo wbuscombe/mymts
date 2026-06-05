@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## UX & Config — configurable feed width / font / side, settings overlay in menu (2026-06-04)
+
+The operator can now tune the wall layout to their space and eyesight without code changes. Three new discrete-preset settings (feed width, feed font scale, feed side) are exposed in a Settings overlay accessed from the side menu. Each setting cycles through operator-chosen presets; LEFT/RIGHT on a focused setting advances to the next preset, applies it live, and persists it to the device's SharedPreferences. The focus model derives LEFT/RIGHT spatial rules from the configured feed side — when the feed is on the right, the grid's spatial-right direction spills to the feed (not off-wall), and the menu slides in from the right instead. Navigation stays spatially correct and trap-free in both orientations.
+
+### Added
+- `data/settings/WallSettings.kt` — data class holding three operator-tunable settings: `feedWidth` (enum `Narrow=0.22, Default=0.28, Wide=0.36` screen fraction), `feedFontScale` (enum `Small=0.88, Default=1.0, Large=1.18` multiplier), and `feedSide` (enum `Left` or `Right`). Internal helpers `feedWidthFromOrdinal()` / `feedFontScaleFromOrdinal()` / `feedSideFromOrdinal()` apply safe-fallback defaults for out-of-range or missing storage values.
+- `data/settings/WallSettingsTest.kt` — 17 invariant tests pinning default values, enum ordering, legibility floor (Small `multiplier >= 0.85`), overflow ceilings (Wide `fraction <= 0.4`, Large `multiplier <= 1.25`), ordinal robustness (out-of-range fallback), copy semantics, and field-by-field equality.
+- `ui/menu/SettingsOverlay.kt` — centered WyzeGrid-family modal with three focusable `SettingRow`s (Width, Font, Side). UP/DOWN navigate between rows via Compose focus traversal. LEFT/RIGHT on a focused row cycle the enum forward, apply the new value live to `FeedPane` / `WallScreen`, and persist to SharedPreferences. SELECT also cycles forward. BACK dismisses the overlay.
+- `MenuState.PendingSelection.Settings` + `openSettings()` — menu state variant and dispatcher for opening the Settings overlay over the side menu.
+- 11 new `WallFocusModelTest` cases for feed-right orientation — verify spatial-rule mirrors (LEFT/RIGHT semantics flip when feed is right), FEED↔GRID round-trip with preserved indices in the right-side layout, no-trap exitability invariant in the swapped layout, and ticker LEFT/RIGHT only the gesture toward the feed's outer edge opens the menu.
+
+### Changed
+- `data/lineup/LineupStore.kt` — `State<WallSettings>` added. New methods `updateWallSettings()`, `cycleFeedWidth()`, `cycleFeedFontScale()`, `cycleFeedSide()` read current values, compute the next enum ordinal, persist as integer keys (`KEY_FEED_WIDTH`, `KEY_FEED_FONT`, `KEY_FEED_SIDE`) to SharedPreferences, and emit the new state. `readWallSettingsFromDisk()` applies per-component default fallback if a key is missing or the stored ordinal is out of range.
+- `ui/nav/WallFocusModel.kt` — `apply()` signature extended: `feedSide: FeedSide = FeedSide.Left` parameter (default preserves the existing 38 navigation tests unchanged). Feed zone inner/outer edge gestures now derive from `feedSide`. Grid zone LEFT/RIGHT branches use `toFeed` / `intoGrid` variables that flip based on `feedSide`. Ticker LEFT/RIGHT: only the gesture toward the feed's outer edge opens the menu.
+- `ui/menu/MenuOverlay.kt` — accepts `feedSide` parameter. The side panel now slides in from the feed's outer edge (LEFT side of screen when `feedSide=Left`, RIGHT side when `feedSide=Right`). Added "Settings" row to the menu + "WALL" section title.
+- `ui/wall/FeedPane.kt` — accepts `fontScale: Float` parameter (default `1.0`). All `sp` values in title, summary, time chip, and section headers are multiplied by `fontScale`. Legibility floor at 0.88× is asserted in `WallSettingsTest`.
+- `ui/wall/WallScreen.kt` — reads `wallSettings` from `LineupStore.wallSettings`. Passes `feedSide` to `WallFocusModel.apply()` for spatial-direction derivation. Renders the Row as `Row{FeedPane, Divider, VideoGrid}` when `feedSide=Left`, or `Row{VideoGrid, Divider, FeedPane}` when `feedSide=Right`, with both children defined once so a feed-side swap does not recreate the `FeedRepository` or `StreamPlayerManager`. Renders `SettingsOverlay` when `PendingSelection.Settings`.
+
+### Tests
+28 new app tests — 17 in `WallSettingsTest` (defaults, ordering, legibility floor / overflow ceiling invariants, ordinal fallback on missing/out-of-range, copy) + 11 in `WallFocusModelTest` (feed-right orientation mirror checks, spatial-rule derivation, no-trap and round-trip preservation). Full app suite: **203 tests, all green**. Navigation invariants verified in both orientations (Left and Right feed side).
+
+### Deferred (deliberately NOT in this chapter)
+- **Overall UI sizing / global density scale** — operator was asked the vision question per chapter §5 and chose to defer to BACKLOG for revisit on the new MyMTS box; logged in `docs/BACKLOG.md §"Overall UI sizing"`.
+- **Feed filtering / search UI** — separate chapter; logged in BACKLOG.
+- **Section collapse / jump-by-source** — logged in BACKLOG as the operator-feedback-driven follow-on.
+- **Ticker modes** — sample data only in v1; deferred to the ticker-modes chapter.
+- **Kiosk story** — long-uptime foreground watchdog + boot receiver; deferred to the new MyMTS box.
+- **In-app full-article web reading** — closed door, permanent.
+
+### Adversarially verified — A1 + B1 boundaries unchanged
+Settings persistence uses SharedPreferences integer ordinals only — **no secrets, no PII, no absolute paths**, no new endpoints, no fetch. `SettingsOverlay` is pure Compose `Text` + focusable `Row` widgets. LEFT/RIGHT on a focused setting calls `LineupStore.cycle*()` (local SharedPreferences write only). **No new web-fetch, no new WebView, no new HTML render.** The feed-expand path is unchanged. `WallFocusModel.apply()` is still pure Kotlin. Full entry: `docs/THREAT-MODEL.md §"UX & Config — A1 + B1 reverify (2026-06-04)"`.
+
+### Operator-validated
+- **Feel-test STAGED** for the operator's next at-the-box session — folded into the existing nav-feel-test checklist in `docs/OPERATIONS.md`. Adds Width/Font/Side cycling steps + D-pad navigation checks in the feed-right orientation.
+
+### Standing rules
+- **unrelated host services: never touched.**
+- Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
+- No secrets / absolute paths in source.
+
 ## Feed restructure — sectioned by source + per-source honest staleness (2026-06-04)
 
 The continuous chronological feed scroll is replaced with a sectioned list grouped by news source. Each source (BBC, Guardian, Al Jazeera, NPR, …) gets its own labelled section with a per-source freshness chip applying Trust Bar **C3** at the section layer — the operator sees at a glance which sources are flowing and which have gone quiet. Items within each section stay newest-first (published time when present, fetched time as fallback). The flat-item invariant is preserved: `WallFocusModel`'s `feedIndex` still traverses 0..itemCount-1 in visible list order; headers are visual only, never focusable.

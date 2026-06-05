@@ -55,6 +55,16 @@ class MenuState {
         pendingSelection = PendingSelection.SlotPicker(slotIndex)
     }
 
+    /**
+     * Open the wall settings overlay — the UX & Config chapter's new
+     * surface for the operator's feed-width / feed-font / feed-side
+     * knobs. Shows over the menu (the menu stays open underneath so
+     * BACK returns to the side panel rather than to the bare wall).
+     */
+    fun openSettings() {
+        pendingSelection = PendingSelection.Settings
+    }
+
     fun dismissSelection() {
         pendingSelection = null
     }
@@ -72,6 +82,7 @@ class MenuState {
     sealed class PendingSelection {
         data class SlotControls(val slotIndex: Int) : PendingSelection()
         data class SlotPicker(val slotIndex: Int) : PendingSelection()
+        data object Settings : PendingSelection()
     }
 }
 

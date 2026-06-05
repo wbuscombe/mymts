@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.data.settings.FeedSide
 
 /**
  * The wall's side menu.
@@ -59,7 +60,9 @@ fun MenuOverlay(
     slotRows: List<SlotRow>,
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
+    onSettingsSelected: () -> Unit,
     modifier: Modifier = Modifier,
+    feedSide: FeedSide = FeedSide.Left,
 ) {
     AnimatedVisibility(
         visible = state.isOpen,
@@ -67,16 +70,28 @@ fun MenuOverlay(
         exit = fadeOut(tween(120)),
         modifier = modifier.fillMaxSize(),
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(MenuColors.Scrim)) {
+        // Panel sits on the same side as the feed pane (its anchor
+        // edge). When the operator has the feed on the right, the
+        // panel slides in from the right; the gesture that opens it
+        // (RIGHT-from-feed in feed-right layout) feels spatially
+        // correct — the menu appears where the eye is already
+        // pointed.
+        val isLeft = feedSide == FeedSide.Left
+        val alignment = if (isLeft) Alignment.CenterStart else Alignment.CenterEnd
+        Box(
+            modifier = Modifier.fillMaxSize().background(MenuColors.Scrim),
+            contentAlignment = alignment,
+        ) {
             AnimatedVisibility(
                 visible = state.isOpen,
-                enter = slideInHorizontally(tween(180)) { -it } + fadeIn(tween(140)),
-                exit = slideOutHorizontally(tween(140)) { -it } + fadeOut(tween(120)),
+                enter = slideInHorizontally(tween(180)) { if (isLeft) -it else it } + fadeIn(tween(140)),
+                exit = slideOutHorizontally(tween(140)) { if (isLeft) -it else it } + fadeOut(tween(120)),
             ) {
                 MenuPanel(
                     slotRows = slotRows,
                     versionLine = versionLine,
                     onSlotSelected = onSlotSelected,
+                    onSettingsSelected = onSettingsSelected,
                 )
             }
         }
@@ -88,6 +103,7 @@ private fun MenuPanel(
     slotRows: List<SlotRow>,
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
+    onSettingsSelected: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
 
@@ -116,11 +132,43 @@ private fun MenuPanel(
                     },
                 )
             }
+            // UX & Config chapter — operator's wall-layout controls
+            // live in a small section below the channels block. Same
+            // WyzeGrid family: a section title + a focusable row.
+            Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
+            SectionTitle("WALL")
+            MenuRow(
+                row = SlotRow(
+                    slotIndex = -1,
+                    title = "Settings",
+                    detail = "layout · width · font · side",
+                    detailStyle = SlotRow.DetailStyle.Default,
+                ),
+                onSelect = onSettingsSelected,
+            )
         }
         Column {
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             FooterLine(versionLine)
         }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = text,
+            color = MenuColors.RowLabel,
+            fontSize = 13.sp,
+            letterSpacing = 2.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

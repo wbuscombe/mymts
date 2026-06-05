@@ -215,6 +215,12 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** Out of scope for the navigation chapter (chapter is whole-wall D-pad UX, not reading flow). Cross-device handoff also needs care: QR is the simple form (no auth, no pairing), notification-to-phone requires a one-time pairing flow which is a small but real surface. Decide which form (or both) at design time.
 **Reconsider when:** Operator wants a richer reading flow than the in-place safe summary. Likely pairs with item B (feed UX list/sections) since "select to send to phone" is the natural next action verb once feed items are selectable.
 
+## Overall UI sizing — deferred (Stage 8 closeout, operator-chosen)
+
+**What:** A global UI scale/density setting (e.g. `Compact / Default / Roomy / Spacious`) that applies to ALL wall chrome at once — feed, grid chrome, ticker, menu — implemented as a `CompositionLocal` density override. Above the per-piece feed-width and feed-font settings already shipped.
+**Why-not-now:** Surfaced as the vision question called for in the Stage 8 chapter prompt (§5). The operator chose to defer until the wall is on its real production hardware (the new MyMTS box, in transit) where it can be tuned against an actual 10-ft viewing distance. The per-piece controls (feed width + feed font + grid side) ship now and cover the immediate skim/legibility needs; revisit whether a global scale is still wanted once the operator's been at the real box for a session.
+**Reconsider when:** New MyMTS box arrives, is driving a real TV at the wall's intended distance, and the operator's at-the-box feel-test surfaces "I want EVERYTHING bigger/smaller in lockstep, not just the feed." If so, implement as a single CompositionLocal density multiplier with the same 4-preset shape as the per-piece controls; persist alongside WallSettings.
+
 ## Feed filtering / search UI — deferred (Stage 7 closeout)
 
 **What:** A D-pad-driven filter or search bar in the feed pane — filter by source (toggle which sections show), by keyword, by category if the helper ever surfaces one. Stage 7 (the feed restructure) deliberately did NOT build this — it shipped sectioned-by-source as the structural change without adding interactive filtering on top.

@@ -272,6 +272,20 @@ The feed now groups items by source (case-insensitive alphabetical). Each source
 9. **Channel picker shows group chip.** Open the channel picker overlay (navigate to the grid, press SELECT on a cell for controls, press OK on "Channel"). The overlay header shows "SLOT n · LIVE i/j" (i = current live-channel group position, j = total live channels) or "SLOT n · OFFLINE i/k" with appropriate chip color. Cycling LEFT/RIGHT past the boundary flips the chip (e.g., from "LIVE 4/4" past the last live channel to "OFFLINE 1/k").
 10. **Channel picker cycling is robust.** Cycle LEFT/RIGHT repeatedly to wrap between live and offline groups — no crashes, focus stays on the active entry, chip updates correctly each cycle.
 
+### UX & Config (settings overlay)
+
+Verify the live-configurable feed width, font scale, and side-anchor behaviors. Run these checks within the same at-the-box session as the navigation chapter's feel-test:
+
+1. **Settings row visible in menu.** Open the side menu (LEFT from feed in Feed-Left layout). Below the channel slots, a WALL section appears with a "Settings" row.
+2. **Settings overlay opens.** Press OK on Settings — a centered popup opens with three rows: Feed width / Feed font / Feed side, each showing the current value.
+3. **Feed width cycles.** Focus Feed width and press RIGHT: the feed pane width cycles to the next preset (Default → Wide → Narrow → Default); the grid resizes to fill the rest. LEFT also cycles. SELECT also cycles forward.
+4. **Feed font legible at distance.** Focus Feed font and cycle through Small / Default / Large — the feed's title and summary type sizes update live. Smallest preset (0.88×) is still legible from 10 ft; largest (1.18×) fits within the pane without overflow.
+5. **Feed side swaps layout.** Focus Feed side and cycle to Feed Right — the feed pane swaps to the right side of the wall; the video grid swaps to the left. The menu side panel re-anchors to the right (slides from the right edge) so it remains on the feed's outer edge.
+6. **Navigation mirrors with Feed Right.** With Feed Right active: from feed press LEFT → enters grid (mirror of original RIGHT behavior). From feed press RIGHT → opens the menu. From grid's rightmost column press RIGHT → spills back into the feed. UP from any zone still reaches the ticker; DOWN from the ticker still returns to the lastLowerZone.
+7. **Settings overlay dismissal.** Press BACK in the settings overlay → overlay dismisses, side menu remains open. Press BACK again → menu closes; focus returns to the wall in the new orientation.
+8. **Persistence across relaunch.** Force-stop the app (or reboot the box) and relaunch → Width/Font/Side values persist from the operator's last session; the wall comes up in the saved orientation.
+9. **Focus accent position consistent.** With Feed Right active, verify the visual focus accent on a focused feed item still appears on the row's LEFT edge (the 3 dp WyzeGrid-green bar) — the accent position is the row's inner edge regardless of which side the feed occupies.
+
 ### Restore WyzeGrid to camera-box state
 
 `.182` is WyzeGrid's box per Model A. Whether or not you disabled WyzeGrid for the session, end the session by relaunching it:

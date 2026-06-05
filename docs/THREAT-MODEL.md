@@ -236,6 +236,62 @@ None beyond the existing T-H1 / T-T2 mitigations. Restructuring adds no new vect
 
 ---
 
+
+## UX & Config — A1 + B1 reverify (2026-06-04)
+
+**Claim:** The UX & Config chapter introduces three operator-facing wall-layout knobs (feed width, feed font scale, feed side) via discrete presets persisted in SharedPreferences. A1 boundary holds: no new web-fetch or HTML-render surface. B1 boundary holds: settings persistence contains no secrets, no PII, no absolute paths — integer ordinals only.
+
+**Prior work connection:** This entry reverifies the closed door confirmed in "Navigation chapter — feed-expand A1 confirmation" and "Feed restructure — A1 reverify" (both 2026-06-04). The settings UI and persistence do not extend fetch or markup-interpretation surfaces. Feed-side swap is a layout-only change with a pure-Kotlin parameter on the focus model.
+
+**Load-bearing code paths checked (adversarially):**
+
+- **Settings data + defaults:** `app/src/main/java/com/mymts/data/settings/WallSettings.kt` (lines 26–96) — data class `WallSettings` holds three enums (`FeedWidth`/`FeedFontScale`/`FeedSide`) with discrete presets. Width: Narrow 0.22 / Default 0.28 / Wide 0.36 fractions. Font: Small 0.88 / Default 1.0 / Large 1.18 multipliers. Side: Left (default) / Right. Ordinal-mapping helpers (`feedWidthFromOrdinal` etc., lines 88–95) fall back to safe defaults for out-of-range, ensuring partial corruption doesn't discard other values.
+
+- **Persistence in LineupStore:** `app/src/main/java/com/mymts/data/lineup/LineupStore.kt` (lines 92–206) — three new SharedPreferences integer keys: `KEY_FEED_WIDTH` / `KEY_FEED_FONT` / `KEY_FEED_SIDE`. `updateWallSettings()` persists ordinals via `putInt`; `readWallSettingsFromDisk()` decodes ordinals back to enums with per-component fallback. Same `"mymts_lineup"` container as existing lineup overrides — single on-device store, not parallel or network-sourced. No secrets, no PII, no paths.
+
+- **Settings UI (pure Compose Text):** `app/src/main/java/com/mymts/ui/menu/SettingsOverlay.kt` (lines 64–225) — centered popup with three `SettingRow` composables. Each row renders two `Text` widgets (title + value label) and a `Box` focus indicator. UP/DOWN navigates via Compose's focus system; LEFT/RIGHT on a focused row calls `onCycle` and live-applies via `LineupStore`. No network, no fetcher invocation, no HTML render.
+
+- **Focus model gains feedSide parameter:** `app/src/main/java/com/mymts/ui/nav/WallFocusModel.kt` (lines 52–73) — `apply()` signature extended with `feedSide: FeedSide = FeedSide.Left` parameter (line 58). Default preserves signature compatibility; existing 38 tests pass unchanged. Spatial rules in `applyTicker`/`applyFeed`/`applyGrid` use `feedSide` to derive `toGrid`/`toMenu` / `intoGrid` directions (lines 144–145, 192–195, 225–226). Pure Kotlin, no network, no state mutation — all paths are function-local.
+
+- **Feed-side-aware layout swap:** `app/src/main/java/com/mymts/ui/wall/WallScreen.kt` (lines 302–308) — Row composition branches on `wallSettings.feedSide`: Left renders `Row { feedPane; divider; videoGrid }`, Right renders `Row { videoGrid; divider; feedPane }`. Children are defined once (lines 269–301) as composable lambdas so focus bindings + subscriptions are reused unchanged; only the order changes.
+
+- **Menu slide direction mirrors feed side:** `app/src/main/java/com/mymts/ui/menu/MenuOverlay.kt` (lines 79–88) — `alignment` and `slideInHorizontally`/`slideOutHorizontally` branch on `isLeft` (line 79). Feed-Left panel slides from left; Feed-Right panel slides from right. Gesture that opens the menu (RIGHT-from-feed in feed-right) feels spatially correct.
+
+- **FeedPane accepts fontScale:** `app/src/main/java/com/mymts/ui/wall/FeedPane.kt` (line 75) — `fontScale: Float = 1f` parameter. All text `sp` values are multiplied by `fontScale` (invoked at call site via `wallSettings.feedFontScale.multiplier`, WallScreen line 278). Legibility floor enforced by `FeedFontScale.Small = 0.88`, asserted by `WallSettingsTest` (line 80–88).
+
+- **No fetch on side swap or width/font cycle:** The three cycle functions in `LineupStore` (`cycleFeedWidth()` / `cycleFeedFontScale()` / `cycleFeedSide()`, lines 101–114) call `updateWallSettings()` which writes to SharedPreferences and updates the local `_wallSettings` state. No `FeedRepository.start()` re-trigger, no `HelperClient.fetchFeed()` invocation — the focus model and layout adapt to the new setting without network calls.
+
+- **Settings persistence: integer ordinals only, no secrets.** (T-T6 sibling) `LineupStore` stores only integer enum ordinals, same format as existing `KEY_AUDIBLE_SLOT` (-1 for muted, 0+ for slot index). No slugs, no URLs, no credentials. The "no secrets / no PII / no absolute paths" promise is preserved by construction — the only values persisted are ordinal indices of finite enums.
+
+- **No new HTML rendering capability:** a grep across `app/src/main/java/com/mymts/ui/menu/` for `WebView`, `HtmlCompat`, `Html.from`, `Markwon`, `JSoup`, or `AndroidView` containing a web renderer finds zero new imports. The settings overlay is pure Compose `Text` + `Box` + focus management.
+
+**Feed-Right orientation test coverage (UX & Config chapter §3 invariants):**
+
+`app/src/test/java/com/mymts/nav/WallFocusModelTest.kt` (lines 395–517) — 11 new tests in the "Feed-Right orientation" section (lines 412–517):
+- `feed-right LEFT enters grid` (mirrors feed-left RIGHT; line 412–419)
+- `feed-right RIGHT opens menu` (mirrors feed-left LEFT; line 421–424)
+- `feed-right grid cell-boundary rules` (4 spatial-rule tests; lines 426–458)
+- `feed-right FEED→GRID→FEED round-trip preserves both indices` (line 470–485)
+- `feed-right no-trap invariant — every zone still exitable` (line 487–505)
+- `feed-right vs feed-left LEFT-RIGHT are mirror images` (line 507–517)
+
+All 49 WallFocusModel tests pass (38 pre-existing + 11 new).
+
+**Connection to T-T2 and T-H1:** This entry **does not change** the existing T-T2 (HTML smuggled into the feed pane → XSS-equivalent) or T-H1 (hostile RSS feed content) mitigations. Settings UI is a consumer of the helper's already-stripped output; it neither extends nor weakens those mitigations. The boundary they pin (no HTML interpretation on the TV) remains the same.
+
+**Four red-flag patterns from prior feed-expand entry (still apply and still not breached):**
+
+1. **WebView mount on settings or feed items.** Not added.
+2. **Fetch on setting change.** Not added — cycle functions write to SharedPreferences and update local state only.
+3. **HTML-interpretation library.** Not added to wall or menu classpath.
+4. **Setting-value mutation from network state.** Settings are persisted integers; no remote source of truth.
+
+**Residual risk:**
+
+None beyond the existing T-H1 / T-T2 mitigations. The UX & Config chapter adds no new vector and does not weaken the existing boundary. The risk to the feed system remains the helper's parser (T-H1); UX & Config does not compound it. The risk to the menu remains the existing Trust Bar C2 honest-degradation + C3 staleness principles (T-T6, T-T7); settings persistence adds no credentials or exfiltration surface.
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

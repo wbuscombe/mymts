@@ -72,6 +72,7 @@ fun FeedPane(
     focusedIndex: Int? = null,
     expandedIndex: Int? = null,
     onItemCountChanged: (Int) -> Unit = {},
+    fontScale: Float = 1f,
 ) {
     val state by repository.state.collectAsState()
     val items = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
@@ -121,7 +122,7 @@ fun FeedPane(
             ) {
                 itemsIndexed(entries) { entryIndex, entry ->
                     when (entry) {
-                        is FeedListEntry.Header -> SectionHeader(entry)
+                        is FeedListEntry.Header -> SectionHeader(entry, fontScale)
                         is FeedListEntry.Item -> {
                             // Map back from entries-list index to flat
                             // focus index so the focused-row check is
@@ -132,6 +133,7 @@ fun FeedPane(
                                 item = entry.item,
                                 focused = focusedIndex == focusIndex,
                                 expanded = expandedIndex == focusIndex,
+                                fontScale = fontScale,
                             )
                             Divider(color = Color(0x14FFFFFF), thickness = 1.dp)
                         }
@@ -211,7 +213,7 @@ private fun PaneHeader(stale: Boolean, fetchOk: Boolean, itemCount: Int) {
  * gap rather than reading old items as current.
  */
 @Composable
-private fun SectionHeader(entry: FeedListEntry.Header) {
+private fun SectionHeader(entry: FeedListEntry.Header, fontScale: Float = 1f) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -226,7 +228,7 @@ private fun SectionHeader(entry: FeedListEntry.Header) {
             Text(
                 text = entry.source.uppercase(),
                 color = WallColors.LabelPrimary,
-                fontSize = 12.sp,
+                fontSize = (12.sp.value * fontScale).sp,
                 letterSpacing = 1.6.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -239,7 +241,7 @@ private fun SectionHeader(entry: FeedListEntry.Header) {
         Text(
             text = "${entry.itemCount} ${if (entry.itemCount == 1) "item" else "items"}",
             color = WallColors.LabelGhost,
-            fontSize = 10.sp,
+            fontSize = (10.sp.value * fontScale).sp,
             letterSpacing = 0.8.sp,
         )
     }
@@ -277,6 +279,7 @@ private fun FeedRow(
     item: FeedItem,
     focused: Boolean = false,
     expanded: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     val timeChip = remember(item.publishedAtIso, item.fetchedAtIso) {
         RelativeTime.render(item.publishedAtIso) ?: RelativeTime.render(item.fetchedAtIso)
@@ -314,7 +317,7 @@ private fun FeedRow(
                     Text(
                         text = timeChip,
                         color = WallColors.LabelGhost,
-                        fontSize = 10.sp,
+                        fontSize = (10.sp.value * fontScale).sp,
                         fontFamily = FontFamily.Monospace,
                     )
                 }
@@ -325,8 +328,12 @@ private fun FeedRow(
                 // Expanded headlines step up to be readable from the
                 // couch (the wall's primary viewing distance). Same
                 // type ramp as the SlotControlsOverlay's panel title.
-                fontSize = if (expanded) 18.sp else 15.sp,
-                lineHeight = if (expanded) 23.sp else 19.sp,
+                // fontScale (1.0 default) is the operator's "Feed
+                // font" setting; the smallest preset enforces a
+                // 10-ft legibility floor so we never collapse below
+                // readability.
+                fontSize = ((if (expanded) 18 else 15).sp.value * fontScale).sp,
+                lineHeight = ((if (expanded) 23 else 19).sp.value * fontScale).sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = if (expanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis,
@@ -341,8 +348,8 @@ private fun FeedRow(
                 Text(
                     text = item.summary,
                     color = if (expanded) WallColors.LabelPrimary else WallColors.LabelMuted,
-                    fontSize = if (expanded) 14.sp else 12.sp,
-                    lineHeight = if (expanded) 19.sp else 16.sp,
+                    fontSize = ((if (expanded) 14 else 12).sp.value * fontScale).sp,
+                    lineHeight = ((if (expanded) 19 else 16).sp.value * fontScale).sp,
                     maxLines = if (expanded) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -352,7 +359,7 @@ private fun FeedRow(
                 Text(
                     text = "OK to collapse · BACK to collapse",
                     color = WallColors.LabelGhost,
-                    fontSize = 10.sp,
+                    fontSize = (10.sp.value * fontScale).sp,
                     letterSpacing = 0.6.sp,
                 )
             }

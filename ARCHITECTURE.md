@@ -675,7 +675,53 @@ The menu's channel picker gains a small parallel feature: a "LIVE n/m" / "OFFLIN
 
 ---
 
-## 15. What this document deliberately does NOT specify yet
+## 15. Stage 8 — UX & Config (configurable wall layout)
+
+The wall gains a **settings model** enabling the operator to tune the feed pane's width, text scale, and side positioning — all discrete presets rather than continuous sliders, so each preset is tuned in code with intent and D-pad cycling handles selection cleanly.
+
+### The settings model
+
+`WallSettings` is a data class holding three enum fields:
+
+```
+WallSettings(
+  feedWidth: FeedWidth,       // Narrow (0.22), Default (0.28), Wide (0.36)
+  feedFontScale: FeedFontScale, // Small (0.88×), Default (1.0×), Large (1.18×)
+  feedSide: FeedSide            // Left, Right
+)
+```
+
+Each enum is discrete. `FeedWidth` multipliers {0.22, 0.28, 0.36} are applied at the row-layout level; `FeedFontScale` multipliers {0.88, 1.0, 1.18} scale all font sizes within `FeedPane` so the 10-foot legibility floor (asserted in `WallSettingsTest`) and overflow ceilings (tested at each preset boundary) hold. **Why discrete and not sliders?** Each preset has been tuned in code with specific intent — Small preserves legibility at distance, Large trades space for readability — and the D-pad's binary cycling (LEFT/RIGHT) maps cleanly to stepping through presets. Sliders require pointer-style interaction; discrete steps survive the operator's D-pad vocabulary without UI overhead.
+
+### Persistence in LineupStore
+
+`WallSettings` is persisted by **extending** `LineupStore` (the existing `SharedPreferences` container from Stage 5) rather than creating a parallel store. New integer-ordinal keys (`KEY_FEED_WIDTH`, `KEY_FEED_FONT`, `KEY_FEED_SIDE`) hold the ordinal position in each enum. Safe-fallback helpers — `feedWidthFromOrdinal()`, `feedFontScaleFromOrdinal()`, `feedSideFromOrdinal()` — default to the preset's initial value if a stored ordinal is out-of-range, so future enum extensions (e.g., adding `ExtraLarge` to `FeedWidth`) do not corrupt deployed settings. The same single-source-of-truth invariant from Stage 5 carries forward: menu and wall read the same `State<WallSettings>`, so they never disagree about the operator's choice.
+
+### Focus model derives spatial directions from feedSide
+
+`WallFocusModel.apply()` gains a `feedSide: FeedSide = FeedSide.Left` parameter (default preserves all 38 existing navigation tests without change). The feed zone's inner-edge gesture (gesture toward the grid) and outer-edge gesture (gesture toward the menu) are now computed from `feedSide`. When feed is on the left, RIGHT (inner edge) goes to grid and LEFT (outer edge) opens the menu; when on the right, directions flip. Similarly, grid-zone LEFT/RIGHT branches use side-aware variable names (`toGrid` / `toMenu`, `toFeed` / `intoGrid`) so the spatial logic reads clearly in both orientations. **11 new tests** in `WallFocusModelTest` pin the feed-right orientation: spatial-rule mirror checks, no-trap exitability invariant under feed-right, and FEED→GRID→FEED round-trip with preserved indices. Existing 38 tests remain untouched.
+
+### The settings overlay
+
+`SettingsOverlay` is a centered popup (WyzeGrid-family modal) with three focusable rows — one for each enum setting. **UP/DOWN** navigate between rows via Compose focus. **LEFT/RIGHT** on a focused row cycle its value; each press live-applies the setting (wall recomposes immediately) and persists to disk atomically. **SELECT** also cycles forward (useful when the operator is not certain of LEFT vs. RIGHT direction). **BACK** dismisses the overlay without persisting unsaved state (each cycle is immediate, so there is no unsaved state). Menu slide direction follows `feedSide` — anchored to the feed's outer edge, the menu opens where the operator's eye is already pointed.
+
+### Composables preserve subscribers
+
+`WallScreen` reads `wallSettings` from `LineupStore` once at the top level. The Row composable (`Row{feed, divider, grid}` or `Row{grid, divider, feed}` per `feedSide`) is composed once at the call site with the feed and grid composables defined as separate values **before** the Row is assembled. This pattern ensures that a `feedSide` swap does not recreate the `FeedRepository` subscription (held by `FeedPane`) or the `StreamPlayerManager` (held by `VideoGrid`) — both of which are expensive to initialize. The layout order changes; the subscriptions survive.
+
+`FeedPane` accepts `fontScale: Float` and multiplies all `sp` values by it; the legibility floor (`0.88×` at Small) and overflow ceiling (`1.18×` at Large) are asserted at test time in `WallSettingsTest`.
+
+### What's deliberately NOT here
+
+- **Feed filtering / search UI** — grouped with the Stage 7 feed-restructure chapter; filtering is orthogonal to layout.
+- **Section collapse / jump-by-source** — future enhancement if the operator wants to skip to a specific source header. Current UP/DOWN within sections suffice.
+- **Global UI density scale** — the operator raised this question during Stage 8 planning; surfaced as the vision question called for in the chapter prompt and the operator chose to defer to the BACKLOG (`"Overall UI sizing"`) for revisit once the new MyMTS box is on a real TV.
+- **Kiosk story** — long-uptime foreground watchdog. Unchanged; still deferred to the new MyMTS box.
+- **In-app full-article reading** — closed door, permanent. Feed expand remains a plain-text excerpt only.
+
+---
+
+## 16. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.
