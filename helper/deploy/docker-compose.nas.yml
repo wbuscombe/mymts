@@ -58,6 +58,13 @@ services:
       HTTPS_PORT: ${HTTPS_PORT:-8443}
       SSL_KEYFILE: ${SSL_KEYFILE:-/etc/ssl/mymts/helper.key}
       SSL_CERTFILE: ${SSL_CERTFILE:-/etc/ssl/mymts/helper.crt}
+      # LAN web client (2026-06-06). When set, the helper serves the
+      # static client at /app (same-origin → no CORS; mounted last so it
+      # can't shadow /api/*). The files arrive via the read-only bind
+      # mount below. Opt-in via .env; defaults on for this deploy since
+      # the operator is enabling it. Set WEB_CLIENT_DIR= (empty) in .env
+      # to disable without removing the mount.
+      WEB_CLIENT_DIR: ${WEB_CLIENT_DIR:-/app/web}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -71,6 +78,14 @@ services:
       # rewrite the key; ownership inside the container is 10001:10001
       # to match the non-root user.
       - /srv/docker/mymts-helper/_secrets:/etc/ssl/mymts:ro
+      # LAN web client static files — the repo-root `web/` tree, rsynced
+      # by deploy-helper.sh to `_web/` on the NAS. Mounted READ-ONLY: the
+      # client is inert static files (HTML/CSS/JS), credential-free, and
+      # the container can never rewrite them. Served at /app via
+      # WEB_CLIENT_DIR above. (web/ is a repo-root sibling of helper/, so
+      # it is NOT in the image build context — a bind mount is how it
+      # reaches the container without an image rebuild for web edits.)
+      - /srv/docker/mymts-helper/_web:/app/web:ro
     networks:
       - mymts-net
     # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed

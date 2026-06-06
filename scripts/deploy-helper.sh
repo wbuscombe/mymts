@@ -91,6 +91,16 @@ rsync -az --delete \
     --exclude '.env' \
     helper/ "$HOST:$REMOTE_PATH/_src/"
 
+# LAN web client static files (repo-root web/, a sibling of helper/ so
+# it isn't in the image build context). The NAS compose bind-mounts
+# _web/ read-only at /app/web; WEB_CLIENT_DIR (set in .env below) turns
+# the mount on. Inert static files only — no secrets, credential-free.
+echo "==> rsyncing web client static files"
+ssh "$HOST" "mkdir -p '$REMOTE_PATH/_web'"
+rsync -az --delete \
+    --exclude '.DS_Store' \
+    web/ "$HOST:$REMOTE_PATH/_web/"
+
 echo "==> rendering compose.yml on the NAS"
 ssh "$HOST" "cp '$REMOTE_PATH/_src/deploy/docker-compose.nas.yml' '$REMOTE_PATH/compose.yml'"
 
@@ -103,15 +113,21 @@ LOG_LEVEL=info
 FEED_POLL_INTERVAL_SECONDS=300
 FEED_RETENTION_DAYS=14
 CHANNEL_PROBE_INTERVAL_SECONDS=1800
+WEB_CLIENT_DIR=/app/web
 EOF
 
 echo "==> docker compose build --pull + up -d (the full cycle)"
 ssh "$HOST" "cd '$REMOTE_PATH' && docker compose -f compose.yml --env-file .env build --pull && docker compose -f compose.yml --env-file .env up -d"
 
 echo "==> waiting for /health to report the new SHA"
+# HTTPS-only since the TLS cutover (2026-06-04): the helper serves
+# 8443 and no longer listens on 8091. Poll the in-container HTTPS
+# endpoint with -k (loopback, self-fetch — cert verification is moot;
+# we only want liveness + the SHA). Previously this hit :8091 and would
+# report a false failure on an otherwise-good deploy.
 ssh "$HOST" "bash -s" <<EOF
 for i in \$(seq 1 30); do
-    SHA=\$(docker exec mymts-helper curl -fsS http://127.0.0.1:8091/health 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build_sha","?"))' 2>/dev/null || echo "")
+    SHA=\$(docker exec mymts-helper curl -fsSk https://127.0.0.1:8443/health 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build_sha","?"))' 2>/dev/null || echo "")
     if [[ "\$SHA" == "$BUILD_SHA" ]]; then
         echo "    /health build_sha matches: \$SHA"
         exit 0
