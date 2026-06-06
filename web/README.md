@@ -51,19 +51,40 @@ Then browse (on the LAN) to **`https://<LAN_IP>:8443/app/`**.
 > for a personal LAN tool and is why this client is LAN-only — it is
 > never exposed to the public internet.
 
-## What it renders (and what it doesn't)
+## What it renders — mirrors the Onn wall
 
-- **Feed** — sectioned by source, newest-first, plain-text summaries,
-  per-source counts, relative timestamps. Honest empty states.
-- **Ticker** — markets + sports, with SAMPLE pills and stale notes
-  preserved (never shows sample/stale as live).
-- **Channels** — live / offline / unknown status, honestly (a channel is
-  "live" only when the helper says live AND gives a URL).
-- **Health** — source/item counts, helper-reachable banner.
-- **NOT video (yet).** In-browser HLS playback of the channel grid via
-  `hls.js` is a clean follow-on (the URLs are the same public HLS the
-  helper resolves); deferred to keep this MVP dependency-free. The live
-  video grid lives on the TV wall.
+The layout mirrors `WallScreen`: a **scrolling ticker** across the top,
+a **feed pane** on the left, and a **2×2 video grid** on the right, in
+the MyMTS dark theme. A **gear button** (top-right) opens mouse-driven
+settings (there's no D-pad in a browser).
+
+- **Ticker** — a real horizontal **marquee** that scrolls; rotates
+  markets ↔ sports every ~18 s; hover to pause-and-read. SAMPLE pills
+  and stale notes preserved (never shows sample/stale as live).
+- **Video grid** — 2×2, plays the same public HLS the helper resolves
+  via `/api/channels`, using the vendored **`hls.js`** (`web/vendor/`,
+  pinned) or native HLS (Safari). A stream that won't load shows an
+  honest **offline** tile, never a faked-live one.
+- **Feed** — sectioned by source, newest-first, plain-text summaries.
+  Honest empty states. Source show/hide + text size live in Settings.
+- **Settings (gear)** — video-grid size (slider **and** a draggable
+  splitter), feed text size, feed source show/hide, and the channel
+  live/offline roster. **These are browser-local view prefs**
+  (localStorage) — the wall's own settings live on the TV; the web
+  client can't write them (no per-client helper state — that's the
+  cross-platform-profiles fork, deferred).
+
+## A1 / CSP — video playback is not web reading
+
+In-browser HLS is **inert stream playback** (the same thing the native
+ExoPlayer does), NOT article-web-reading — the closed door is about a web
+*reader*, which this isn't. The page CSP keeps `frame-src 'none'` and
+`object-src 'none'` (no iframes, no article embeds) and `script-src
+'self'` (vendored hls.js, no CDN); it widens `connect-src`/`media-src`
+to `https:` because hls.js fetches `.m3u8` + segments from arbitrary
+public stream CDNs. The client is **credential-free**, so a broad
+`connect-src` has nothing to exfiltrate, and the stream URLs come from
+the helper — not arbitrary input.
 
 ## Tests
 

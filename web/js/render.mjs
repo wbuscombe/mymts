@@ -59,6 +59,29 @@ export function tickerStaleNote(envelope) {
   return "";
 }
 
+// ----- feed source filter (browser-local view pref, mirrors the wall) -----
+
+/**
+ * Drop items whose source is in the hidden-set (case-insensitive). A
+ * DENYLIST — new sources show by default, same semantics as the native
+ * wall's hiddenSources. Pure; the web settings persist the set in
+ * localStorage (a view pref, not the TV's setting — the web client can't
+ * write the TV's on-device settings).
+ */
+export function filterHiddenSources(items, hiddenSet) {
+  if (!hiddenSet || hiddenSet.size === 0) return items ?? [];
+  const lower = new Set([...hiddenSet].map((s) => String(s).toLowerCase()));
+  return (items ?? []).filter((it) => {
+    const key = (it.source && it.source.trim()) ? it.source : "Unknown source";
+    return !lower.has(key.toLowerCase());
+  });
+}
+
+/** Playable channels only (live + has a URL) — for the in-browser grid. */
+export function playableChannels(channels) {
+  return (channels ?? []).filter((c) => channelStatus(c).playable);
+}
+
 // ----- feed: group by source, newest-first (mirrors FeedListBuilder) -----
 
 /**

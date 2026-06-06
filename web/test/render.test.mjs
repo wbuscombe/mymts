@@ -16,6 +16,8 @@ import {
   channelStatus,
   feedEmptyState,
   helperUnreachable,
+  filterHiddenSources,
+  playableChannels,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -100,4 +102,21 @@ test("helperUnreachable: only after a prior success then a failure", () => {
   assert.equal(helperUnreachable(false, true), true);    // had data, now failing
   assert.equal(helperUnreachable(false, false), false);  // never succeeded → "loading", not "down"
   assert.equal(helperUnreachable(true, true), false);    // healthy
+});
+
+test("filterHiddenSources: denylist case-insensitive, empty set = passthrough", () => {
+  const items = [{ source: "BBC" }, { source: "Reason" }, { source: "" }];
+  assert.deepEqual(filterHiddenSources(items, new Set()).length, 3);
+  assert.deepEqual(filterHiddenSources(items, new Set(["reason"])).map((i) => i.source), ["BBC", ""]);
+  // blank source hidden via the Unknown-source bucket label
+  assert.deepEqual(filterHiddenSources(items, new Set(["Unknown source"])).map((i) => i.source), ["BBC", "Reason"]);
+});
+
+test("playableChannels: only live + with a URL", () => {
+  const ch = [
+    { status: "live", current_url: "https://x/y.m3u8" },
+    { status: "live", current_url: null },     // contradictory → not playable
+    { status: "unavailable", current_url: null },
+  ];
+  assert.equal(playableChannels(ch).length, 1);
 });
