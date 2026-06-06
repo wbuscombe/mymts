@@ -206,16 +206,30 @@ The Operational Bar B1/B2/B5 properties (never bricks / always a way back / no s
 
 Per the at-the-box finale prompt, the operator confirmed **Model A — one kiosk app per box**. `onn-office` (`.182`) is WyzeGrid's permanent home for the cameras kiosk; MyMTS gets its own dedicated Onn box (in transit, not yet arrived). The kiosk / foreground-coexistence work is therefore deferred to the new-box-provisioning session — it must NOT run on `.182`, because testing MyMTS's foreground watchdog on WyzeGrid's box would reintroduce the Stage 1 two-watchdog thrash on the camera box, pointlessly. (The Stage 2 finding documented this exact contention.)
 
-### Checklist (run when the new box arrives)
+### Migration runbook (ordered — run top to bottom on the new box)
 
-1. **Physical setup.** Power on, connect HDMI/display, Wi-Fi or wired Ethernet, configure DHCP reservation on the router. Record the IP.
-2. **Update `ONN-BOXES.md`.** Add a new row for the new box with its stable location-based name (e.g. `mymts-display` or wherever it physically lives), IP, hardware (Amlogic S905Y4 / armeabi-v7a / Android 14), and role = MyMTS. Both repos' copies of `ONN-BOXES.md` get the update.
-3. **Install signed MyMTS.** Use `scripts/deploy-app.sh --device <new-ip>:5555 --archive-dir $HOME/.mymts/release` to push the current known-good APK from the dev Mac. Confirm `/api/channels` + the wall come up over HTTPS (no cleartext exception is left in the app — the cutover already happened).
-4. **Build + validate the kiosk / foreground / boot story THERE.** MyMTS gets its own long-uptime kiosk behavior on its own box — a foreground service + boot-receiver so it relaunches on reboot and holds the screen for its ambient-wall role (mirroring WyzeGrid's proven pattern — same lineage). Test:
-   - **Hold the foreground.** Run for at least 80 minutes (the Stage 1 finding's WyzeGrid eviction window) to confirm no second watchdog reclaims the foreground.
-   - **Survive a reboot.** Power-cycle the box; confirm MyMTS launches and reaches LIVE without manual intervention.
-   - **Survive a low-memory event.** Force-stop other apps + start a memory hog; confirm MyMTS is not evicted.
-5. **Confirm `.182` is unchanged.** WyzeGrid foreground + `WatchdogService` healthy; MyMTS dev install may remain on `.182` (harmless) but WyzeGrid is the intended foreground owner there.
+> The kiosk/boot **code** is built + unit-tested (commits in the kiosk chapter); this runbook is execution, not build-from-scratch. Steps marked **[STAGED]** are the on-hardware validations that genuinely need the box — they could not be tested before it arrived.
+
+**Prerequisite — helper is current.** Before provisioning the box, redeploy the helper so the new box gets the full surface (the 13 feed sources + the `/api/ticker/{markets,sports}` endpoints). On the NAS: `cd ~/docker/mymts-helper && git pull && docker compose up -d --build && curl -sk https://<LAN_IP>:8443/health | jq '.feeds.sources_count'` → expect **13**. Then `curl -sk https://<LAN_IP>:8443/api/ticker/markets | jq '.mode'` → `"markets"`. Standing rule: helper stays non-root / read_only / cap_drop ALL / dedicated bridge — **never the unrelated host container**.
+
+1. **Physical setup.** Power on, connect HDMI to the production TV, join the network (wired Ethernet preferred for a wall). In Android-TV settings enable Developer options → **USB/network debugging**.
+2. **DHCP reservation.** On the router, reserve a fixed IP for the box's MAC. **Record it** — call it `NEWIP` below. (Suggested: keep it near the helper, e.g. `<LAN_IP>`.)
+3. **ADB connect from the dev Mac.** `adb connect NEWIP:5555` → `adb devices` shows it `device`. (Accept the on-screen RSA prompt on the TV the first time.)
+4. **Fill in `ONN-BOXES.md`.** The `onn-mymts` row is pre-staged with IP `TBD-at-provision` — replace it with `NEWIP`, confirm hardware (Amlogic S905Y4 / armeabi-v7a / Android 14 / API 34) and the attached TV's resolution. Copy the same edit into the WyzeGrid repo's `ONN-BOXES.md` (keep the two identical).
+5. **Install signed MyMTS (health-gated).** From the repo on the dev Mac:
+   `scripts/deploy-app.sh --device NEWIP:5555 --archive-dir $HOME/.mymts/release`
+   The script builds a **release-signed** APK (refuses to push a debug-signed build — `apksigner` is the gate), installs, runs the health-gate, and promotes-or-rolls-back. The app's `HELPER_BASE_URL` is baked to `https://<LAN_IP>:8443` with the pinned cert (cleartext was removed at the TLS cutover), so no per-box URL edit is needed.
+   - **Operator input needed at this step:** `NEWIP`; and the release **keystore** must be reachable (the signing secret — never committed; same keystore used for the `.182` release installs).
+6. **Confirm the wall reaches the helper.** On the box, the wall launches automatically (LEANBACK launcher). Verify: feed pane populates (13 sources sectioned), at least one video tile reaches **LIVE**, the ticker shows real markets data (SAMPLE pills only on Brent/WTI/10Y). If the feed/tiles stay empty, re-check the helper prerequisite above and that the box can reach `<LAN_IP>:8443`.
+7. **Enable kiosk mode (the own-the-box role).** Kiosk is **opt-in, off by default** — enable it explicitly on *this* box only:
+   `adb -s NEWIP:5555 shell am start -n com.mymts/.MainActivity --ez kiosk true`
+   This persists the kiosk flag and starts the foreground service. (To undo: `--ez kiosk false`.) Confirm the service is up: `adb -s NEWIP:5555 shell dumpsys activity services com.mymts | grep -i KioskService`.
+8. **[STAGED] Validate kiosk uptime on hardware.** These need the running box and cannot be pre-tested:
+   - **Hold the foreground ≥ 80 min.** Leave the wall running; confirm it stays foregrounded (no eviction). Model A means nothing else should contend, so this should be uneventful — but it's the first real long-uptime run on this hardware budget.
+   - **Survive a reboot.** `adb -s NEWIP:5555 reboot`; confirm MyMTS relaunches on its own (BootReceiver → KioskService → wall) and reaches LIVE with no manual touch.
+   - **Survive low memory.** Start a couple of other apps / a memory hog; confirm MyMTS is not evicted (foreground service should protect it).
+9. **[STAGED] Run the accumulated at-the-box feel-test.** The navigation + feed-restructure + UX-config + ticker feel-tests (the sections below) are now runnable on the *MyMTS* box — its permanent home — rather than borrowed `.182`.
+10. **Confirm `.182` is unchanged.** WyzeGrid foreground + `WatchdogService` healthy. A lingering MyMTS dev install on `.182` is harmless: kiosk mode there is OFF (default), so MyMTS starts no foreground service and does not autostart on boot. If desired, `adb -s <LAN_IP>:5555 uninstall com.mymts` to remove it entirely — but do NOT touch WyzeGrid.
 
 ### Why this is *not* attempted on `.182`
 

@@ -8,8 +8,9 @@ Confirmed by Will **in person** — he physically operated the MyMTS dashboard o
 
 | Stable name | IP (ADB) | Physical location | Hardware | Roles (changeable) |
 |---|---|---|---|---|
-| **`onn-office`** | `<LAN_IP>:5555` | Upstairs office | onn. 4K Streaming Box (Amlogic S905Y4, armeabi-v7a, Android 14 / API 34, ~1.97 GB RAM). Has a small attached panel (1280×720). | WyzeGrid (cameras) **+ currently MyMTS dashboard (temporary)** |
+| **`onn-office`** | `<LAN_IP>:5555` | Upstairs office | onn. 4K Streaming Box (Amlogic S905Y4, armeabi-v7a, Android 14 / API 34, ~1.97 GB RAM). Has a small attached panel (1280×720). | WyzeGrid (cameras) **+ lingering MyMTS dev install (kiosk OFF — inert)** |
 | **`onn-basement`** | `<LAN_IP>:5555` | Basement | onn. 4K Streaming Box | WyzeGrid (cameras) |
+| **`onn-mymts`** *(pre-staged — fill in at provisioning, 2026-06-06)* | `TBD-at-provision:5555` | TBD (where the production TV lives) | onn. 4K Streaming Box (confirm Amlogic S905Y4 / armeabi-v7a / Android 14 / API 34 at provision) | **MyMTS kiosk (sole kiosk on this box — Model A)** |
 
 ## ⚠️ Correction notice — older WyzeGrid records are BACKWARDS
 
@@ -23,12 +24,14 @@ Practical consequence for WyzeGrid: any past "deploy to office" command that tar
 - **Treat function/role as a separate, changeable attribute** — listed in the "Roles" column, updated freely as what-runs-where changes.
 - Do **not** name a box by its current job (e.g. "the MyMTS box" or "the cameras box"). The office box currently runs *both* WyzeGrid and MyMTS; naming it by one job breaks when that changes.
 
-## Known upcoming change
+## Known upcoming change — IN PROGRESS (box arriving 2026-06-06)
 
-MyMTS will eventually move to its **own dedicated hardware** (per `MyMTS/docs/foundation/04-TECHNICAL-APPROACH.md §4` portability posture). When that happens:
-- `onn-office`'s role line drops the MyMTS dashboard and reverts to WyzeGrid-only.
-- The new MyMTS hardware gets its own stable location-based name here (e.g. `mymts-display` or wherever it physically lives) with its IP and role.
-- No existing names change — only roles and the new row.
+MyMTS moves to its **own dedicated hardware** (per `MyMTS/docs/foundation/04-TECHNICAL-APPROACH.md §4` portability posture). The `onn-mymts` row above is **pre-staged** for it — at provisioning, fill in the reserved IP (replacing `TBD-at-provision`), confirm the hardware/TV resolution, and rename `onn-mymts` if a location-based name fits better (the stable name should reflect where it physically lives; `onn-mymts` is a role-ish placeholder). The full provisioning runbook is in `docs/OPERATIONS.md §"New MyMTS box provisioning" → "Migration runbook"`.
+
+When provisioning completes:
+- `onn-office`'s role line stays WyzeGrid-only (the lingering MyMTS dev install there is inert — kiosk OFF by default — and may be uninstalled).
+- `onn-mymts` becomes the active MyMTS deploy target; MyMTS runs kiosk mode there as the **sole** kiosk on that box (Model A).
+- No existing names change — only the new row's IP/name/details get filled in.
 
 ## Maintenance
 
