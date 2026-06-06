@@ -422,6 +422,21 @@ The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW
 
 ---
 
+## Web client rework — CSP for in-browser HLS (2026-06-06)
+
+**Claim:** adding in-browser video (hls.js) to the LAN web client does not reopen the A1 closed door and does not weaken the LAN-only / credential-free posture.
+
+- **Video playback ≠ web reading.** hls.js plays the same public HLS streams the helper resolves (`/api/channels`) — inert stream playback, exactly what the native ExoPlayer does. The closed door forbids an in-app *article web reader*; this is not one. No article page is fetched, no HTML is rendered, no link is followed.
+- **CSP — scoped widening, locks preserved.** `script-src 'self'` (hls.js is vendored at `web/vendor/`, pinned — **no CDN**); `frame-src 'none'` + `object-src 'none'` stay (no iframes / article embeds); `connect-src`/`media-src` widened to `https:` because hls.js fetches `.m3u8` + segments from arbitrary public stream CDNs that can't be enumerated. The broader `connect-src` is acceptable because the client is **credential-free** (nothing to exfiltrate) and the stream URLs originate from the helper, not from arbitrary input. Documented in `web/README.md`.
+- **Unchanged:** LAN-only (helper bare IP, off `*.<DOMAIN>`, not tunneled/CF-Access), credential-free (`credentials:"omit"`), same-origin to the API (no CORS), helper core untouched. View prefs are browser-local (localStorage) — non-sensitive (grid size, source show/hide); no secret is stored.
+- **Honest degradation:** a stream that won't load shows an offline tile, never a faked-live one.
+
+**Traces to:** **A1** (playback not reading; no article fetch; markup-free), the native-over-web decision's *separate-client* extension (still LAN-only/credential-free), **C3** (offline tiles honest).
+
+## Sports ticker — current-games filter (2026-06-06)
+
+The ESPN scoreboard returns future fixtures off-season; showing them would be stale-as-current (a C3 violation). `ticker/sports.py::parse_scoreboard` filters to current games only (in-progress / recent-final / soon-scheduled; far-future + stale dropped; empty leagues omitted) — same SSRF-safe fetcher, same defensive strict parse (never raises), same keyless source. No new surface; the change is a correctness/honesty filter over already-fetched data. Pure + unit-tested. **Traces to:** **C3** (current, not stale-future), **A1** (defensive parse unchanged).
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

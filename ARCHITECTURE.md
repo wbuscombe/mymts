@@ -885,6 +885,14 @@ reaching an article page or iframing one. **A1 closed door holds — no
 in-browser web reader.** In-browser HLS video is a documented follow-on
 (the live grid lives on the TV wall).
 
+### Rework (2026-06-06) — mirror the wall + in-browser video + scrolling ticker
+
+After hands-on use, the web client was reworked to **read as the same app as the TV wall**, not a separate dashboard: a **scrolling ticker** (CSS marquee, markets↔sports rotation, hover-to-pause) across the top, a **feed pane** left, and a **2×2 video grid** right (mirroring `WallScreen`). The dashboard channel-roster moved into a settings panel. Video is played in-browser via the vendored **`hls.js`** (`web/vendor/`, pinned, loaded as `script-src 'self'` — no CDN) on the same public HLS URLs the helper resolves; a stream that won't load shows an honest **offline** tile. A mouse **gear** opens settings (no D-pad in a browser): video-grid size (slider + draggable splitter), feed text size, feed source show/hide, channel roster — all **browser-local view prefs** (localStorage), distinct from the TV's on-device settings (the web client has no write path to those; per-client helper state is the deferred cross-platform-profiles fork). The **CSP** widened only `connect-src`/`media-src` to `https:` for arbitrary stream CDNs (hls.js fetches `.m3u8` + segments); `frame-src 'none'`/`object-src 'none'`/`script-src 'self'` stay locked — **video playback is not a web reader; the A1 closed door holds**, and the credential-free client has nothing to exfiltrate over the broader `connect-src`.
+
+### Ticker — scroll + ESPN current-games sports (shared by both clients)
+
+Both clients render the ticker as a real scroller (native `TickerStrip.basicMarquee`; web CSS marquee). The substantive shared fix is **sports content grounded in ESPN's live state** (helper `ticker/sports.py`): the ESPN scoreboard returns the *next scheduled* games even off-season (e.g. the NFL endpoint serves September preseason fixtures in June), which a live ticker must not show. `parse_scoreboard` now keeps a game only if it's **current** — in-progress always, a final within ~12 h back ("today"), or scheduled within ~12 h forward ("later today") — and **drops far-future fixtures + stale results**; a league with no current games is **omitted entirely** (NFL-in-June → gone; MLB-in-June → shown). This is C3 honesty applied to sports: the ticker reflects what's *current*, and shows the honest "no games" line rather than padding with stale fixtures. The window logic is pure + unit-tested (mock in-season/off-season/live/final/scheduled). It composes with the curation chapter's league toggles: a league shows only when it is both curated-on AND currently-in-season-with-games.
+
 ### Remote access is a deferred future chapter
 
 Exposing the web client beyond the LAN — a genuinely separate public

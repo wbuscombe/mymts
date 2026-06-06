@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Web client reworked to mirror the wall + scrolling ticker + ESPN current-games sports (2026-06-06)
+
+Hands-on feedback: the web client looked like a foreign dashboard, the ticker didn't scroll, the video grid wasn't sizable, and the sports ticker showed stale out-of-season fixtures (NFL preseason months away, in June). All fixed.
+
+### Web client — mirrors the Onn wall
+- Reworked layout to mirror `WallScreen`: scrolling ticker (top) + feed pane (left) + **2×2 video grid** (right), MyMTS dark theme. The dashboard channel-roster moved into Settings.
+- **In-browser video:** vendored `hls.js@1.5.17` (`web/vendor/`, pinned, `script-src 'self'` — no CDN) plays the same public HLS the helper resolves via `/api/channels`; honest **offline** tiles when a stream won't load (`web/js/video.mjs`).
+- **Sizable grid:** a Settings slider **and** a draggable splitter set the feed/grid split; persisted in localStorage.
+- **Mouse settings (gear):** grid size, feed text size, feed source show/hide, channel roster — **browser-local view prefs** (the TV's settings live on-device; the web client has no write path — that's the deferred cross-platform-profiles fork).
+- **CSP:** widened `connect-src`/`media-src` to `https:` for arbitrary stream CDNs (hls.js); `frame-src 'none'`/`object-src 'none'`/`script-src 'self'` stay locked. Video playback is NOT a web reader — **A1 closed door held**; client stays LAN-only / same-origin / credential-free.
+- `render.mjs`: `filterHiddenSources` + `playableChannels` (pure, tested). Web tests: **11** (`node --test web/test/`).
+
+### Ticker — real scroll (both clients)
+- Web ticker is now a real horizontal **marquee** (CSS, markets↔sports rotation every ~18 s, hover-to-pause). Native `TickerStrip` already scrolled (`basicMarquee`) — confirmed, unchanged.
+
+### Sports ticker — ESPN current-games only (the substantive fix)
+- `ticker/sports.py::parse_scoreboard(now_ms=…)` now keeps only **current** games: in-progress always; a final within ~12 h back ("today"); scheduled within ~12 h forward ("later today"). **Far-future fixtures and stale results are dropped; a league with no current games is omitted entirely** — so NFL-in-June (only September fixtures) disappears while MLB-in-June (today's games) shows. Reproduced the bug against live ESPN, validated the fix against it. C3 honesty applied to sports.
+- Per-status formatting: live → "AWY 4–6 HOM · Bot 9th"; final → "· Final"; scheduled-today → "AWY @ HOM · 7:30 PM ET". Defensive parse unchanged (never raises). 16 sports tests (`test_ticker_sports.py`). Helper suite **175**.
+
+### Markets ticker
+- Unchanged honest real/SAMPLE labeling (Stooq-from-NAS anti-bot block logged separately; CoinGecko BTC/ETH real).
+
+### Operator action
+- Helper redeploy required (the ESPN current-games filter is helper-side): `scripts/deploy-helper.sh`; re-verify `/api/ticker/sports` shows current-only (MLB now, no NFL preseason). The web rework is static — picked up by the same deploy (rsync of `web/`).
+
+### Deferred (BACKLOG)
+- Remote (non-LAN) web client; team-level sports curation; news-in-web-ticker; deeper web↔TV settings parity (needs per-client helper state / cross-platform-profiles fork). Stooq indices source still open.
+
+### Standing rules
+- A1 held (video ≠ reading); `.182`/WyzeGrid untouched; unrelated host services never touched; no secrets/absolute-paths; hls.js pinned + vendored.
+
 ## Curation & preferences — sports curation + ticker news + source toggles (2026-06-06)
 
 The "tune what I see" controls in the settings menu. Some choices are FEEL-TEST items — the mechanism is built and configurable, flagged for the operator to confirm after using the wall on real hardware (see findings/14).
