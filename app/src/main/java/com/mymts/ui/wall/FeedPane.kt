@@ -73,10 +73,20 @@ fun FeedPane(
     expandedIndex: Int? = null,
     onItemCountChanged: (Int) -> Unit = {},
     fontScale: Float = 1f,
+    hiddenSources: Set<String> = emptySet(),
+    feedRecency: com.mymts.data.settings.FeedRecency = com.mymts.data.settings.FeedRecency.All,
 ) {
     val state by repository.state.collectAsState()
-    val items = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
+    val rawItems = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
     val stale = repository.isStale()
+    val filtersActive = hiddenSources.isNotEmpty() || feedRecency != com.mymts.data.settings.FeedRecency.All
+    // Apply the operator's feed filters (source denylist + recency) to the
+    // raw items BEFORE grouping — the sectioned layout, per-source freshness
+    // chips, and the focus flat-index all then operate on exactly the
+    // visible set. Pure; operates on already-fetched plain text (A1).
+    val items = remember(state.snapshot, hiddenSources, feedRecency) {
+        FeedListBuilder.applyFilters(rawItems, hiddenSources, feedRecency, System.currentTimeMillis())
+    }
 
     // Build the sectioned entries. We memoize on the snapshot identity
     // so freshness chips refresh whenever the helper's poll lands a new
@@ -86,10 +96,13 @@ fun FeedPane(
     // network poll, but the operator's primary need is "is this source
     // flowing or not?", which the current per-poll rebuild already
     // answers.
-    val entries = remember(state.snapshot) {
+    val entries = remember(items) {
         FeedListBuilder.build(items = items, now = System.currentTimeMillis())
     }
 
+    // Report the FILTERED item count — this is what the focus model
+    // navigates (feedIndex 0..count-1), so it must match what the pane
+    // actually shows or focus would run off the end of a filtered list.
     LaunchedEffect(items.size) { onItemCountChanged(items.size) }
 
     val listState = rememberLazyListState()
@@ -113,7 +126,13 @@ fun FeedPane(
         PaneHeader(stale = stale, fetchOk = state.lastFetchOk, itemCount = items.size)
         Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
         if (entries.isEmpty()) {
-            EmptyFeed(stale = stale, fetchOk = state.lastFetchOk)
+            // Honest empty state — distinguish "filters hid everything"
+            // (operator can widen the filter) from "no data yet / stale".
+            if (filtersActive && rawItems.isNotEmpty()) {
+                EmptyFeedFiltered(recencyActive = feedRecency != com.mymts.data.settings.FeedRecency.All)
+            } else {
+                EmptyFeed(stale = stale, fetchOk = state.lastFetchOk)
+            }
         } else {
             LazyColumn(
                 state = listState,
@@ -383,5 +402,25 @@ private fun EmptyFeed(stale: Boolean, fetchOk: Boolean) {
             color = WallColors.LabelGhost,
             fontSize = 12.sp,
         )
+    }
+}
+
+/**
+ * Honest empty state when the operator's filters hid everything (there
+ * IS data, the filters just excluded it) — never a blank pane that looks
+ * broken. Tells the operator it's a filter, not an outage.
+ */
+@Composable
+private fun EmptyFeedFiltered(recencyActive: Boolean) {
+    val text = if (recencyActive) {
+        "No items match your feed filters (sources / recency). Widen them in Settings."
+    } else {
+        "No items from the selected sources. Turn sources back on in Settings → Feed sources."
+    }
+    Box(
+        modifier = Modifier.fillMaxSize().padding(20.dp),
+        contentAlignment = Alignment.TopStart,
+    ) {
+        Text(text = text, color = WallColors.LabelGhost, fontSize = 12.sp)
     }
 }

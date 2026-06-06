@@ -895,7 +895,36 @@ sidesteps all of it by being unreachable from outside the network.
 
 ---
 
-## 19. What this document deliberately does NOT specify yet
+## 19. Stage 12 — feed filtering (by source + recency)
+
+The feed gains operator-controlled **filtering** — narrow it to chosen sources and/or a recency window — the filtering half of usage-feedback item B (the sectioning half shipped in Stage 7). All of it operates on the plain-text items the helper already serves: **no new fetch, no web, A1 holds.**
+
+### What's built (and the search decision)
+
+- **Source filter (denylist).** `WallSettings.hiddenSources: Set<String>` — toggle which of the feed's sources appear. Stored as a *denylist* ("hide these"), so a newly-added feed source shows by default rather than being silently hidden. Also satisfies the "feed source enable/disable" curation idea (item C).
+- **Recency filter.** `WallSettings.feedRecency` (`All` / `Last hour` / `Last 6h` / `Last 24h`) — drop items older than the window (published time preferred, fetched fallback; items with no parseable timestamp are kept under `All`, dropped under a bounded window since we can't prove them recent).
+- **Free-text search — DELIBERATELY DEFERRED.** D-pad free-text entry on a 10-ft wall is high-friction for low ambient value; rich source + recency filtering delivers most of the "narrow the feed" value without an on-screen keyboard. Logged in `docs/BACKLOG.md`; revisit if the operator finds source/recency insufficient after using the wall.
+
+### Where it lives + the pure core
+
+The filter is a **pure step** in `FeedListBuilder.applyFilters(items, hiddenSources, recency, now)`, applied BEFORE `build()` groups the items — so the sectioned layout, the per-source freshness chips, and the focus flat-index all operate on exactly the visible set. Controls live in the settings surface (`SettingsOverlay`): a "Feed recency" cycle row + a "Feed sources…" row that opens `SourceFilterOverlay` (a D-pad toggle list of the feed's distinct sources). Both persist on-device via `LineupStore` (denylist as a JSON string-set, recency as an ordinal).
+
+### Focus model unchanged; honest empty states
+
+The filter UIs are **modal overlays** (`MenuState.PendingSelection.Settings` / `SourceFilter`) — they don't change `WallFocusModel`'s zone graph, so the no-trap invariants hold unmodified (the 49 nav tests pass unchanged). The one focus-relevant subtlety: `FeedPane` reports the **filtered** item count to the focus model (`onItemCountChanged`), so `feedIndex` can't run off the end of a filtered list. When a filter hides everything, the pane shows an honest, filter-aware empty state ("No items match your feed filters…") — never a blank pane that looks broken — and per-source freshness chips persist on the sections that remain.
+
+### Reuse note for a future ticker-news mode
+
+The "which items matter" notion here (source subset + recency) is the same shape a future ticker-news mode would consume to decide which headlines to scroll. The filter logic is kept pure + parameterized so it can be reused there without rework; the ticker-news mode itself is a separate chapter (not built here).
+
+### What's deferred
+
+- Free-text search (D-pad friction; BACKLOG).
+- Topic/keyword **auto-classification** — a foundation v2 idea; topic filtering = keyword search, not auto-tagging (BACKLOG, stays deferred).
+
+---
+
+## 20. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

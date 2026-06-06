@@ -1,6 +1,7 @@
 package com.mymts.ui.wall.feed
 
 import com.mymts.data.helper.FeedItem
+import com.mymts.data.settings.FeedRecency
 
 /**
  * Pure transform from a flat `List<FeedItem>` into a section-ordered
@@ -21,6 +22,51 @@ import com.mymts.data.helper.FeedItem
  * touching the focus model.
  */
 object FeedListBuilder {
+
+    /**
+     * Pure feed-filter step (feed-filtering chapter). Applied to the raw
+     * items BEFORE [build] groups them — so the sectioned layout, the
+     * per-source freshness chips, and the focus flat-index all operate on
+     * exactly the filtered set the operator chose to see.
+     *
+     * - **Source denylist:** drop items whose source is in
+     *   [hiddenSources] (matched case-insensitively; the blank-source
+     *   "Unknown source" bucket is hidden iff that label is in the set).
+     *   A denylist means a newly-added source shows by default.
+     * - **Recency window:** when [recency] is bounded, drop items older
+     *   than its window. Items with no parseable timestamp are kept under
+     *   `All` and dropped under a bounded window (we can't prove recent).
+     *
+     * Operates only on already-fetched inert plain text — no fetch, no
+     * web, no new surface (A1 holds). Pure + unit-tested.
+     */
+    fun applyFilters(
+        items: List<FeedItem>,
+        hiddenSources: Set<String>,
+        recency: FeedRecency,
+        now: Long,
+    ): List<FeedItem> {
+        val hiddenLower = hiddenSources.map { it.lowercase() }.toSet()
+        val maxAge = recency.maxAgeMs
+        return items.filter { item ->
+            val sourceKey = item.source.ifBlank { UNATTRIBUTED_KEY }.lowercase()
+            if (sourceKey in hiddenLower) return@filter false
+            if (maxAge == null) return@filter true
+            val ts = item.itemTimestampMs() ?: return@filter false  // no timestamp → not provably recent
+            (now - ts) <= maxAge
+        }
+    }
+
+    /**
+     * The distinct source labels present in [items], in the same
+     * alphabetical (case-insensitive) order the sections render — the
+     * list the source-filter UI offers as toggles. Blank sources collapse
+     * to the [UNATTRIBUTED_KEY] bucket label.
+     */
+    fun distinctSources(items: List<FeedItem>): List<String> =
+        items.map { it.source.ifBlank { UNATTRIBUTED_KEY } }
+            .distinct()
+            .sortedBy { it.lowercase() }
 
     /**
      * Build the entry list.

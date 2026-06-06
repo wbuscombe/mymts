@@ -228,11 +228,12 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** Surfaced as the vision question called for in the Stage 8 chapter prompt (§5). The operator chose to defer until the wall is on its real production hardware (the new MyMTS box, in transit) where it can be tuned against an actual 10-ft viewing distance. The per-piece controls (feed width + feed font + grid side) ship now and cover the immediate skim/legibility needs; revisit whether a global scale is still wanted once the operator's been at the real box for a session.
 **Reconsider when:** New MyMTS box arrives, is driving a real TV at the wall's intended distance, and the operator's at-the-box feel-test surfaces "I want EVERYTHING bigger/smaller in lockstep, not just the feed." If so, implement as a single CompositionLocal density multiplier with the same 4-preset shape as the per-piece controls; persist alongside WallSettings.
 
-## Feed filtering / search UI — deferred (Stage 7 closeout)
+## Feed filtering / search UI — FILTERING BUILT 2026-06-06; free-text SEARCH deferred
 
-**What:** A D-pad-driven filter or search bar in the feed pane — filter by source (toggle which sections show), by keyword, by category if the helper ever surfaces one. Stage 7 (the feed restructure) deliberately did NOT build this — it shipped sectioned-by-source as the structural change without adding interactive filtering on top.
-**Why-not-now:** Sectioned grouping already delivers most of the "skimmable" win the operator asked for. Adding filtering UI is its own chapter: it needs a focus surface for the filter chips, semantics for "filter while focus is on an item" (does focus reset? hide-and-collapse?), and decisions about whether filter state persists across helper polls. Keeping it as a separate chapter avoids entangling those decisions with the structural rewrite.
-**Reconsider when:** Operator finds source-grouping alone insufficient — usually a sign the source list grew (item F adds AP/Reuters etc.) and visual density needs trimming. Filter UI is natural to pair with item F.
+**Filtering BUILT (Stage 12, feed-filtering chapter):** source filter (denylist toggle — `WallSettings.hiddenSources`) + recency filter (All / 1h / 6h / 24h) in the settings menu, persisted; operates on already-fetched plain text (A1 held). See `ARCHITECTURE.md §19`, `docs/findings/13-feed-filtering.md`, the THREAT-MODEL reverify entry.
+**Free-text SEARCH — still deferred (operator-reversible):** D-pad on-screen-keyboard free-text entry on a 10-ft ambient wall is high-friction for low value; source + recency filtering delivers most of the "narrow the feed" benefit without text entry. If the operator wants keyword search after using the wall, it would still operate on the already-fetched plain text (no web search) via an Android-TV on-screen keyboard / character picker.
+**Topic/keyword AUTO-classification — stays deferred** (foundation v2 idea; topic filtering = keyword search, not auto-tagging).
+**Reconsider when:** the operator finds source/recency filtering insufficient and specifically wants to find a story by keyword at the wall.
 
 ## Feed section collapse / jump-by-source — deferred (Stage 7 closeout)
 

@@ -396,6 +396,19 @@ The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW
 
 ---
 
+## Feed filtering — A1 reverify (2026-06-06)
+
+**Claim:** feed filtering (source denylist + recency window) introduces no new fetch / web / HTML surface. It operates purely on the already-fetched inert plain-text items the helper serves.
+
+- **Pure, local, no fetch:** `FeedListBuilder.applyFilters()` is pure Kotlin over the in-memory `FeedItem` list (drop hidden sources; drop items older than the recency window). No `FeedRepository` re-trigger, no `HelperClient` call, no `LaunchedEffect` keyed on the filter that fetches. The filter UIs (`SettingsOverlay` recency row, `SourceFilterOverlay` toggle list) only write an on-device denylist/ordinal to SharedPreferences via `LineupStore` — no network, no markup.
+- **A1 unchanged:** rendering is still the navigation/restructure chapters' `Text`-only path; filtering changes *which* inert items show, never *how* they render. No WebView, no article fetch, no iframe.
+- **No new secret / no PII:** the persisted filter state is source labels (already public) + an enum ordinal. Mirrors the existing WallSettings persistence.
+- **Search deferred:** free-text search was not built (D-pad friction); if added later it would also operate on the already-fetched plain text (no web search) — flagged so a future implementation keeps that boundary.
+
+**Traces to:** **A1** (operates on already-stripped plain text; no new input surface), **C3** (honest empty/stale states preserved under filtering).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

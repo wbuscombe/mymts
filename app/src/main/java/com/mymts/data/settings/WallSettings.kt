@@ -27,11 +27,36 @@ data class WallSettings(
     val feedWidth: FeedWidth = FeedWidth.Default,
     val feedFontScale: FeedFontScale = FeedFontScale.Default,
     val feedSide: FeedSide = FeedSide.Left,
+    // Feed-filtering chapter (2026-06-06). `hiddenSources` is a DENYLIST
+    // of source labels the operator has switched off — stored as "hide
+    // these" (not "show these") so a NEWLY-added feed source shows by
+    // default rather than being silently hidden. `feedRecency` narrows
+    // the feed to a time window. Both operate purely on the already-
+    // fetched plain-text items (no new fetch; A1 holds).
+    val hiddenSources: Set<String> = emptySet(),
+    val feedRecency: FeedRecency = FeedRecency.All,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
     }
 }
+
+/**
+ * Recency window for the feed. `All` shows everything the helper
+ * retains; the bounded windows hide items whose timestamp is older than
+ * [maxAgeMs] (published time preferred, fetched time fallback — items
+ * with no parseable timestamp are kept under `All` and dropped under a
+ * bounded window, since we can't prove they're recent).
+ */
+enum class FeedRecency(val maxAgeMs: Long?, val displayName: String) {
+    All(null, "All"),
+    Hour(60 * 60 * 1000L, "Last hour"),
+    SixHours(6 * 60 * 60 * 1000L, "Last 6h"),
+    Day(24 * 60 * 60 * 1000L, "Last 24h"),
+}
+
+internal fun feedRecencyFromOrdinal(ordinal: Int): FeedRecency =
+    FeedRecency.values().getOrNull(ordinal) ?: FeedRecency.All
 
 /**
  * Width of the feed pane, expressed as a fraction of the wall's

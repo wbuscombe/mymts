@@ -65,6 +65,15 @@ class MenuState {
         pendingSelection = PendingSelection.Settings
     }
 
+    /**
+     * Open the feed source-filter overlay — a toggle list of the feed's
+     * distinct sources (feed-filtering chapter). Reached from the
+     * settings overlay's "Feed sources…" row.
+     */
+    fun openSourceFilter() {
+        pendingSelection = PendingSelection.SourceFilter
+    }
+
     fun dismissSelection() {
         pendingSelection = null
     }
@@ -83,6 +92,7 @@ class MenuState {
         data class SlotControls(val slotIndex: Int) : PendingSelection()
         data class SlotPicker(val slotIndex: Int) : PendingSelection()
         data object Settings : PendingSelection()
+        data object SourceFilter : PendingSelection()
     }
 }
 

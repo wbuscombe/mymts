@@ -44,6 +44,8 @@ import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
 import com.mymts.ui.menu.SettingsOverlay
+import com.mymts.ui.menu.SourceFilterOverlay
+import com.mymts.ui.wall.feed.FeedListBuilder
 import com.mymts.ui.menu.SlotControlsOverlay
 import com.mymts.ui.menu.SlotRow
 import com.mymts.ui.menu.rememberMenuState
@@ -280,6 +282,8 @@ fun WallScreen(
                     } else null,
                     onItemCountChanged = { feedItemCount = it },
                     fontScale = wallSettings.feedFontScale.multiplier,
+                    hiddenSources = wallSettings.hiddenSources,
+                    feedRecency = wallSettings.feedRecency,
                 )
             }
             val divider = @Composable {
@@ -390,7 +394,25 @@ fun WallScreen(
                 onCycleFeedWidth = { lineupStore.cycleFeedWidth() },
                 onCycleFeedFontScale = { lineupStore.cycleFeedFontScale() },
                 onCycleFeedSide = { lineupStore.cycleFeedSide() },
+                onCycleFeedRecency = { lineupStore.cycleFeedRecency() },
+                onOpenSourceFilter = { menu.openSourceFilter() },
                 onCancel = { menu.dismissSelection() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (pending is MenuState.PendingSelection.SourceFilter) {
+            // Distinct sources from the current feed snapshot drive the
+            // toggle list. Toggling persists to the denylist; BACK returns
+            // to the settings overlay (calmer than punting to the wall).
+            val feedSnapshot = feed.state.collectAsState().value.snapshot
+            val feedSources = remember(feedSnapshot) {
+                FeedListBuilder.distinctSources(feedSnapshot?.items.orEmpty())
+            }
+            SourceFilterOverlay(
+                sources = feedSources,
+                hiddenSources = wallSettings.hiddenSources,
+                onToggle = { source -> lineupStore.toggleHiddenSource(source) },
+                onCancel = { menu.openSettings() },
                 modifier = Modifier.fillMaxSize(),
             )
         }

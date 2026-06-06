@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Feed filtering — by source + recency (2026-06-06)
+
+The feed gains operator-controlled filtering (the filtering half of feedback item B). Narrow it to chosen sources and/or a recency window; all over the plain-text the helper already serves — no new fetch, A1 holds. Free-text search was deliberately deferred (D-pad friction).
+
+### Added
+- `WallSettings.hiddenSources: Set<String>` (source **denylist** — new sources show by default) + `WallSettings.feedRecency` (`All` / `Last hour` / `Last 6h` / `Last 24h`).
+- `FeedListBuilder.applyFilters(items, hiddenSources, recency, now)` — pure filter applied before grouping; `FeedListBuilder.distinctSources(items)` for the toggle list. `FeedFilterTest` (9 tests: denylist case-insensitive, recency windows + boundary, no-timestamp behaviour, source+recency compose, distinctSources ordering).
+- `ui/menu/SourceFilterOverlay.kt` — D-pad toggle list of the feed's distinct sources (SELECT show/hide, BACK done). `MenuState.PendingSelection.SourceFilter` + `openSourceFilter()`.
+- `SettingsOverlay` — new "Feed recency" cycle row + "Feed sources… (N hidden)" opener row.
+- `LineupStore` — persists hiddenSources (JSON string-set) + recency ordinal; `cycleFeedRecency()`, `toggleHiddenSource()`; `encodeStringSet`/`decodeStringSet` codec.
+
+### Changed
+- `FeedPane` — accepts `hiddenSources` + `feedRecency`, applies `applyFilters` before `build`; reports the **filtered** item count to the focus model (so `feedIndex` can't overrun a filtered list); honest filter-aware empty state when filters hide everything.
+
+### Honesty + focus
+- Filter UIs are modal overlays — `WallFocusModel`'s zone graph is unchanged; the 49 navigation tests pass unmodified (no-trap invariants intact). Per-source freshness chips persist on remaining sections. Honest empty state distinguishes "filters hid everything" from "no data / stale".
+
+### Deferred (BACKLOG)
+- **Free-text search** — D-pad on-screen-keyboard friction for low ambient value; source + recency cover most of the "narrow the feed" value. Flagged for the operator to reverse.
+- **Topic/keyword auto-classification** — foundation v2 idea; stays deferred (topic filtering = search, not auto-tagging).
+- **Ticker-news reuse note** — the filter's "which items matter" notion is kept pure/parameterized so a future ticker-news mode can reuse it; that mode is a separate chapter.
+
+### Tests
+App suite **233** green (+9). `./gradlew :app:testDebugUnitTest`.
+
+### Standing rules
+- A1 held (filters operate on already-fetched plain text; no new surface). unrelated host services never touched; `.182`/WyzeGrid untouched.
+
 ## LAN web client — separate, credential-free, origin-isolated (2026-06-06)
 
 A second client of the helper API for laptop/phone viewing on the home network — the *separate client* path the founding native-over-web decision sanctioned, NOT a reversal. LAN-only, credential-free, same-origin with the helper (no CORS), A1 closed door held. The remote version is scoped as a future chapter, not built.

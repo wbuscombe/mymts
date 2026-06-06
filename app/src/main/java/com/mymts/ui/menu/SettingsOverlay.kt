@@ -66,6 +66,8 @@ fun SettingsOverlay(
     onCycleFeedWidth: () -> Unit,
     onCycleFeedFontScale: () -> Unit,
     onCycleFeedSide: () -> Unit,
+    onCycleFeedRecency: () -> Unit,
+    onOpenSourceFilter: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -85,6 +87,8 @@ fun SettingsOverlay(
                 onCycleFeedWidth = onCycleFeedWidth,
                 onCycleFeedFontScale = onCycleFeedFontScale,
                 onCycleFeedSide = onCycleFeedSide,
+                onCycleFeedRecency = onCycleFeedRecency,
+                onOpenSourceFilter = onOpenSourceFilter,
                 onCancel = onCancel,
             )
         }
@@ -97,6 +101,8 @@ private fun SettingsCard(
     onCycleFeedWidth: () -> Unit,
     onCycleFeedFontScale: () -> Unit,
     onCycleFeedSide: () -> Unit,
+    onCycleFeedRecency: () -> Unit,
+    onOpenSourceFilter: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -141,6 +147,19 @@ private fun SettingsCard(
             title = "Feed side",
             valueLabel = settings.feedSide.displayName,
             onCycle = onCycleFeedSide,
+        )
+        SettingRow(
+            title = "Feed recency",
+            valueLabel = settings.feedRecency.displayName,
+            onCycle = onCycleFeedRecency,
+        )
+        // "Feed sources…" opens the source-toggle overlay. The value
+        // shows how many sources are currently hidden (0 = all shown).
+        val hiddenCount = settings.hiddenSources.size
+        SettingRow(
+            title = "Feed sources…",
+            valueLabel = if (hiddenCount == 0) "all shown" else "$hiddenCount hidden",
+            onCycle = onOpenSourceFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
         )
 
         Spacer(modifier = Modifier.height(6.dp))

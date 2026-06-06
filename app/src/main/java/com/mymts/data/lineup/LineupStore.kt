@@ -9,7 +9,9 @@ import androidx.compose.runtime.mutableStateOf
 import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.settings.FeedWidth
+import com.mymts.data.settings.FeedRecency
 import com.mymts.data.settings.WallSettings
+import com.mymts.data.settings.feedRecencyFromOrdinal
 import com.mymts.data.settings.feedFontScaleFromOrdinal
 import com.mymts.data.settings.feedSideFromOrdinal
 import com.mymts.data.settings.feedWidthFromOrdinal
@@ -95,7 +97,27 @@ class LineupStore(context: Context) {
             .putInt(KEY_FEED_WIDTH, settings.feedWidth.ordinal)
             .putInt(KEY_FEED_FONT, settings.feedFontScale.ordinal)
             .putInt(KEY_FEED_SIDE, settings.feedSide.ordinal)
+            .putString(KEY_FEED_HIDDEN_SOURCES, encodeStringSet(settings.hiddenSources))
+            .putInt(KEY_FEED_RECENCY, settings.feedRecency.ordinal)
             .apply()
+    }
+
+    /** Advance the recency window (All → 1h → 6h → 24h → All). */
+    fun cycleFeedRecency() {
+        val next = FeedRecency.values().let { it[(_wallSettings.value.feedRecency.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(feedRecency = next))
+    }
+
+    /**
+     * Toggle a source's visibility in the feed. Stored as a denylist
+     * (`hiddenSources`), so toggling a visible source OFF adds it; an
+     * already-hidden source ON removes it. New sources never appear here
+     * until explicitly hidden, so they show by default.
+     */
+    fun toggleHiddenSource(source: String) {
+        val current = _wallSettings.value.hiddenSources
+        val next = if (source in current) current - source else current + source
+        updateWallSettings(_wallSettings.value.copy(hiddenSources = next))
     }
 
     fun cycleFeedWidth() {
@@ -194,7 +216,9 @@ class LineupStore(context: Context) {
         // discard the other two values.
         if (!prefs.contains(KEY_FEED_WIDTH) &&
             !prefs.contains(KEY_FEED_FONT) &&
-            !prefs.contains(KEY_FEED_SIDE)
+            !prefs.contains(KEY_FEED_SIDE) &&
+            !prefs.contains(KEY_FEED_HIDDEN_SOURCES) &&
+            !prefs.contains(KEY_FEED_RECENCY)
         ) {
             return WallSettings.Default
         }
@@ -202,7 +226,20 @@ class LineupStore(context: Context) {
             feedWidth = feedWidthFromOrdinal(prefs.getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
             feedFontScale = feedFontScaleFromOrdinal(prefs.getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
             feedSide = feedSideFromOrdinal(prefs.getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
+            hiddenSources = readHiddenSourcesFromDisk(),
+            feedRecency = feedRecencyFromOrdinal(prefs.getInt(KEY_FEED_RECENCY, FeedRecency.All.ordinal)),
         )
+    }
+
+    private fun readHiddenSourcesFromDisk(): Set<String> {
+        val raw = prefs.getString(KEY_FEED_HIDDEN_SOURCES, null) ?: return emptySet()
+        return try {
+            decodeStringSet(raw)
+        } catch (e: JSONException) {
+            Log.w(TAG, "feed_hidden_sources parse failed, dropping: ${e.message}")
+            prefs.edit().remove(KEY_FEED_HIDDEN_SOURCES).apply()
+            emptySet()
+        }
     }
 
     private fun readCaptionsFromDisk(): Set<Int> {
@@ -224,6 +261,8 @@ class LineupStore(context: Context) {
         private const val KEY_FEED_WIDTH = "wall_settings_feed_width"
         private const val KEY_FEED_FONT = "wall_settings_feed_font"
         private const val KEY_FEED_SIDE = "wall_settings_feed_side"
+        private const val KEY_FEED_HIDDEN_SOURCES = "wall_settings_feed_hidden_sources"
+        private const val KEY_FEED_RECENCY = "wall_settings_feed_recency"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -270,6 +309,23 @@ class LineupStore(context: Context) {
             for (i in 0 until arr.length()) {
                 val v = arr.optInt(i, -1)
                 if (v >= 0) out.add(v)
+            }
+            return out.toSet()
+        }
+
+        /** JSON array of source labels (the feed-filter denylist), sorted for determinism. */
+        internal fun encodeStringSet(set: Set<String>): String {
+            val arr = JSONArray()
+            set.sorted().forEach { arr.put(it) }
+            return arr.toString()
+        }
+
+        internal fun decodeStringSet(raw: String): Set<String> {
+            val arr = JSONArray(raw)
+            val out = mutableSetOf<String>()
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i, "")
+                if (v.isNotBlank()) out.add(v)
             }
             return out.toSet()
         }
