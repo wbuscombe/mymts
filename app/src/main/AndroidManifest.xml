@@ -3,12 +3,18 @@
 
     <!--
       Permissions kept to the strict minimum (Trust Bar A4 — no ambient
-      authority). Stage 6 will add RECEIVE_BOOT_COMPLETED + FOREGROUND_SERVICE
-      for kiosk autostart and the long-uptime watchdog. Stage 1 needs only
-      network access to play HLS.
+      authority). Network access to play HLS, plus the kiosk autostart +
+      foreground-service set for MyMTS's own-the-box ambient-wall role
+      (Model A). The foreground service + boot receiver only *act* when
+      kiosk mode is enabled on-device (opt-in, off by default) — holding
+      the permissions does not start anything on a non-kiosk box.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
       Android TV ("leanback") — required so the app appears in the TV
@@ -43,6 +49,38 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Kiosk foreground service (own-the-box ambient wall, Model A).
+          SPECIAL_USE: the long-running display-owner role doesn't map to
+          a domain foreground type; the property below is the required
+          justification. Only started when kiosk mode is opt-in enabled.
+        -->
+        <service
+            android:name=".kiosk.KioskService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="MyMTS ambient news/markets/sports wall — sole-kiosk display owner on a dedicated Onn box (Model A); keeps the wall resident + foregrounded for unattended long-uptime operation." />
+        </service>
+
+        <!--
+          Boot receiver — relaunches MyMTS after a reboot/power-cycle.
+          No-op unless kiosk mode is enabled (KioskPolicy.shouldStartOnBoot),
+          so a non-kiosk install (e.g. on .182) never autostarts.
+        -->
+        <receiver
+            android:name=".kiosk.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

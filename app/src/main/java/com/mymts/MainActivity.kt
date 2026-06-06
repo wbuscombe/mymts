@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.mymts.kiosk.KioskPrefs
+import com.mymts.kiosk.KioskService
 import com.mymts.player.StreamSpec
 import com.mymts.soak.SoakHarness
 import com.mymts.soak.SoakSpec
@@ -32,8 +34,22 @@ class MainActivity : ComponentActivity() {
 
         // Stage 1 / C4 (long uptime): keep the screen on during dev so we
         // can observe the soak through to the failure mode that matters
-        // (slow leaks over hours).
+        // (slow leaks over hours). Also the kiosk keep-screen-on for the
+        // ambient-wall role on the dedicated box.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Kiosk provisioning hook (own-the-box, Model A). The migration
+        // runbook flips kiosk mode on for the dedicated MyMTS box with:
+        //   adb shell am start -n com.mymts/.MainActivity --ez kiosk true
+        // (and `--ez kiosk false` to disable). Kiosk mode is opt-in and
+        // OFF by default, so an un-provisioned install — e.g. a lingering
+        // MyMTS install on .182 (WyzeGrid's box) — never starts the
+        // foreground service or autostarts on boot.
+        applyKioskExtraIfPresent()
+        // If this box is provisioned as a kiosk, ensure the foreground
+        // service is up whenever the wall launches. No-ops when kiosk
+        // is off.
+        KioskService.startIfEnabled(this)
 
         val mode = intent?.getStringExtra("mode")?.lowercase()
         val tiles = intent?.getIntExtra("tiles", BuildConfig.DEFAULT_MAX_TILES)
@@ -109,5 +125,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Honour a `--ez kiosk true|false` launch extra: persist the kiosk
+     * flag and start/stop the foreground service accordingly. This is
+     * the provisioning mechanism (a single adb command), kept off the
+     * normal-launch path — a launch without the extra never changes
+     * kiosk state.
+     */
+    private fun applyKioskExtraIfPresent() {
+        if (intent?.hasExtra("kiosk") != true) return
+        val enable = intent.getBooleanExtra("kiosk", false)
+        KioskPrefs(this).setEnabled(enable)
+        if (enable) KioskService.startIfEnabled(this) else KioskService.stop(this)
     }
 }
