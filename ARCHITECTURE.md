@@ -793,7 +793,43 @@ App side: `TickerEntry.Direction.NONE` (no arrow for sports); `HelperClient.pars
 
 ---
 
-## 17. What this document deliberately does NOT specify yet
+## 17. Stage 10 — kiosk / foreground / boot (own-the-box, Model A)
+
+The dedicated MyMTS Onn box arrives today. This stage builds the kiosk, foreground, and boot scaffolding that does not need the physical device — on-hardware validation is explicitly staged for the migration session. **Model A**: one kiosk app per box. The new box runs MyMTS as the sole kiosk; `.182` stays WyzeGrid's and is untouched.
+
+### Load-bearing safety property: opt-in, off by default
+
+Kiosk mode is **opt-in and disabled by default**. The same signed APK on a non-kiosk box (notably `.182`, where a MyMTS dev install may linger) must not autostart on boot or launch a foreground service. Only the provisioning runbook flips it on for the dedicated box via `adb ... --ez kiosk true`.
+
+This gate eliminates the Stage 1/2 risk: two watchdogs thrashing over foreground-service reclaim. Model A says "own the box, stay foreground reliably" — not "coexist and reclaim." The opt-in flag is the load-bearing property that makes this safe, and is what guarantees the shared APK does nothing kiosk-ish on `.182`.
+
+### Components and wiring
+
+- **`KioskPolicy.kt`** — pure Kotlin (no Android). `BOOT_ACTIONS` allowlist `{BOOT_COMPLETED, LOCKED_BOOT_COMPLETED, QUICKBOOT_POWERON, htc QUICKBOOT}`; `isBootAction(action)`; `shouldStartOnBoot(action, kioskEnabled) = kioskEnabled AND isBootAction` (both conditions). Crash-loop backoff in `restartBackoffMs()`: 0/2/5/15/30/60 s cap, windowed by `isSameCrashStreak()` over a 5-min streak-reset window.
+- **`KioskPrefs.kt`** — `SharedPreferences` flag, `DEFAULT_ENABLED=false`. `isEnabled` / `setEnabled` / static `isEnabled(context)`. No secrets, no PII.
+- **`KioskService.kt`** — foreground `Service` with an ongoing low-importance notification + dedicated channel. `START_STICKY`; `onTaskRemoved()` relaunches the wall (gated on `KioskPrefs`). `startForeground()` uses `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` guarded by API 34 (`Build.VERSION_CODES.UPSIDE_DOWN_CAKE`), else plain `startForeground`. Companion `startIfEnabled(context)` no-ops when kiosk off, `stop(context)`, `launchWall(context)`.
+- **`BootReceiver.kt`** — `BroadcastReceiver`; `onReceive()` returns early unless `KioskPolicy.shouldStartOnBoot(action, KioskPrefs.isEnabled(context))`; then `startIfEnabled()` + `launchWall()`.
+- **`AndroidManifest.xml`** — permissions `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`; `<service .kiosk.KioskService exported="false" foregroundServiceType="specialUse">` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` justification; `<receiver .kiosk.BootReceiver exported="true">` filtered to the 4 boot actions. Holding the permissions starts nothing — the prefs gate is the only switch.
+- **`MainActivity.kt`** — `applyKioskExtraIfPresent()` persists the kiosk flag **only** when the launch intent carries the `kiosk` extra (`--ez kiosk true|false`); a normal launch never changes kiosk state. `KioskService.startIfEnabled(this)` runs on launch (no-op if off). Keep-screen-on retained for the wall role.
+
+### Own-the-box, not coexistence
+
+Model A means the box is MyMTS's alone, so there is **no** foreground-reclaim / coexistence machinery — the risky part of the Stage 1/2 two-watchdog story is simply not built. If a future shared-box use case ever arose, reclaim logic would need fresh threat-modelling; it is out of scope here by design.
+
+### Pure policy + unit tests now; on-hardware validation STAGED
+
+All policy logic is pure and deterministic — 8 `KioskPolicyTest` cases cover the boot allowlist, the both-conditions gate (the `.182`-safety property), the relaunch decision, and the backoff schedule + streak window. So the device session validates *wiring*, not *logic*.
+
+**Not verified until the box arrives** (and honestly labelled so): the service actually holding the foreground across hours; the boot receiver relaunching via a real power-cycle; low-memory survival; the full runbook end-to-end; and the accumulated nav/feed/config/ticker feel-test (now on the MyMTS box rather than borrowed `.182`). The helper redeploy (13 feed sources + ticker endpoints) is a migration prerequisite.
+
+### What's deliberately NOT here
+
+- Coexistence / foreground-reclaim (Model A makes it unnecessary); anything on `.182`.
+- A settings-menu kiosk toggle — the `--ez kiosk` adb intent is the v1 provisioning mechanism.
+
+---
+
+## 18. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

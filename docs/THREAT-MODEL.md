@@ -353,6 +353,30 @@ The logged intermittent `sqlite3.ProgrammingError: SQLite objects created in a t
 
 ---
 
+## Kiosk / foreground service + boot receiver (2026-06-06)
+
+**Claim:** The kiosk scaffolding adds two new surfaces — an exported `BootReceiver` (must be exported to receive system `BOOT_COMPLETED`) and a foreground `Service`. Kiosk mode is **opt-in, OFF by default**, so the same signed APK on a non-kiosk box (`.182`, dev installs) starts no foreground service and does not autostart on boot. Model A: one sole kiosk per box; no coexistence logic. The new surfaces are low-impact by construction.
+
+**T-K1 — a malicious app or adb spoofs a boot broadcast → BootReceiver → starts the foreground service without operator intent.**
+*Likelihood:* medium (any app can broadcast; adb can send intents). *Impact if triggered:* MyMTS starts *its own* foreground service + launches *its own* wall activity — visual only; no data access, no privilege escalation, no cross-app effect.
+*Mitigation (two-layer gate):* (1) `KioskPolicy.BOOT_ACTIONS` allowlist — only the known boot actions act; spoofed/unexpected actions are ignored. (2) The opt-in gate — `shouldStartOnBoot(action, kioskEnabled)` is `false` whenever `kioskEnabled` is false, so even a correctly-named spoofed `BOOT_COMPLETED` is a no-op on any box that wasn't explicitly provisioned. On `.182` the flag is off → nothing starts no matter how many boot broadcasts arrive.
+*Residual risk:* broadcast spam is possible but the receiver returns early and does no meaningful work. *Traces to:* A1, A4, B1.
+
+**T-K2 — the foreground service is externally startable.**
+*Mitigation:* `KioskService` is declared `exported="false"`; the OS refuses external/adb starts. No `onBind` IPC surface; `onStartCommand` accepts no commands/state from callers. *Residual risk:* none (manifest-enforced). *Traces to:* A4.
+
+**T-K3 — Model-A sole-kiosk assumption broken on a shared box.**
+The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW`, no coexistence state machine. On the dedicated box (sole kiosk) this holds. The opt-in gate means a non-provisioned box (e.g. `.182`) never runs the kiosk at all, so it cannot contend with WyzeGrid. A future shared-box use case would require fresh threat-modelling before any reclaim logic is added. *Traces to:* B1, A4.
+
+**T-K4 — the opt-in gate is the sole `.182`-safety control; accidental enable would orphan a shared box.**
+*Mitigation:* `KioskPrefs.DEFAULT_ENABLED=false`; the *only* enable path is the explicit provisioning intent (`--ez kiosk true`), which needs physical/adb access — not something a remote app can do. Standing rule (`.182` + WyzeGrid untouched) is the operational enforcement; a code-review gate rejects any change flipping the default to true. Rollback is `--ez kiosk false`. *Traces to:* B1, A7 (the flag is a boolean, not a secret).
+
+**No new secret:** the kiosk flag is a boolean in SharedPreferences (no PII, no credential). The release signing keystore remains the only secret and is never committed. **STAGED:** on-hardware validation is pending the migration session; this analysis stands on the code as written.
+
+**Traces to:** **A1** (untrusted external triggers — allowlist + opt-in gate), **A4** (least authority — service not exported, no extra reach, no coexistence machinery), **B1** (recover on reboot — the boot receiver is the recover mechanism), **A7** (no new secret).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

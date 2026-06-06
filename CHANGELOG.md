@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Kiosk / foreground / boot scaffolding + provisioning readiness (2026-06-06)
+
+The dedicated MyMTS Onn box arrives this afternoon. This chapter builds the kiosk/foreground/boot **code** + the provisioning runbook so the migration is execution, not build-from-scratch; **on-hardware validation is explicitly STAGED for that session** (nothing hardware-dependent is claimed working). Model A: one kiosk app per box — the new box runs MyMTS as the sole kiosk; `.182` stays WyzeGrid's and is untouched.
+
+**Load-bearing safety property:** kiosk mode is **opt-in, OFF by default**. The same signed APK on a non-kiosk box (notably `.182`, where a MyMTS dev install may linger) must NOT start a foreground service or autostart on boot. Only the provisioning runbook flips it on for the dedicated box (`adb shell am start -n com.mymts/.MainActivity --ez kiosk true`).
+
+### Added
+- `kiosk/KioskPolicy.kt` (pure Kotlin, unit-tested): boot-action allowlist (`BOOT_COMPLETED`, `LOCKED_BOOT_COMPLETED`, `QUICKBOOT_POWERON`, HTC quickboot); `shouldStartOnBoot(action, kioskEnabled)` both-conditions gate; `shouldRelaunchActivity()`; crash-loop backoff (`restartBackoffMs` 0/2/5/15/30/60 s cap + `isSameCrashStreak` + `STREAK_RESET_MS`=5 min).
+- `kiosk/KioskPrefs.kt`: SharedPreferences flag, `DEFAULT_ENABLED=false`; static `isEnabled(context)`.
+- `kiosk/KioskService.kt`: foreground service, `START_STICKY`, ongoing low-importance notification + channel, `onTaskRemoved` relaunch (gated on prefs), `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` guarded by API 34; `startIfEnabled`/`stop`/`launchWall` companions (no-op when kiosk off). No coexistence/foreground-reclaim logic (Model A).
+- `kiosk/BootReceiver.kt`: gated reboot relaunch (`shouldStartOnBoot` AND `KioskPrefs.isEnabled`).
+- `MainActivity.kt`: `--ez kiosk true|false` provisioning hook (normal launch never changes kiosk state); `startIfEnabled` on launch.
+- `AndroidManifest.xml`: `RECEIVE_BOOT_COMPLETED` + `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` + `POST_NOTIFICATIONS`; `<service>` (`exported=false`, `specialUse` + justification) + `<receiver>` (the 4 boot actions). Holding the permissions starts nothing — the prefs gate does.
+- 8 `KioskPolicyTest` cases (boot allowlist incl. spoofed/null rejected, the both-conditions gate, relaunch decision, backoff + streak window).
+
+### Changed
+- `ONN-BOXES.md` — pre-staged `onn-mymts` row (IP `TBD-at-provision`, role MyMTS sole kiosk); `onn-office` note updated (lingering MyMTS install is inert — kiosk OFF).
+- `OPERATIONS.md` — ordered, runnable "Migration runbook" replacing the checklist stub: helper-redeploy prerequisite (13 feed sources + ticker endpoints verified), ADB connect, DHCP, ONN-BOXES fill-in, signed-install via `deploy-app.sh --device NEWIP` (release-signed gate, baked HTTPS helper URL `https://<LAN_IP>:8443` pinned cert), wall verification, opt-in kiosk-enable.
+
+### STAGED for the migration session (explicitly NOT validated yet)
+Foreground hold over hours on the new box; boot-receiver via a real reboot; low-memory survival; full runbook end-to-end; the accumulated nav + feed + config + ticker feel-test (now on the MyMTS box, not borrowed `.182`); helper redeploy (prerequisite). Unverified-until-migration.
+
+### Safety
+Opt-in gating keeps the same signed APK inert on `.182` (no foreground service, no boot autostart unless kiosk is provisioned-on) — adversarially verified (not refuted, 12 evidence citations). No coexistence/reclaim logic (Model A). `.182` + WyzeGrid untouched. unrelated host services never touched. No new secret (the kiosk flag is a boolean; the release keystore stays the only secret, never committed).
+
+### Tests
+App suite green incl. the 8 new kiosk policy tests; APK builds; manifest merges clean.
+
 ## Ticker — real markets data + sports mode + markets/sports rotation (2026-06-05)
 
 The ticker now shows REAL keyless data and alternates between a markets mode and a sports mode; honest SAMPLE is retained where no free keyless source exists; no new secret was added. Every source was verified live through the helper's SSRF-safe fetcher before commit — only clean public endpoints were built.
