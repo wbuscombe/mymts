@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Curation & preferences — sports curation + ticker news + source toggles (2026-06-06)
+
+The "tune what I see" controls in the settings menu. Some choices are FEEL-TEST items — the mechanism is built and configurable, flagged for the operator to confirm after using the wall on real hardware (see findings/14).
+
+### Added
+- **A. Sports curation (league-level, TV-side):** `WallSettings.hiddenLeagues` denylist; `HelperTickerSource.filterLeagues` drops hidden-league entries from the ticker's sports mode (helper still serves all leagues — no helper change, avoids the cross-platform-profiles fork). Offered set MLB/NFL/NBA/NHL (`CURATED_LEAGUES`). Empties to honest "scores unavailable".
+- **B. Ticker news (third rotation mode, default OFF):** `WallSettings.tickerNewsEnabled`; `HelperTickerSource.nextMode` (pure 2-/3-cycle), NEWS mode + `newsEntries(feedItems, hiddenSources, cap)` builds newest-first headlines from non-hidden feed sources — drawn from the feed the wall already polls (no duplicate fetch), real (not sample), `Direction.NONE`. **No fabricated urgency/breaking** (RSS can't honestly flag it).
+- UI: `SettingsOverlay` "Ticker news" on/off + "Sports leagues…" rows; `SourceFilterOverlay` parameterized (title/emptyText) and reused for leagues; `MenuState.SportsLeagueFilter` + `openLeagueFilter()`.
+- `LineupStore` persists hiddenLeagues (JSON string-set) + tickerNewsEnabled; `toggleHiddenLeague`, `toggleTickerNews`. `CurationTest` (8 tests: league filter case-insensitive + status-line survival + all-hidden fallback, rotation 2-/3-cycle, news-entries newest-first/hidden-source/real/capped, news honest-empty).
+
+### Changed
+- `WallScreen` pushes curation into the running ticker via `HelperTickerSource.setCuration(...)` from an effect re-firing on settings/feed change.
+- **C. Feed-source toggles** — reused from Stage 12 (the ticker-news source set is the same `hiddenSources`); not rebuilt.
+
+### FEEL-TEST-CAVEAT items (build now, revisit after hands-on use)
+- **Sports granularity:** league-level toggles ship; **team-level favorites** (operator's Chicago teams) deferred — confirm the right granularity after seeing scores flow.
+- **News in the ticker at all / from which sources:** default OFF; confirm post-use. A dedicated ticker-news source subset (narrower than the feed) is a possible follow-on.
+
+### Deferred (BACKLOG)
+- Team-level sports curation; true breaking-news/urgency detection (needs a real signal, not faked); dedicated ticker-news source subset.
+
+### Tests + standing rules
+App suite **241** green (+8). A1 reverified (operates on already-fetched plain text; no new fetch/web/markup; no faked data). Focus model unchanged (modal overlays). unrelated host services never touched; `.182`/WyzeGrid untouched.
+
 ## Feed filtering — by source + recency (2026-06-06)
 
 The feed gains operator-controlled filtering (the filtering half of feedback item B). Narrow it to chosen sources and/or a recency window; all over the plain-text the helper already serves — no new fetch, A1 holds. Free-text search was deliberately deferred (D-pad friction).

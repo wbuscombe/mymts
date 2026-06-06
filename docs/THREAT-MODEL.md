@@ -409,6 +409,19 @@ The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW
 
 ---
 
+## Curation & preferences — A1 reverify (2026-06-06)
+
+**Claim:** sports league curation + ticker-news + feed-source toggles introduce no new fetch / web / HTML surface and no faked data. All operate on already-fetched inert plain text.
+
+- **Sports league curation:** pure TV-side filter (`HelperTickerSource.filterLeagues`) over the helper's existing `/api/ticker/sports` entries — drops entries for hidden leagues. No helper change, no new endpoint, no per-device helper state (avoids the cross-platform-profiles fork). Honest: empties to "scores unavailable", never fakes a game.
+- **Ticker news:** built from the **feed the wall already polls** (`HelperTickerSource.newsEntries` over the in-memory `FeedItem` list) — no new fetch, no new endpoint. Headlines are the helper's already-stripped plain-text titles, rendered as inert `Text` (`Direction.NONE`). **No urgency/breaking-news fabrication** — RSS can't honestly flag it, so it isn't claimed; true urgency detection is logged as a future item needing a real signal, not faked.
+- **Feed-source toggles:** the Stage 12 denylist, reused — no new surface.
+- **Persistence:** league denylist (JSON string-set) + a boolean in SharedPreferences via `LineupStore` — no secret, no PII.
+
+**Traces to:** **A1** (operates on already-stripped plain text; no new input surface), **C3** (honest "no games"/"no headlines" states; sample/stale never shown as live; no fabricated urgency).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

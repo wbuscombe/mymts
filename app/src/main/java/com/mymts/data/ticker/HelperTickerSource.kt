@@ -1,6 +1,7 @@
 package com.mymts.data.ticker
 
 import android.util.Log
+import com.mymts.data.helper.FeedItem
 import com.mymts.data.helper.HelperClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +41,7 @@ class HelperTickerSource(
     private val pollIntervalMs: Long = 60_000L,
     private val marketsDwellMs: Long = 22_000L,
     private val sportsDwellMs: Long = 14_000L,
+    private val newsDwellMs: Long = 18_000L,
     private val sampleFallback: List<TickerEntry> = SampleTickerSource.SAMPLE_ENTRIES,
 ) : TickerSource {
 
@@ -55,11 +57,36 @@ class HelperTickerSource(
     @Volatile private var sportsReachable = false
     @Volatile private var mode: Mode = Mode.MARKETS
 
+    // Curation (set by the call site from on-device WallSettings; read each
+    // publish). hiddenLeagues filters the SPORTS mode TV-side (helper still
+    // serves all leagues). newsEnabled adds NEWS as a third rotation mode;
+    // newsEntries are pre-built by the call site from the feed it already
+    // polls (no duplicate fetch here).
+    @Volatile private var hiddenLeagues: Set<String> = emptySet()
+    @Volatile private var newsEnabled: Boolean = false
+    @Volatile private var newsEntries: List<TickerEntry> = emptyList()
+
     private var scope: CoroutineScope? = null
     private var pollJob: Job? = null
     private var rotateJob: Job? = null
 
-    enum class Mode { MARKETS, SPORTS }
+    enum class Mode { MARKETS, SPORTS, NEWS }
+
+    /**
+     * Update curation from the operator's settings. Called by WallScreen
+     * whenever `WallSettings` changes. `news` are pre-built ticker entries
+     * for the news mode (the call site builds them from the feed it
+     * already has, via [newsEntries]); pass an empty list when news is off.
+     */
+    fun setCuration(hiddenLeagues: Set<String>, newsEnabled: Boolean, news: List<TickerEntry>) {
+        this.hiddenLeagues = hiddenLeagues
+        this.newsEnabled = newsEnabled
+        this.newsEntries = news
+        // If news was just turned off and we're parked on it, step away so
+        // the operator isn't stuck on a now-disabled mode.
+        if (!newsEnabled && mode == Mode.NEWS) mode = Mode.MARKETS
+        publishCurrent()
+    }
 
     override fun start() {
         if (pollJob?.isActive == true) return
@@ -74,11 +101,17 @@ class HelperTickerSource(
         }
         rotateJob = s.launch {
             while (isActive) {
-                delay(if (mode == Mode.MARKETS) marketsDwellMs else sportsDwellMs)
-                mode = if (mode == Mode.MARKETS) Mode.SPORTS else Mode.MARKETS
+                delay(dwellFor(mode))
+                mode = nextMode(mode, newsEnabled)
                 publishCurrent()
             }
         }
+    }
+
+    private fun dwellFor(m: Mode): Long = when (m) {
+        Mode.MARKETS -> marketsDwellMs
+        Mode.SPORTS -> sportsDwellMs
+        Mode.NEWS -> newsDwellMs
     }
 
     override fun stop() {
@@ -112,6 +145,9 @@ class HelperTickerSource(
             marketsReachable = marketsReachable,
             sportsReachable = sportsReachable,
             sampleFallback = sampleFallback,
+            hiddenLeagues = hiddenLeagues,
+            news = newsEntries,
+            newsEnabled = newsEnabled,
         )
     }
 
@@ -142,22 +178,88 @@ class HelperTickerSource(
             marketsReachable: Boolean,
             sportsReachable: Boolean,
             sampleFallback: List<TickerEntry>,
+            hiddenLeagues: Set<String> = emptySet(),
+            news: List<TickerEntry> = emptyList(),
+            newsEnabled: Boolean = false,
         ): List<TickerEntry> = when (mode) {
             Mode.MARKETS ->
                 if (marketsReachable && markets != null) markets.entries
                 else sampleFallback
             Mode.SPORTS ->
                 if (sportsReachable && sports != null) {
-                    sports.entries.ifEmpty { listOf(SPORTS_UNAVAILABLE) }
+                    // Sports curation: drop entries for hidden leagues
+                    // (matched on the entry's league symbol, case-
+                    // insensitively). Status lines ("SPORTS · …") aren't
+                    // leagues so they survive. If curation empties the
+                    // list, fall to the honest "no sports" line.
+                    filterLeagues(sports.entries, hiddenLeagues).ifEmpty { listOf(SPORTS_UNAVAILABLE) }
                 } else {
                     listOf(SPORTS_UNAVAILABLE)
                 }
+            Mode.NEWS ->
+                if (newsEnabled && news.isNotEmpty()) news
+                else listOf(NEWS_UNAVAILABLE)
+        }
+
+        /** Keep entries whose league symbol is NOT in the denylist. */
+        fun filterLeagues(entries: List<TickerEntry>, hiddenLeagues: Set<String>): List<TickerEntry> {
+            if (hiddenLeagues.isEmpty()) return entries
+            val hiddenLower = hiddenLeagues.map { it.lowercase() }.toSet()
+            return entries.filter { it.symbol.lowercase() !in hiddenLower }
+        }
+
+        /**
+         * The next rotation mode. MARKETS → SPORTS → (NEWS if enabled →)
+         * MARKETS. Pure so the rotation cycle is unit-tested. When news is
+         * off it's a 2-cycle; when on, a 3-cycle.
+         */
+        fun nextMode(current: Mode, newsEnabled: Boolean): Mode = when (current) {
+            Mode.MARKETS -> Mode.SPORTS
+            Mode.SPORTS -> if (newsEnabled) Mode.NEWS else Mode.MARKETS
+            Mode.NEWS -> Mode.MARKETS
+        }
+
+        /**
+         * Build news ticker entries from feed items: newest-first, from
+         * the operator's NON-hidden sources, capped. Each entry is a real
+         * headline (is_sample=false) shown as inert plain text — NO
+         * urgency/breaking classification (RSS can't honestly flag that;
+         * see BACKLOG). symbol = source, display = title. Pure + tested.
+         */
+        fun newsEntries(
+            items: List<FeedItem>,
+            hiddenSources: Set<String>,
+            cap: Int = 12,
+        ): List<TickerEntry> {
+            val hiddenLower = hiddenSources.map { it.lowercase() }.toSet()
+            return items.asSequence()
+                .filter { (it.source.ifBlank { "Unknown source" }).lowercase() !in hiddenLower }
+                .filter { it.title.isNotBlank() }
+                .sortedByDescending { (it.publishedAtIso ?: it.fetchedAtIso ?: "") }
+                .take(cap)
+                .map {
+                    TickerEntry(
+                        symbol = it.source.ifBlank { "News" },
+                        display = it.title,
+                        direction = TickerEntry.Direction.NONE,
+                        isSample = false,
+                    )
+                }
+                .toList()
         }
 
         /** Honest "no sports data" line — a true state, not sample data. */
         val SPORTS_UNAVAILABLE = TickerEntry(
             symbol = "SPORTS",
             display = "scores unavailable",
+            direction = TickerEntry.Direction.NONE,
+            isSample = false,
+        )
+
+        /** Honest "no news" line for the NEWS mode — a true state. */
+        val NEWS_UNAVAILABLE = TickerEntry(
+            symbol = "NEWS",
+            display = "no headlines",
             direction = TickerEntry.Direction.NONE,
             isSample = false,
         )

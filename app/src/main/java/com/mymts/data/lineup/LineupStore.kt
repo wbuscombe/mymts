@@ -99,7 +99,21 @@ class LineupStore(context: Context) {
             .putInt(KEY_FEED_SIDE, settings.feedSide.ordinal)
             .putString(KEY_FEED_HIDDEN_SOURCES, encodeStringSet(settings.hiddenSources))
             .putInt(KEY_FEED_RECENCY, settings.feedRecency.ordinal)
+            .putString(KEY_HIDDEN_LEAGUES, encodeStringSet(settings.hiddenLeagues))
+            .putBoolean(KEY_TICKER_NEWS, settings.tickerNewsEnabled)
             .apply()
+    }
+
+    /** Toggle a sports league's visibility in the ticker (denylist). */
+    fun toggleHiddenLeague(league: String) {
+        val current = _wallSettings.value.hiddenLeagues
+        val next = if (league in current) current - league else current + league
+        updateWallSettings(_wallSettings.value.copy(hiddenLeagues = next))
+    }
+
+    /** Toggle news as a third ticker rotation mode (default off). */
+    fun toggleTickerNews() {
+        updateWallSettings(_wallSettings.value.copy(tickerNewsEnabled = !_wallSettings.value.tickerNewsEnabled))
     }
 
     /** Advance the recency window (All → 1h → 6h → 24h → All). */
@@ -218,7 +232,9 @@ class LineupStore(context: Context) {
             !prefs.contains(KEY_FEED_FONT) &&
             !prefs.contains(KEY_FEED_SIDE) &&
             !prefs.contains(KEY_FEED_HIDDEN_SOURCES) &&
-            !prefs.contains(KEY_FEED_RECENCY)
+            !prefs.contains(KEY_FEED_RECENCY) &&
+            !prefs.contains(KEY_HIDDEN_LEAGUES) &&
+            !prefs.contains(KEY_TICKER_NEWS)
         ) {
             return WallSettings.Default
         }
@@ -226,18 +242,20 @@ class LineupStore(context: Context) {
             feedWidth = feedWidthFromOrdinal(prefs.getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
             feedFontScale = feedFontScaleFromOrdinal(prefs.getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
             feedSide = feedSideFromOrdinal(prefs.getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
-            hiddenSources = readHiddenSourcesFromDisk(),
+            hiddenSources = readStringSet(KEY_FEED_HIDDEN_SOURCES),
             feedRecency = feedRecencyFromOrdinal(prefs.getInt(KEY_FEED_RECENCY, FeedRecency.All.ordinal)),
+            hiddenLeagues = readStringSet(KEY_HIDDEN_LEAGUES),
+            tickerNewsEnabled = prefs.getBoolean(KEY_TICKER_NEWS, false),
         )
     }
 
-    private fun readHiddenSourcesFromDisk(): Set<String> {
-        val raw = prefs.getString(KEY_FEED_HIDDEN_SOURCES, null) ?: return emptySet()
+    private fun readStringSet(key: String): Set<String> {
+        val raw = prefs.getString(key, null) ?: return emptySet()
         return try {
             decodeStringSet(raw)
         } catch (e: JSONException) {
-            Log.w(TAG, "feed_hidden_sources parse failed, dropping: ${e.message}")
-            prefs.edit().remove(KEY_FEED_HIDDEN_SOURCES).apply()
+            Log.w(TAG, "$key parse failed, dropping: ${e.message}")
+            prefs.edit().remove(key).apply()
             emptySet()
         }
     }
@@ -263,6 +281,8 @@ class LineupStore(context: Context) {
         private const val KEY_FEED_SIDE = "wall_settings_feed_side"
         private const val KEY_FEED_HIDDEN_SOURCES = "wall_settings_feed_hidden_sources"
         private const val KEY_FEED_RECENCY = "wall_settings_feed_recency"
+        private const val KEY_HIDDEN_LEAGUES = "wall_settings_hidden_leagues"
+        private const val KEY_TICKER_NEWS = "wall_settings_ticker_news"
         private const val TAG = "MyMTS.LineupStore"
 
         /**

@@ -924,7 +924,35 @@ The "which items matter" notion here (source subset + recency) is the same shape
 
 ---
 
-## 20. What this document deliberately does NOT specify yet
+## 20. Stage 13 — curation & preferences (sports curation, ticker news, source toggles)
+
+The "tune what I see" controls, in the settings menu: which sports leagues the ticker shows, whether news rides the ticker as a third mode, and (from Stage 12) which feed sources appear. All persisted on-device; all honoring the no-faked-data discipline. **Several choices here are FEEL-TEST items — the mechanism is built and configurable, but the exact granularity is flagged for the operator to confirm after using the wall on real hardware** (see `docs/findings/14-curation-pass.md`).
+
+### A — Sports curation (league-level, TV-side)
+
+`WallSettings.hiddenLeagues` is a denylist of league labels; the ticker's sports mode drops entries for hidden leagues (`HelperTickerSource.filterLeagues`, matched on the entry's league symbol). Filtering is **TV-side** — the helper keeps serving all leagues, so per-device curation needs no helper state (deliberately avoiding the cross-platform-profiles fork). Status lines ("no games") survive a denylist; if curation empties the list, the honest "scores unavailable" line shows. Offered leagues are the helper's default set (MLB/NFL/NBA/NHL). **FEEL-TEST:** league-level toggles ship; **team-level** favorites (the operator's Chicago teams) is logged as a follow-on to confirm post-hardware — building a team-picker before seeing scores flow risks the wrong granularity.
+
+### B — Ticker news (third rotation mode, default OFF)
+
+When `WallSettings.tickerNewsEnabled` is on, the ticker rotates **markets → sports → news** (`HelperTickerSource.nextMode` is a pure 2- or 3-cycle depending on the flag). News entries are built by `HelperTickerSource.newsEntries(feedItems, hiddenSources)` — **newest-first headlines from the operator's non-hidden feed sources** (reusing the Stage 12 source denylist), capped, drawn from the feed the wall already polls (no duplicate fetch). Each is a real headline (`isSample=false`), inert plain text, `Direction.NONE` (no arrow). **Honest-engineering line:** RSS cannot reliably flag urgency, so there is **no fabricated "breaking news"/urgency detection** — the achievable honest version (source-subset + recency, newest-first) is what's built; true urgency detection needs a real signal source and is logged as a separate future item. **FEEL-TEST:** default OFF — whether the operator wants news in the ticker at all, and from which sources, is confirmed after use.
+
+### C — Feed-source toggles
+
+Built in Stage 12 (the feed-filtering chapter) as the source denylist; reused here (the ticker-news source set is the same `hiddenSources`). Not rebuilt.
+
+### Where it lives + focus
+
+All controls are rows in `SettingsOverlay` ("Ticker news" on/off, "Sports leagues…" opener) + the reused `SourceFilterOverlay` toggle list (parameterized with a title) for leagues. They're modal overlays — `WallFocusModel`'s zone graph is unchanged (no-trap invariants intact; nav tests pass unmodified). Curation is pushed into the running ticker via `HelperTickerSource.setCuration(...)` from a `WallScreen` effect that re-fires when settings or the feed change.
+
+### What's deferred (BACKLOG)
+
+- **Team-level sports curation** (favorites/pinning) — FEEL-TEST follow-on.
+- **True breaking-news / urgency detection** — needs a real signal source; not faked.
+- **A dedicated ticker-news source subset** distinct from the feed denylist — if the operator wants the ticker narrower than the feed.
+
+---
+
+## 21. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

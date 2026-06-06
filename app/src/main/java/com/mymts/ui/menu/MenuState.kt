@@ -74,6 +74,11 @@ class MenuState {
         pendingSelection = PendingSelection.SourceFilter
     }
 
+    /** Open the sports-league toggle overlay (curation pass). */
+    fun openLeagueFilter() {
+        pendingSelection = PendingSelection.SportsLeagueFilter
+    }
+
     fun dismissSelection() {
         pendingSelection = null
     }
@@ -93,6 +98,7 @@ class MenuState {
         data class SlotPicker(val slotIndex: Int) : PendingSelection()
         data object Settings : PendingSelection()
         data object SourceFilter : PendingSelection()
+        data object SportsLeagueFilter : PendingSelection()
     }
 }
 

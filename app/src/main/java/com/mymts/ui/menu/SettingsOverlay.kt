@@ -68,6 +68,8 @@ fun SettingsOverlay(
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
     onOpenSourceFilter: () -> Unit,
+    onToggleTickerNews: () -> Unit,
+    onOpenLeagueFilter: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -89,6 +91,8 @@ fun SettingsOverlay(
                 onCycleFeedSide = onCycleFeedSide,
                 onCycleFeedRecency = onCycleFeedRecency,
                 onOpenSourceFilter = onOpenSourceFilter,
+                onToggleTickerNews = onToggleTickerNews,
+                onOpenLeagueFilter = onOpenLeagueFilter,
                 onCancel = onCancel,
             )
         }
@@ -103,6 +107,8 @@ private fun SettingsCard(
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
     onOpenSourceFilter: () -> Unit,
+    onToggleTickerNews: () -> Unit,
+    onOpenLeagueFilter: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -160,6 +166,18 @@ private fun SettingsCard(
             title = "Feed sources…",
             valueLabel = if (hiddenCount == 0) "all shown" else "$hiddenCount hidden",
             onCycle = onOpenSourceFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
+        )
+        // Curation pass: ticker news (default off) + sports-league toggle.
+        SettingRow(
+            title = "Ticker news",
+            valueLabel = if (settings.tickerNewsEnabled) "On" else "Off",
+            onCycle = onToggleTickerNews,
+        )
+        val hiddenLeagues = settings.hiddenLeagues.size
+        SettingRow(
+            title = "Sports leagues…",
+            valueLabel = if (hiddenLeagues == 0) "all shown" else "$hiddenLeagues hidden",
+            onCycle = onOpenLeagueFilter,
         )
 
         Spacer(modifier = Modifier.height(6.dp))

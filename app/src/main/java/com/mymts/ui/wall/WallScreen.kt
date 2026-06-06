@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -124,6 +125,30 @@ fun WallScreen(
             feed.stop()
             ticker.stop()
         }
+    }
+
+    // Push curation into the ticker whenever the operator's settings OR
+    // the feed change: hidden leagues filter the sports mode; when news is
+    // on, build the news entries from the feed the wall already polls (no
+    // duplicate fetch) using the same source denylist as the feed pane.
+    val feedSnapshotForTicker = feed.state.collectAsState().value.snapshot
+    LaunchedEffect(
+        wallSettings.hiddenLeagues,
+        wallSettings.tickerNewsEnabled,
+        wallSettings.hiddenSources,
+        feedSnapshotForTicker,
+    ) {
+        val news = if (wallSettings.tickerNewsEnabled) {
+            HelperTickerSource.newsEntries(
+                items = feedSnapshotForTicker?.items.orEmpty(),
+                hiddenSources = wallSettings.hiddenSources,
+            )
+        } else emptyList()
+        ticker.setCuration(
+            hiddenLeagues = wallSettings.hiddenLeagues,
+            newsEnabled = wallSettings.tickerNewsEnabled,
+            news = news,
+        )
     }
 
     // The slot list — single source of truth.
@@ -396,8 +421,24 @@ fun WallScreen(
                 onCycleFeedSide = { lineupStore.cycleFeedSide() },
                 onCycleFeedRecency = { lineupStore.cycleFeedRecency() },
                 onOpenSourceFilter = { menu.openSourceFilter() },
+                onToggleTickerNews = { lineupStore.toggleTickerNews() },
+                onOpenLeagueFilter = { menu.openLeagueFilter() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (pending is MenuState.PendingSelection.SportsLeagueFilter) {
+            // Curation: toggle which sports leagues the ticker shows.
+            // The offered set is the helper's default leagues (MLB/NFL/
+            // NBA/NHL); filtering is TV-side (the helper serves all).
+            SourceFilterOverlay(
+                sources = CURATED_LEAGUES,
+                hiddenSources = wallSettings.hiddenLeagues,
+                onToggle = { league -> lineupStore.toggleHiddenLeague(league) },
+                onCancel = { menu.openSettings() },
+                modifier = Modifier.fillMaxSize(),
+                title = "SPORTS LEAGUES",
+                emptyText = "No leagues configured.",
             )
         }
         if (pending is MenuState.PendingSelection.SourceFilter) {
@@ -418,6 +459,15 @@ fun WallScreen(
         }
     }
 }
+
+/**
+ * The sports leagues offered in the curation toggle list — the helper's
+ * default scoreboard set (`ticker/sports.py::DEFAULT_LEAGUES`). Filtering
+ * is TV-side (the helper serves all of these; the operator hides the ones
+ * they don't want in the ticker). Kept in sync with the helper's default
+ * set; if the helper adds a league, add it here too.
+ */
+private val CURATED_LEAGUES = listOf("MLB", "NFL", "NBA", "NHL")
 
 private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.label

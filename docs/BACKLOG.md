@@ -241,7 +241,16 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** The current restructure keeps headers visual-only — the focus model didn't change, no-trap invariants stayed pinned without modification. Adding section-jump or collapse semantics expands the focus model (a new "header" focus position, or a new intent for section-jump). Worth doing if the operator finds DOWN-DOWN-DOWN inefficient through a 20+ item section, but the visible sectioning alone should already help orientation. Defer as a focused follow-on.
 **Reconsider when:** Operator's at-the-box feel-test surfaces "I can see the sections but DOWN-by-one through them is still slow."
 
-## Curation & preferences pass (future chapter — groups the "tune what I see" controls)
+## Curation & preferences pass — BUILT 2026-06-06 (Stage 13); team-level + urgency deferred
+
+**BUILT (Stage 13, curation chapter):** A = sports curation (league-level toggles, TV-side filter); B = ticker news (third rotation mode, default OFF, no faked urgency); C = feed-source toggles (reused from Stage 12). See `ARCHITECTURE.md §20`, `docs/findings/14-curation-pass.md`, the THREAT-MODEL reverify entry.
+
+**Deferred from this pass (FEEL-TEST + honest-engineering):**
+- **Team-level sports curation** (favorite-teams pinning — operator's Chicago teams) — league-level shipped; team granularity is a FEEL-TEST follow-on (confirm after seeing scores flow on hardware).
+- **True breaking-news / urgency detection** — NOT faked. RSS can't reliably flag urgency; building real urgency detection needs a genuine signal source (a dedicated breaking-news feed/API, or an LLM-classify pass — itself a foundation-v2 item). The honest source-subset + newest-first version shipped instead.
+- **Dedicated ticker-news source subset** distinct from the feed denylist — if a 13-source ticker reads as noisy after use, give the ticker its own (narrower) source selection.
+
+The original scoping (preserved below for the captured open-questions) —
 
 The data plumbing is being built (real markets + sports ticker, 13 feed sources, channel lineup). The operator wants control over *what* flows through it. These curation controls belong together, likely as a settings-menu expansion (Stage 5 / UX-config lineage).
 

@@ -35,6 +35,14 @@ data class WallSettings(
     // fetched plain-text items (no new fetch; A1 holds).
     val hiddenSources: Set<String> = emptySet(),
     val feedRecency: FeedRecency = FeedRecency.All,
+    // Curation & preferences chapter (2026-06-06). `hiddenLeagues` is a
+    // DENYLIST of sports-league labels the operator has switched off in
+    // the ticker's sports mode (filtered TV-side; the helper still
+    // serves all leagues). `tickerNewsEnabled` adds news as a third
+    // ticker rotation mode (markets → sports → news) — **default OFF**,
+    // a FEEL-TEST item the operator confirms after using the wall.
+    val hiddenLeagues: Set<String> = emptySet(),
+    val tickerNewsEnabled: Boolean = false,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
