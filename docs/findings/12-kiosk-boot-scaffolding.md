@@ -1,6 +1,6 @@
 # Finding 12 — Kiosk / boot scaffolding for the dedicated MyMTS box
 
-> **Status: BUILT (code) + STAGED (on-hardware) 2026-06-06.** The kiosk/foreground/boot code and the provisioning runbook are committed; app tests are green (8 new `KioskPolicyTest` cases) and the APK builds. **On-hardware validation is explicitly STAGED for the migration session** this afternoon when the dedicated box arrives — foreground hold over hours, boot-receiver via a real reboot, low-memory survival, and the accumulated feel-test. None of those hardware-dependent behaviours are claimed working yet. Model A: one kiosk app per box — the new Onn box runs MyMTS as the **sole** kiosk; `.182` stays WyzeGrid's and is untouched. **Kiosk mode is OPT-IN, OFF BY DEFAULT** — the same signed APK on a non-kiosk box does not autostart or foreground without explicit provisioning.
+> **Status: BUILT (code) + STAGED (on-hardware) 2026-06-06.** The kiosk/foreground/boot code and the provisioning runbook are committed; app tests are green (7 new `KioskPolicyTest` cases) and the APK builds. **On-hardware validation is explicitly STAGED for the migration session** this afternoon when the dedicated box arrives — foreground hold over hours, boot-receiver via a real reboot, low-memory survival, and the accumulated feel-test. None of those hardware-dependent behaviours are claimed working yet. Model A: one kiosk app per box — the new Onn box runs MyMTS as the **sole** kiosk; `.182` stays WyzeGrid's and is untouched. **Kiosk mode is OPT-IN, OFF BY DEFAULT** — the same signed APK on a non-kiosk box does not autostart or foreground without explicit provisioning.
 
 ## Why this chapter happened
 
@@ -31,7 +31,7 @@ Coexistence (two kiosk apps negotiating the foreground on one box) was **never b
 
 ## Buildable-now vs STAGED — the honesty line
 
-**Unit-tested now (pure decisions, no box):** the boot-action allowlist (incl. spoofed/null rejected), the both-conditions boot gate (the `.182`-safety property), the relaunch decision, and the crash-loop backoff schedule + streak window — 8 `KioskPolicyTest` cases, all green.
+**Unit-tested now (pure decisions, no box):** the boot-action allowlist (incl. spoofed/null rejected), the both-conditions boot gate (the `.182`-safety property), the relaunch decision, and the crash-loop backoff schedule + streak window — 7 `KioskPolicyTest` cases, all green.
 
 **STAGED for the migration session (genuinely needs the box; NOT claimed working):**
 - Foreground hold over hours — the service actually staying resident/foregrounded across a long run.

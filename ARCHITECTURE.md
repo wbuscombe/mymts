@@ -818,7 +818,7 @@ Model A means the box is MyMTS's alone, so there is **no** foreground-reclaim / 
 
 ### Pure policy + unit tests now; on-hardware validation STAGED
 
-All policy logic is pure and deterministic — 8 `KioskPolicyTest` cases cover the boot allowlist, the both-conditions gate (the `.182`-safety property), the relaunch decision, and the backoff schedule + streak window. So the device session validates *wiring*, not *logic*.
+All policy logic is pure and deterministic — 7 `KioskPolicyTest` cases cover the boot allowlist, the both-conditions gate (the `.182`-safety property), the relaunch decision, and the backoff schedule + streak window. So the device session validates *wiring*, not *logic*.
 
 **Not verified until the box arrives** (and honestly labelled so): the service actually holding the foreground across hours; the boot receiver relaunching via a real power-cycle; low-memory survival; the full runbook end-to-end; and the accumulated nav/feed/config/ticker feel-test (now on the MyMTS box rather than borrowed `.182`). The helper redeploy (13 feed sources + ticker endpoints) is a migration prerequisite.
 

@@ -210,7 +210,14 @@ Per the at-the-box finale prompt, the operator confirmed **Model A — one kiosk
 
 > The kiosk/boot **code** is built + unit-tested (commits in the kiosk chapter); this runbook is execution, not build-from-scratch. Steps marked **[STAGED]** are the on-hardware validations that genuinely need the box — they could not be tested before it arrived.
 
-**Prerequisite — helper is current.** Before provisioning the box, redeploy the helper so the new box gets the full surface (the 13 feed sources + the `/api/ticker/{markets,sports}` endpoints). On the NAS: `cd ~/docker/mymts-helper && git pull && docker compose up -d --build && curl -sk https://<LAN_IP>:8443/health | jq '.feeds.sources_count'` → expect **13**. Then `curl -sk https://<LAN_IP>:8443/api/ticker/markets | jq '.mode'` → `"markets"`. Standing rule: helper stays non-root / read_only / cap_drop ALL / dedicated bridge — **never the unrelated host container**.
+**Prerequisite — helper redeploy (REQUIRED FIRST). ⚠️ Live-vs-built gap:** the running NAS helper is **behind `main` by two chapters' worth of changes** — the 13 feed sources (feed-sources expansion, `069f783`) and the `/api/ticker/{markets,sports}` endpoints + pollers (ticker chapter, `81b06c9`) are **committed but NOT yet deployed**. Until this redeploy runs, the live helper still serves the original **4** feed sources and has **no** ticker endpoints; the wall on the new box would come up with a thin feed and a sample-only ticker. So redeploy the helper *before* provisioning the box:
+> ```
+> cd ~/docker/mymts-helper && git pull && docker compose up -d --build
+> curl -sk https://<LAN_IP>:8443/health | jq '.feeds.sources_count'      # expect 13 (was 4)
+> curl -sk https://<LAN_IP>:8443/api/ticker/markets | jq '.mode'         # expect "markets" (was 404 before redeploy)
+> curl -sk https://<LAN_IP>:8443/api/ticker/sports  | jq '.mode'         # expect "sports"
+> ```
+Standing rule: helper stays non-root / read_only / cap_drop ALL / dedicated bridge — **never the unrelated host container**.
 
 1. **Physical setup.** Power on, connect HDMI to the production TV, join the network (wired Ethernet preferred for a wall). In Android-TV settings enable Developer options → **USB/network debugging**.
 2. **DHCP reservation.** On the router, reserve a fixed IP for the box's MAC. **Record it** — call it `NEWIP` below. (Suggested: keep it near the helper, e.g. `<LAN_IP>`.)

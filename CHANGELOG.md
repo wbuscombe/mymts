@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Pre-migration hygiene pass (2026-06-06)
+
+Tidy-the-slate pass before the afternoon migration to the dedicated MyMTS box. No features, no behaviour changes — orphaned-process cleanup + doc reconciliation only.
+
+### Cleaned
+- **Killed a stale background shell** (PID 50718) that had run **3d 16h** in an `until adb … logcat … grep "EV=STATE…to=LIVE…slot-3"; do sleep 3; done` loop — a navigation Checkpoint-B screencap poller whose exit condition never matched. Confirmed terminated, no re-spawn over repeated checks, and no other orphaned pollers / streaming `logcat` handles / stray `caffeinate` left running against `.182`. (`.182` untouched — `logcat -d` is a local read-only dump.) Removed the `/tmp` screencap leftover.
+- **Run-artifact hygiene:** working tree already clean; `.gitignore` confirmed comprehensive (`.gradle/`, `*.apk`/`*.aab`, `*.keystore`/`*.jks`, TLS private keys all excluded). `docs/findings/runs/` (53 tracked files) retained as durable soak evidence; `helper/uv.lock` correctly tracked.
+
+### Debt
+- **Dual-uvicorn tidy-up: considered, deliberately deferred** (logged in BACKLOG). The helper entry point's `lifespan="off" if cfg.port else "on"` logic is load-bearing (it stops the pollers — now including the ticker pollers — double-starting across listeners); refactoring it the same day as a migration whose prerequisite is a clean helper redeploy is the wrong risk/reward, and the dual-listener wiring isn't fully unit-exercisable. Functionally harmless today. No code change.
+- No TODO/FIXME/dead code found in source.
+
+### Docs reconciled
+- Corrected a stale test-count claim: `KioskPolicyTest` is **7** cases, not 8 (CHANGELOG, ARCHITECTURE §17, findings/12); app suite total is **224**.
+- **Live-vs-built helper state made explicit:** the running NAS helper is two chapters behind `main` — the 13 feed sources (`069f783`) and the `/api/ticker/*` endpoints (`81b06c9`) are committed but **not yet deployed**; the OPERATIONS migration-runbook prerequisite now states this plainly (live helper still serves 4 sources / no ticker until the redeploy).
+- BACKLOG: the app-vs-app foreground-conflict entry marked **resolved by the Model A decision**; the kiosk story updated from "pending hardware" to **"scaffolding built; on-hardware validation STAGED."**
+- Swept for hallucinated references (invented test names, a non-existent "previous reclaim chapter", invented adb actions) — none present.
+- Section numbering verified: ARCHITECTURE §1–§18 and THREAT-MODEL headings have no duplicates or gaps.
+
+### Verified
+- App suite **224** green; helper suite **164** green. Signed-install path + kiosk scaffolding intact. `.182` + WyzeGrid untouched. unrelated host services never touched.
+
 ## Kiosk / foreground / boot scaffolding + provisioning readiness (2026-06-06)
 
 The dedicated MyMTS Onn box arrives this afternoon. This chapter builds the kiosk/foreground/boot **code** + the provisioning runbook so the migration is execution, not build-from-scratch; **on-hardware validation is explicitly STAGED for that session** (nothing hardware-dependent is claimed working). Model A: one kiosk app per box — the new box runs MyMTS as the sole kiosk; `.182` stays WyzeGrid's and is untouched.
@@ -20,7 +42,7 @@ The dedicated MyMTS Onn box arrives this afternoon. This chapter builds the kios
 - `kiosk/BootReceiver.kt`: gated reboot relaunch (`shouldStartOnBoot` AND `KioskPrefs.isEnabled`).
 - `MainActivity.kt`: `--ez kiosk true|false` provisioning hook (normal launch never changes kiosk state); `startIfEnabled` on launch.
 - `AndroidManifest.xml`: `RECEIVE_BOOT_COMPLETED` + `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` + `POST_NOTIFICATIONS`; `<service>` (`exported=false`, `specialUse` + justification) + `<receiver>` (the 4 boot actions). Holding the permissions starts nothing — the prefs gate does.
-- 8 `KioskPolicyTest` cases (boot allowlist incl. spoofed/null rejected, the both-conditions gate, relaunch decision, backoff + streak window).
+- 7 `KioskPolicyTest` cases (boot allowlist incl. spoofed/null rejected, the both-conditions gate, relaunch decision, backoff + streak window).
 
 ### Changed
 - `ONN-BOXES.md` — pre-staged `onn-mymts` row (IP `TBD-at-provision`, role MyMTS sole kiosk); `onn-office` note updated (lingering MyMTS install is inert — kiosk OFF).
@@ -33,7 +55,7 @@ Foreground hold over hours on the new box; boot-receiver via a real reboot; low-
 Opt-in gating keeps the same signed APK inert on `.182` (no foreground service, no boot autostart unless kiosk is provisioned-on) — adversarially verified (not refuted, 12 evidence citations). No coexistence/reclaim logic (Model A). `.182` + WyzeGrid untouched. unrelated host services never touched. No new secret (the kiosk flag is a boolean; the release keystore stays the only secret, never committed).
 
 ### Tests
-App suite green incl. the 8 new kiosk policy tests; APK builds; manifest merges clean.
+App suite green (224 tests) incl. the 7 new kiosk policy tests; APK builds; manifest merges clean.
 
 ## Ticker — real markets data + sports mode + markets/sports rotation (2026-06-05)
 
