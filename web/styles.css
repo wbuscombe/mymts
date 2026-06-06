@@ -1,0 +1,73 @@
+/* MyMTS LAN web client — WyzeGrid-family dark palette, legible on a
+   laptop/phone. Deliberately plain CSS (no framework, no build step). */
+
+:root {
+  --bg: #000;
+  --panel: #0a0a0a;
+  --panel-2: #080808;
+  --line: #ffffff22;
+  --label: #ccc;
+  --muted: #ffffff99;
+  --ghost: #ffffff66;
+  --live: #66bb6a;       /* WyzeGrid green */
+  --down: #ef5350;
+  --stale: #ffcc80;
+  --recover: #ffa726;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--label);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+.topbar { display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+.brand { font-weight: 700; letter-spacing: 2px; }
+.subtitle { color: var(--ghost); font-size: 12px; }
+.status { margin-left: auto; font-size: 12px; color: var(--muted); }
+.status.ok { color: var(--live); }
+.status.down { color: var(--recover); }
+
+.ticker-strip { background: #050505; border-bottom: 1px solid var(--line); padding: 6px 12px; }
+.ticker-mode { display: flex; align-items: center; gap: 12px; overflow-x: auto; white-space: nowrap; padding: 3px 0; }
+.ticker-mode-label { color: var(--ghost); font-size: 10px; letter-spacing: 2px; min-width: 64px; }
+.ticker-row { display: flex; gap: 18px; align-items: center; }
+.ticker-cell { display: inline-flex; gap: 6px; align-items: center; }
+.ticker-symbol { font-weight: 600; font-size: 12px; }
+.ticker-value { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+.ticker-arrow { font-size: 11px; }
+.ticker-arrow.dir-up { color: var(--live); }
+.ticker-arrow.dir-down { color: var(--down); }
+.ticker-arrow.dir-flat { color: var(--muted); }
+.ticker-stale { color: var(--recover); font-size: 11px; }
+.pill { font-size: 8px; letter-spacing: 1px; color: var(--ghost);
+  background: #ffffff33; border-radius: 2px; padding: 1px 4px; }
+
+.grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(220px, 0.5fr); gap: 1px; }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+.pane { background: var(--panel); padding: 12px 14px; min-height: 60vh; }
+.pane-title { font-size: 13px; letter-spacing: 2px; color: var(--label); margin: 0 0 8px; }
+
+.section-header { display: flex; justify-content: space-between; align-items: center;
+  background: var(--panel-2); padding: 6px 8px; margin-top: 10px; border-radius: 3px; }
+.section-source { font-size: 12px; letter-spacing: 1.4px; font-weight: 600; }
+.section-count { font-size: 10px; color: var(--ghost); }
+
+.feed-row { padding: 10px 4px; border-bottom: 1px solid #ffffff14; }
+.feed-meta { display: flex; justify-content: flex-end; }
+.feed-time { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--ghost); }
+.feed-title { font-size: 15px; line-height: 1.3; font-weight: 600; color: var(--label); margin: 2px 0; }
+.feed-summary { font-size: 12px; line-height: 1.4; color: var(--muted); margin: 4px 0 0; }
+
+.channel-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #ffffff14; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-live { background: var(--live); }
+.dot-offline { background: #616161; }
+.dot-unknown { background: var(--stale); }
+.channel-label { flex: 1; font-size: 13px; }
+.channel-status { font-size: 11px; }
+.status-live { color: var(--live); }
+.status-offline { color: var(--ghost); }
+.status-unknown { color: var(--stale); }
+
+.empty, .note { color: var(--ghost); font-size: 12px; }
+.note { margin-top: 14px; line-height: 1.4; }

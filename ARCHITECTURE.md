@@ -829,7 +829,73 @@ All policy logic is pure and deterministic — 7 `KioskPolicyTest` cases cover t
 
 ---
 
-## 18. What this document deliberately does NOT specify yet
+## 18. Stage 11 — LAN web client (a second, origin-isolated client)
+
+MyMTS gains a **second client** alongside the native TV app: a minimal,
+credential-free web view for a laptop/phone on the home network. This is
+the multi-client model the architecture was always built for — one
+hardened helper, many dumb consumers — and is the *separate client*
+path the founding native-over-web decision (§1) explicitly sanctioned,
+NOT a reversal of it.
+
+### Why a web client doesn't reopen the threat the native decision closed
+
+The native-over-web decision (§1) was about one specific threat: a
+browser client sharing cookie/origin space with the operator's other
+`*.<DOMAIN>` services (behind Cloudflare Access) becomes a
+cross-service path. This web client closes that off by construction:
+
+- **Separate origin, LAN-only.** Served on the helper's bare LAN address
+  (`https://<LAN_IP>:8443/app/`) — not a `*.<DOMAIN>`
+  subdomain, not tunneled, not behind Cloudflare Access. It shares no
+  origin and no cookie jar with the operator's other services, so the
+  browser's same-origin policy enforces the isolation.
+- **Credential-free.** No login, cookies, session, or tokens; `fetch`
+  uses `credentials: "omit"`. The helper data is already inert public
+  plain text — nothing to steal, no session to hijack.
+- **The helper stays the only boundary.** The web client does no
+  hostile-input work, no article-page fetch, no stream resolution — it
+  consumes `/api/feed`, `/api/channels`, `/api/ticker/*`, `/health`
+  exactly as the native app does.
+
+### Same-origin → no CORS
+
+The SPA is served *by the helper* (static mount at `/app`), so it calls
+`/api/...` same-origin — the helper opens **no** CORS to any other
+origin. The mount is config-gated (`WEB_CLIENT_DIR`, off by default):
+when unset the helper is byte-for-byte its prior self; when set it
+serves the bundled `web/` directory as GET-only static files, mounted
+last so it can never shadow an `/api/*` or `/health` route. No change to
+the SSRF-safe fetcher, parsers, or the non-root/read-only/cap-drop
+posture.
+
+### Structure + honesty
+
+`web/` is a dependency-free vanilla-JS SPA: `js/render.mjs` holds the
+pure label/group/honesty logic (unit-tested with `node --test`),
+`js/api.mjs` the same-origin fetch wrappers, `js/app.mjs` the DOM wiring
+(writes results via `textContent` only — no helper string is ever
+interpreted as markup). It renders the feed (sectioned by source,
+newest-first), the ticker (markets + sports with SAMPLE pills + stale
+notes preserved), channel live/offline/unknown status, and health — the
+same honesty discipline as the native app (sample/stale/offline never
+shown as live). A page-level CSP (`connect-src 'self'`, `frame-src
+'none'`) is a belt-and-braces A1 guard: the browser itself forbids
+reaching an article page or iframing one. **A1 closed door holds — no
+in-browser web reader.** In-browser HLS video is a documented follow-on
+(the live grid lives on the TV wall).
+
+### Remote access is a deferred future chapter
+
+Exposing the web client beyond the LAN — a genuinely separate public
+origin, its own threat-model pass, an auth story plus the credential
+tradeoff that introduces, rate-limiting — is a conscious later decision,
+scoped in `docs/BACKLOG.md`, **not built**. The LAN-only version
+sidesteps all of it by being unreachable from outside the network.
+
+---
+
+## 19. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

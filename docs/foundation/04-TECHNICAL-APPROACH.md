@@ -37,6 +37,9 @@ WyzeGrid is the existence proof: same household, same Onn 4K (2GB RAM) hardware,
 - The "view it in a browser on my desktop" path is not free anymore. Accepted: it was the least-valued capability.
 - There is a NAS-side helper to build and maintain. Accepted: it is minimal, it follows the operator's established Docker/NAS standards, and it exists specifically so the TV doesn't do the fragile, dangerous work (web fetching, stream resolution) itself — which serves the Trust Bar.
 
+### Addendum (2026-06-06) — the sanctioned *separate* web client, and what stays forbidden
+The decision above forbids a **browser mode that shares origin/session** with the operator's other `*.<DOMAIN>` services (the cross-service path). It does NOT forbid a **separate** web client that consumes the same helper API as a dumb client — that path was always sanctioned. A **LAN-only, credential-free, origin-isolated** web client now exists (`web/`, served by the helper at `/app` on its bare LAN address — off the <DOMAIN> domain, not tunneled, not behind Cloudflare Access). It holds no credentials and shares no cookie jar, so the browser's same-origin policy enforces the isolation; the A1 closed door (no in-browser article reading) still applies. This is a faithful *extension* of the decision, not a reversal. A **remote-accessible** web client (a genuinely separate public origin with its own threat-model + auth tradeoff) remains a deliberate, un-built future decision — see `docs/BACKLOG.md`.
+
 ---
 
 ## 2. The shape of the system

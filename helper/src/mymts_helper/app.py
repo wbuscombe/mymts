@@ -169,6 +169,23 @@ def create_app(
     app.include_router(channels_router(db_path))
     app.include_router(ticker_router(markets_poller, sports_poller))
 
+    # LAN web client (optional, off by default). When WEB_CLIENT_DIR is
+    # set to an existing directory, serve it as static files at `/app`
+    # — same-origin as the API above, so the client needs NO CORS and
+    # carries no credentials. Mounted LAST so it can never shadow an
+    # `/api/*` or `/health` route. GET-only static serving; no new
+    # hostile-input surface (it serves our own bundled files). If the
+    # path is unset or missing, nothing is mounted and the helper is
+    # byte-for-byte its prior self.
+    if cfg.web_client_dir:
+        web_dir = Path(cfg.web_client_dir)
+        if web_dir.is_dir():
+            from fastapi.staticfiles import StaticFiles
+            app.mount("/app", StaticFiles(directory=str(web_dir), html=True), name="web-client")
+            log.info("web_client_mounted", extra={"dir": str(web_dir)})
+        else:
+            log.warning("web_client_dir_missing", extra={"dir": str(web_dir)})
+
     log.info(
         "helper_started",
         extra={

@@ -377,6 +377,25 @@ The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW
 
 ---
 
+## LAN web client — separate origin-isolated client (2026-06-06)
+
+**Claim:** The new LAN web client is a *separate* client of the same helper API (like the native app), built so it cannot become the cross-service path the founding native-over-web decision avoided. It is LAN-only, credential-free, same-origin with the helper (no CORS), and holds the A1 closed door (no in-browser article reading). The helper core is unchanged except an optional, default-off static mount.
+
+**Why it does not reopen the web-client threat the native decision closed:**
+- **Separate origin, LAN-only.** Served on the helper's bare LAN address (`https://<LAN_IP>:8443/app/`), NOT a `*.<DOMAIN>` subdomain, NOT tunneled, NOT behind Cloudflare Access. It shares no origin and no cookie jar with the operator's other services; the browser's same-origin policy enforces the isolation. The specific threat that drove native-over-web (a browser sharing CF-Access cookies across `*.<DOMAIN>`) cannot occur because this client is off that domain entirely.
+- **Credential-free.** No login/cookies/session/token; `fetch` uses `credentials: "omit"`. The helper data is already inert public plain text — nothing to steal, no session to hijack, no A5/A6 session-as-skeleton-key surface.
+- **Helper stays the only boundary (A4/A1).** The client does no hostile-input work, no article-page fetch, no stream resolution — GET-only against the helper's own JSON. A page CSP (`connect-src 'self'`, `frame-src 'none'`, `object-src 'none'`) is a belt-and-braces guard: the browser forbids reaching any third-party host or iframing an article even if a bug tried.
+
+**A1 closed door (no in-browser web reading):** the client renders the helper's already-stripped plain-text summaries via `textContent` only — never `innerHTML`, never a WebView/iframe, never an article fetch. Same closed door as the native app. Confirmed by construction + the CSP.
+
+**Helper change — minimal, default-off:** the only helper change is a config-gated static mount (`WEB_CLIENT_DIR`, default unset → not mounted; the running helper is unchanged until the operator opts in). Mounted at `/app`, GET-only static files, same-origin as the API → **no CORS opened to any origin**. Mounted last so it cannot shadow `/api/*` or `/health`. The SSRF-safe fetcher, parsers, and non-root/read-only/cap-drop posture are untouched. New surface: serving our own bundled static files (no hostile input).
+
+**Deferred — remote web client (NOT built):** exposing this beyond the LAN would be a genuinely separate public origin requiring its own threat-model pass, an auth story (and the credential tradeoff that introduces — the helper or client would then hold a secret), and rate-limiting. Scoped in `docs/BACKLOG.md` as a conscious future chapter. The LAN-only version sidesteps all of it by being unreachable from outside the network.
+
+**Traces to:** the native-over-web decision in `04-TECHNICAL-APPROACH.md §1` (this is its sanctioned *separate-client* extension, not a reversal); **A1** (inert plain text, closed door), **A4** (helper is the only boundary; client has no reach), **A5/A6** (credential-free → no session to extend/forge).
+
+---
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

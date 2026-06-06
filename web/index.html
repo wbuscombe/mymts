@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Content-Security-Policy as a belt-and-braces A1 guard for the web
+    client: only same-origin resources, NO external connections, NO
+    frames, NO objects. `connect-src 'self'` means scripts can only fetch
+    the same origin (the helper) — they cannot reach an article page or
+    any third-party host even if a bug tried to. `frame-src 'none'`
+    forbids iframing an article (the closed door). This is the browser
+    enforcing the same boundary the native app enforces by construction.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>MyMTS · LAN wall view</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">MyMTS</span>
+    <span class="subtitle">LAN view · read-only · same-origin helper client</span>
+    <span id="status" class="status">connecting…</span>
+  </header>
+
+  <section class="ticker-strip" aria-label="ticker">
+    <div class="ticker-mode"><span class="ticker-mode-label">MARKETS</span><div id="ticker-markets" class="ticker-row"></div></div>
+    <div class="ticker-mode"><span class="ticker-mode-label">SPORTS</span><div id="ticker-sports" class="ticker-row"></div></div>
+  </section>
+
+  <main class="grid">
+    <section class="pane feed-pane" aria-label="feed">
+      <h2 class="pane-title">FEED</h2>
+      <div id="feed" class="feed"></div>
+    </section>
+    <section class="pane channels-pane" aria-label="channels">
+      <h2 class="pane-title">CHANNELS</h2>
+      <div id="channels" class="channels"></div>
+      <p class="note">Live video grid is rendered on the TV wall. This LAN view
+        shows feed, ticker, and channel status; in-browser HLS playback is a
+        documented follow-on (see web/README.md).</p>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.mjs"></script>
+</body>
+</html>

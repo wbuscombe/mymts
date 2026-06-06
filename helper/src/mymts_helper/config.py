@@ -44,6 +44,13 @@ class Config:
     https_port: int | None = None
     ssl_keyfile: str | None = None
     ssl_certfile: str | None = None
+    # LAN web client (2026-06-06). When set to a directory path, the
+    # helper mounts that directory's static files at `/app` (same-origin
+    # as the API, so no CORS). OFF by default — the running helper is
+    # unchanged unless the operator opts in via WEB_CLIENT_DIR. The
+    # served content is the credential-free LAN web client (see
+    # `web/README.md`); it is never exposed beyond the LAN.
+    web_client_dir: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -81,6 +88,7 @@ class Config:
             https_port=_opt_int("HTTPS_PORT"),
             ssl_keyfile=_opt_str("SSL_KEYFILE"),
             ssl_certfile=_opt_str("SSL_CERTFILE"),
+            web_client_dir=_opt_str("WEB_CLIENT_DIR"),
         )
 
     def has_https(self) -> bool:

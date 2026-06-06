@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## LAN web client — separate, credential-free, origin-isolated (2026-06-06)
+
+A second client of the helper API for laptop/phone viewing on the home network — the *separate client* path the founding native-over-web decision sanctioned, NOT a reversal. LAN-only, credential-free, same-origin with the helper (no CORS), A1 closed door held. The remote version is scoped as a future chapter, not built.
+
+### Added
+- `web/` — dependency-free vanilla-JS SPA: `js/render.mjs` (pure label/group/honesty logic), `js/api.mjs` (same-origin, `credentials: "omit"` fetch wrappers), `js/app.mjs` (DOM wiring via `textContent` only), `index.html` (page CSP: `connect-src 'self'`, `frame-src 'none'`), `styles.css` (WyzeGrid-family dark), `README.md` (security posture + serving + cert note).
+- Renders feed (sectioned by source, newest-first, plain-text summaries), ticker (markets + sports with SAMPLE pills + stale notes preserved), channel live/offline/unknown status, and health — same honesty discipline as the native app.
+- `web/test/render.test.mjs` — 9 pure-logic tests via `node --test` (no toolchain): direction glyphs, sample/stale never-as-live, source grouping/ordering matching the native `FeedListBuilder`, relative time, honest channel status + empty states.
+- Helper: config-gated static mount at `/app` (`WEB_CLIENT_DIR`, **off by default**) — serves the SPA same-origin so no CORS is opened; mounted last so it can't shadow `/api/*` or `/health`. `helper/tests/test_web_client_mount.py` (3 tests: off-by-default 404, served-when-configured, missing-dir soft no-op).
+
+### Security posture (confirmed)
+LAN-only (helper's bare LAN IP, off `*.<DOMAIN>`, not tunneled, not behind Cloudflare Access); credential-free (no login/cookies/session/tokens); same-origin → **no CORS**; A1 held (no article fetch/iframe — CSP-enforced + `textContent`-only rendering); helper core unchanged (SSRF fetcher, parsers, non-root/read-only posture untouched; only the default-off mount added).
+
+### Single-command test runs
+- Web: `node --test web/test/` (9 pass).
+- Helper: `cd helper && .venv/bin/python -m pytest` (167 pass, +3).
+
+### Deferred (BACKLOG)
+- **Remote-accessible** web client — separate public origin, own threat-model, auth story (+ the credential tradeoff), rate-limiting. Not built; LAN-only sidesteps it.
+- In-browser HLS video grid (`hls.js`) — LAN follow-on; the live grid is on the TV wall.
+
+### Operator action
+To serve the LAN client, set `WEB_CLIENT_DIR=/app/web` in the helper `.env` and redeploy (pull → rebuild → restart); browse to `https://<LAN_IP>:8443/app/` on the LAN (click through the self-signed-cert warning once). If left unset, the helper is unchanged. Standing rules: helper non-root / read_only / cap_drop ALL / dedicated bridge — **never the unrelated host container**.
+
+### Standing rules
+- unrelated host services never touched; `.182`/WyzeGrid untouched; no secrets/absolute-paths committed.
+
 ## Pre-migration hygiene pass (2026-06-06)
 
 Tidy-the-slate pass before the afternoon migration to the dedicated MyMTS box. No features, no behaviour changes — orphaned-process cleanup + doc reconciliation only.
