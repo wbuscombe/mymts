@@ -215,6 +215,12 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 - **Optional future feature in the same spirit:** MyMTS could maintain its *own* per-source bias/lean tags in the helper's source list (a home-grown bias layer, not Ground's) — log as a possible future feed enhancement if the operator wants the bias-awareness concept without Ground.
 - **Reconsider when:** Only if Ground News ever ships a real public API / personal-feed RSS export. Until then, the public-RSS-expansion path (F) is the answer.
 
+## Markets ticker — Stooq anti-bot challenge from the NAS egress (surfaced 2026-06-06 redeploy)
+
+**What:** After the helper redeploy, the markets ticker shows **BTC/ETH real (CoinGecko) but indices/FX/gold on honest SAMPLE pills** — because, from the NAS's egress IP, **Stooq now returns a JavaScript proof-of-work anti-bot challenge** (HTTP 200, an HTML/JS page) instead of the CSV quote snapshot. The defensive parser finds zero rows and falls back to SAMPLE per the C3 honesty contract (correct, not faked-live). The ticker chapter verified Stooq cleanly from the dev Mac; the NAS IP is being bot-walled — a network-path/data-source issue, not a code or deploy bug.
+**Why-not-now:** Not blocking — the markets ticker degrades honestly (real crypto, SAMPLE indices/FX/gold) and the rest of the helper is fully live. Fixing it is a data-source choice, not a redeploy concern.
+**Reconsider when:** the operator wants real indices/FX/gold on the wall. Options: (a) a different **keyless** indices/FX/commodity source that tolerates the NAS IP (re-survey like the ticker chapter did, with ToS caveats); (b) a free-tier keyed source (crosses the helper-holds-a-secret line — handle per the .env discipline); (c) accept SAMPLE on those symbols. CoinGecko (crypto) is unaffected and stays real.
+
 ## Send-to-phone for richer article reading (QR pair) — closed-door-compatible
 
 **What:** A future feature for the focused-feed-item SELECT path: alongside the current safe in-place expansion of the helper's plain-text summary, surface a small QR (and/or operator-pre-paired phone notification) that opens the article URL on the operator's phone. The full article is read on the phone's browser — a context where the operator's existing browser hygiene + the article's own platform already apply — not in MyMTS.
