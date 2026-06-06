@@ -200,6 +200,24 @@ The decision-logic Python is fully unit-tested (`scripts/test_health_check.py`).
 
 The Operational Bar B1/B2/B5 properties (never bricks / always a way back / no silent bad-bundle cascade) are now operationally verified on real hardware.
 
+## Helper redeploy — 2026-06-06 (main HEAD `611544d`: 13 sources + ticker + web client)
+
+Redeployed the NAS helper from `main` via `scripts/deploy-helper.sh` (full rsync → `docker compose build --pull` → `up -d` → HTTPS health-verify; helper service only). This activates the feed-sources, ticker, and web-client chapters that were committed-but-not-deployed, and **satisfies the migration's helper-redeploy prerequisite**.
+
+**Before → after** (`curl -k https://<LAN_IP>:8443/health`): `build_sha` `a21f37c` → **`611544d`**; `feeds.sources_count` **4 → 13**; `/api/ticker/{markets,sports}` **404 → live**; `/app` **404 → 200**.
+
+**Verified live:**
+- `/health` → `ready=true`, 13 sources, 1107 items, 10 live channels.
+- `/api/feed` → items from all 12 distinct sources flowing as inert plain text; **5 rapid hits all 200, no `sqlite3.ProgrammingError`** (the cross-thread fix `069f783` is live and stable).
+- `/api/ticker/sports` → real ESPN scoreboard data (live games).
+- `/api/channels` → 10 live channels (no regression).
+- Hardening intact: container non-root (uid 10001), `mymts-net` bridge only, `_secrets` owned 10001:10001 (TLS key readable). **unrelated host container (`pia`) unchanged — Up, on `downloads_default`, never referenced.**
+
+**LAN web client — now enabled.** Set in the deploy `.env`: `WEB_CLIENT_DIR=/app/web`; the repo-root `web/` tree is rsynced to `/srv/docker/mymts-helper/_web/` and bind-mounted read-only at `/app/web`. Browse on the LAN to **`https://<LAN_IP>:8443/app/`**.
+> **Self-signed-cert browser warning is EXPECTED.** The cert is pinned by the native app; a desktop/phone browser will show a "not private" warning — accept it for the LAN host once. This is normal for a self-signed LAN cert and is why the client is LAN-only (never exposed publicly). To disable the web client: set `WEB_CLIENT_DIR=` (empty) in the NAS `.env` and re-up.
+
+**⚠️ Honest data-source note — markets ticker partially SAMPLE from the NAS.** On the NAS egress, **Stooq now serves a JavaScript anti-bot challenge** (HTTP 200 with a JS proof-of-work page, not CSV) instead of quotes — so indices/FX/gold parse to zero and fall back to **honest SAMPLE pills**, while **CoinGecko (BTC/ETH) returns real values**. This is the C3 honesty contract working exactly as designed (a real upstream failure shows as SAMPLE, never faked-live) — not a deploy fault. It differs from the ticker chapter's verification, which hit Stooq cleanly from the dev Mac; the NAS's IP is being bot-walled. Logged in BACKLOG ("Markets ticker — Stooq anti-bot challenge from the NAS egress"). The fix (a different keyless indices/FX source, or accept SAMPLE) is a data-source follow-on, not a redeploy concern.
+
 ## New MyMTS box provisioning (pending — hardware in transit)
 
 ### Decision recorded (2026-06-04): one kiosk app per box (Model A)
@@ -210,7 +228,7 @@ Per the at-the-box finale prompt, the operator confirmed **Model A — one kiosk
 
 > The kiosk/boot **code** is built + unit-tested (commits in the kiosk chapter); this runbook is execution, not build-from-scratch. Steps marked **[STAGED]** are the on-hardware validations that genuinely need the box — they could not be tested before it arrived.
 
-**Prerequisite — helper redeploy (REQUIRED FIRST). ⚠️ Live-vs-built gap:** the running NAS helper is **behind `main` by two chapters' worth of changes** — the 13 feed sources (feed-sources expansion, `069f783`) and the `/api/ticker/{markets,sports}` endpoints + pollers (ticker chapter, `81b06c9`) are **committed but NOT yet deployed**. Until this redeploy runs, the live helper still serves the original **4** feed sources and has **no** ticker endpoints; the wall on the new box would come up with a thin feed and a sample-only ticker. So redeploy the helper *before* provisioning the box:
+**Prerequisite — helper redeploy: DONE 2026-06-06 (`611544d`).** The helper was redeployed to `main` HEAD on the NAS via `scripts/deploy-helper.sh` (see "Helper redeploy 2026-06-06" below). `/health` now reports `build_sha=611544d`, `ready=true`, `feeds.sources_count=13`; `/api/ticker/{markets,sports}` are live; the LAN web client is served at `/app`. **So this afternoon's migration can skip the redeploy unless new helper changes land first** — just re-verify `/health` shows 13 sources + the ticker endpoints before provisioning. The original gap (recorded for history): the running helper had been behind `main` by the feed-sources (`069f783`) + ticker (`81b06c9`) chapters; if you ever need to re-run it from a behind state:
 > ```
 > cd ~/docker/mymts-helper && git pull && docker compose up -d --build
 > curl -sk https://<LAN_IP>:8443/health | jq '.feeds.sources_count'      # expect 13 (was 4)
