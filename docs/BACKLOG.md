@@ -132,6 +132,28 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 **What:** MyMTS's long-uptime kiosk behavior — a foreground service that holds the screen for the ambient-wall role + a boot-receiver so it relaunches on reboot (own-the-box, Model A).
 **Status (2026-06-06 kiosk-scaffolding chapter):** the **code is built + unit-tested** (`KioskPolicy`/`KioskPrefs`/`KioskService`/`BootReceiver`, manifest, MainActivity `--ez kiosk` hook; 7 `KioskPolicyTest` cases; opt-in/off-by-default so the shared APK is inert on `.182`). See `ARCHITECTURE.md §17`, `docs/findings/12-kiosk-boot-scaffolding.md`, and the threat entry. **What remains is on-hardware validation only**, STAGED for this afternoon's migration session on the dedicated box: foreground hold over hours, boot-receiver via a real reboot, low-memory survival. The ordered steps are in `docs/OPERATIONS.md §"New MyMTS box provisioning" → "Migration runbook"` (steps marked [STAGED]).
 **Reconsider when:** the migration session runs the [STAGED] validations on the dedicated box; once green there, this item closes entirely.
+**Update (migration 2026-06-07):** foreground-hold + boot-relaunch validated on `<LAN_IP>` — the `KioskService` foreground service starts on boot (`BootReceiver` → FGS), the box auto-restores 720p + screen-awake, and the kiosk holds the wall once it's foregrounded. The ONE thing that did NOT work unattended is bringing the wall to the **foreground over the launcher on boot** — see the dedicated entry directly below.
+
+## Wall-on-boot (auto-foreground) — ACCEPTED manual-launch (2026-06-07); device-owner is the logged future path
+
+**Decision (2026-06-07): accept manual-launch for now; device-owner/lock-task deferred to a deliberate future project.** Researched + empirical, not a loose end. On `<LAN_IP>` (Office ONN Box - MyMTS), the `KioskService` + `BootReceiver` start the wall's foreground service on boot and hold it once the wall is up — but **getting the wall ACTIVITY to the foreground over the Google TV launcher at boot** is the gap. Two mechanisms were tried on this exact Google TV build and **empirically ruled out** — do **not** retry them:
+
+- **HOME-launcher — RULED OUT.** Added `CATEGORY_HOME`+`DEFAULT` to `MainActivity` + `cmd package set-home-activity` (MyMTS held `android.app.role.HOME`). But Google TV's system home apps out-prioritise any third-party app at boot — `launcherx` (`android:priority=2`), the setup-wizard `setupwraith.RecoveryActivity` (priority 1), and `tv.settings` — and the boot home-launch follows **priority, not the HOME role**, so the wall lost the race (reboot came up on `launcherx`, 0 tiles). Disabling those system launchers to force a win **destabilised the box** (SystemUI/`system_server` restart, `pm` "Broken pipe", ADB offline → recovered by re-enabling them). That whole class of action (disabling system launchers / launcher surgery) is **off-limits on this build.**
+- **Full-screen-intent — RULED OUT.** `USE_FULL_SCREEN_INTENT` + a HIGH-importance channel + `setFullScreenIntent(...)` posted from the `BootReceiver` path (the Android-sanctioned background→foreground mechanism; touches no launcher). Telemetry confirmed it **fired** (`canUseFullScreenIntent=true`, notification posted) — but on the **TV form factor** the system treats a full-screen-intent as a notification, **not** an auto-launch, so the wall didn't foreground. Reverted clean (code + app-op), redeployed the clean APK.
+
+### Current accepted state
+On power-on/reboot the box comes up on the Google TV launcher at 720p; **open MyMTS once → the wall runs LIVE and the kiosk holds it foregrounded.** This only matters on the **rare** reboot (a dedicated appliance on stable power), so the manual-launch cost is small. Good-enough for now.
+
+### The future path — device-owner / lock-task (PLANNED, not reactive)
+The robust "true kiosk home" mechanism: `adb shell dpm set-device-owner <pkg>/<DeviceAdminReceiver>` + `setLockTaskPackages` + lock-task — how commercial kiosks/signage do unattended boot-to-app.
+**⚠️ Prerequisites + costs (why it's a planned project, not a quick try):**
+- The device must be **UNPROVISIONED with NO Google account** for `set-device-owner` to be accepted → it needs a **factory reset**, then device-owner set BEFORE adding any account. That **wipes the debloat + both app installs + all config** → a full re-provision.
+- Once device-owner, the app **cannot be uninstalled** — backing out requires **another factory reset** (rollback is expensive, not a `git revert`).
+- `set-device-owner` is **documented to sometimes fail on TV hardware** even when done correctly — so a box could be reset, re-provisioned, attempt it, fail, and need re-provisioning again with nothing gained.
+- Needs a `DeviceAdminReceiver` built into MyMTS first (code), then the reset → provision-as-device-owner → lock-task flow.
+
+**When to do it:** a deliberate, budgeted effort — ideally on a **fresh/spare box**, or a planned reset day for `<LAN_IP>` where the re-provision time + risk-of-not-working are accepted up front. **NOT** a reactive "one more try."
+**Reconsider when:** the operator wants true unattended boot-to-wall badly enough to budget a factory-reset + re-provision pass (and the device-admin code), accepting the expensive-rollback + may-fail-on-TV caveats.
 
 ## ~~Helper feeds API — SQLite cross-thread bug (latent since the TLS dual-listener)~~ — FIXED (feed-sources expansion, 2026-06-05)
 
