@@ -125,8 +125,13 @@ verify_signed_release() {
     # v2-signed APKs reliably.
     if command -v apksigner >/dev/null 2>&1; then
         local subject
+        # apksigner's --print-certs label changed across build-tools: older
+        # prints "Subject: <DN>", build-tools 33+ prints
+        # "Signer #1 certificate DN: <DN>". Match BOTH so the debug-vs-release
+        # check works on modern SDKs (35.0.0) instead of reading an empty
+        # subject and falsely failing a correctly-signed release.
         subject="$(apksigner verify --print-certs "$APK_PATH" 2>/dev/null | \
-            awk -F': ' '/Subject:/ {print $2; exit}')"
+            awk -F': ' '/certificate DN:|Subject:/ {print $2; exit}')"
         if [[ -z "$subject" ]]; then
             log "FATAL: apksigner could not read the release APK's certificate"
             return 4
