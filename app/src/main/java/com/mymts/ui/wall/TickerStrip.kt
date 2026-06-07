@@ -78,10 +78,15 @@ fun TickerStrip(
                 .then(scrollModifier)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             if (paused) PausedChip()
-            entries.forEach { entry -> TickerCell(entry) }
+            // ESPN-BottomLine style: group consecutive same-symbol entries
+            // so a league marker shows ONCE, then its games follow without
+            // the redundant per-item prefix. Markets symbols are distinct,
+            // so each stays its own marker+value (unchanged). Consistent
+            // with the web client's groupTickerByLeague.
+            TickerGrouping.group(entries).forEach { run -> TickerRun(run) }
         }
     }
 }
@@ -104,19 +109,48 @@ private fun PausedChip() {
     }
 }
 
+/**
+ * One labelled run: the league/market marker (a small accent pill) shown
+ * ONCE, then each entry's value follows without repeating the symbol. This
+ * is the ESPN-BottomLine layout — for sports it kills the redundant
+ * per-game "MLB …" prefix; for markets each symbol is its own one-row run,
+ * so it reads as "S&P 500 │ 5,820 ▲" — same information, marker-pill style.
+ */
 @Composable
-private fun TickerCell(entry: TickerEntry) {
+private fun TickerRun(run: TickerGrouping.Run) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        LeagueMarker(run.label)
+        run.entries.forEach { entry -> TickerValue(entry) }
+    }
+}
+
+@Composable
+private fun LeagueMarker(label: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(WallColors.BadgeLive)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color(0xFF000000),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+        )
+    }
+}
+
+@Composable
+private fun TickerValue(entry: TickerEntry) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = entry.symbol,
-            color = WallColors.LabelPrimary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp,
-        )
         Text(
             text = entry.display,
             color = WallColors.LabelMuted,
