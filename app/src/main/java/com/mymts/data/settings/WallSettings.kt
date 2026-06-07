@@ -43,11 +43,56 @@ data class WallSettings(
     // a FEEL-TEST item the operator confirms after using the wall.
     val hiddenLeagues: Set<String> = emptySet(),
     val tickerNewsEnabled: Boolean = false,
+    // Panel-fit chapter (2026-06-07). `uiScale` is a single global
+    // density multiplier applied to the WHOLE wall (ticker, feed, grid
+    // chrome, labels) via a LocalDensity override — the lever to shrink
+    // everything together when the content is simply too big for the
+    // panel. `overscan` is a safe-area inset (fraction per edge) so
+    // content doesn't clip on a panel that overscans; default 5% is the
+    // TV action-safe standard (a panel that doesn't overscan just gets a
+    // small black border, an honest cost for a panel-agnostic default).
+    val uiScale: UiScale = UiScale.Default,
+    val overscan: Overscan = Overscan.Medium,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
     }
 }
+
+/**
+ * Global UI scale — a single density multiplier applied to the entire
+ * wall at once (a `LocalDensity` override in `WallScreen`), so the
+ * operator can shrink/grow ALL chrome together to fit the panel. Above
+ * the per-piece feed-width/feed-font controls (those still apply within
+ * the scaled layout). Discrete presets cycle cleanly on the D-pad.
+ * `Compact` is the shrink-to-fit lever for a too-big-for-the-panel wall.
+ */
+enum class UiScale(val multiplier: Float, val displayName: String) {
+    Compact(0.80f, "Compact"),
+    Default(1.00f, "Default"),
+    Roomy(1.15f, "Roomy"),
+}
+
+/**
+ * Overscan-safe inset — a fraction of the screen reserved as a margin on
+ * every edge so wall content survives a panel that cuts the outer edge
+ * (physical overscan, common on cheap panels / some HDMI converters; the
+ * box outputs a full frame, the panel just doesn't show it all). `None`
+ * is edge-to-edge (clean panels); the others inset by the named fraction
+ * per edge. Default `Medium` (5%) = the classic TV action-safe margin.
+ */
+enum class Overscan(val fraction: Float, val displayName: String) {
+    None(0.00f, "None"),
+    Small(0.03f, "3%"),
+    Medium(0.05f, "5%"),
+    Large(0.07f, "7%"),
+}
+
+internal fun uiScaleFromOrdinal(ordinal: Int): UiScale =
+    UiScale.values().getOrNull(ordinal) ?: UiScale.Default
+
+internal fun overscanFromOrdinal(ordinal: Int): Overscan =
+    Overscan.values().getOrNull(ordinal) ?: Overscan.Medium
 
 /**
  * Recency window for the feed. `All` shows everything the helper

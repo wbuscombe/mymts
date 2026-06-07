@@ -4,14 +4,17 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,6 +34,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.mymts.data.helper.Channel
 import com.mymts.data.helper.ChannelsRepository
@@ -281,6 +286,22 @@ fun WallScreen(
                 }
             },
     ) {
+      // Panel-fit (2026-06-07): an overscan-safe inset + a global UI scale.
+      // The inset is measured in REAL screen space (BoxWithConstraints,
+      // OUTSIDE the density override) so it stays a true physical safe-area
+      // margin; the LocalDensity override then scales ALL wall chrome
+      // (ticker, feed, grid, labels, overlays) together inside that inset.
+      // The black root Box shows through the inset margin.
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val insetH = maxWidth * wallSettings.overscan.fraction
+        val insetV = maxHeight * wallSettings.overscan.fraction
+        val baseDensity = LocalDensity.current
+        val scaledDensity = Density(
+            density = baseDensity.density * wallSettings.uiScale.multiplier,
+            fontScale = baseDensity.fontScale,
+        )
+        Box(modifier = Modifier.fillMaxSize().padding(horizontal = insetH, vertical = insetV)) {
+          CompositionLocalProvider(LocalDensity provides scaledDensity) {
         val wallAlpha = if (menu.isOpen || menu.pendingSelection != null) 0.45f else 1f
         Column(modifier = Modifier.fillMaxSize().alpha(wallAlpha)) {
             TickerStrip(
@@ -423,6 +444,8 @@ fun WallScreen(
                 onOpenSourceFilter = { menu.openSourceFilter() },
                 onToggleTickerNews = { lineupStore.toggleTickerNews() },
                 onOpenLeagueFilter = { menu.openLeagueFilter() },
+                onCycleUiScale = { lineupStore.cycleUiScale() },
+                onCycleOverscan = { lineupStore.cycleOverscan() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -457,6 +480,9 @@ fun WallScreen(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+          } // CompositionLocalProvider (global UI scale)
+        }   // inset Box
+      }     // BoxWithConstraints (overscan safe-area)
     }
 }
 

@@ -1,32 +1,26 @@
 package com.mymts.ui.wall.feed
 
 import com.mymts.data.helper.FeedItem
+import com.mymts.data.settings.FeedRecency
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 
 /**
- * Pin grouping + freshness logic for the wall's sectioned feed.
- *
- * The grouping function is pure; these tests don't need Compose or a
- * real clock — `build()` accepts `now` as a parameter so the test
- * suite controls staleness classification deterministically.
+ * Pin the AGNOSTIC feed ordering (panel-fit-&-agnostic-feed chapter,
+ * 2026-06-07): one newest-first list across ALL sources, with the source
+ * carried per item (no per-source sections). Pure — no Compose / clock.
  *
  * Invariants pinned:
- *   - Sections are grouped by source, alphabetical case-insensitive
- *     (predictable layout, no reshuffle on poll).
- *   - Within a section, items are newest-first (published time when
- *     present, fetched time as fallback).
- *   - Per-section freshness is computed from the **newest** item's
- *     age; thresholds default to 2h Fresh→Warm, 12h Warm→NotUpdating.
- *   - The flat-item order (after dropping headers) IS the focus
- *     navigation order, so the navigation chapter's `feedIndex`
- *     semantics keep working without model changes.
- *   - [FeedListBuilder.entriesIndexForFocus] maps a focus index to the
- *     correct entries-list row even with intervening headers.
+ *   - One flat list, newest-first across all sources (interleaved by time,
+ *     NOT grouped by source).
+ *   - Published time preferred, fetched fallback; items missing both sort
+ *     last; ties broken by id (newest-id first).
+ *   - The flat order IS the focus order (feedIndex == list index).
+ *   - `sourceLabel` collapses blank to the Unknown bucket.
+ *   - `applyFilters` (source denylist + recency) + `distinctSources`
+ *     behave over the agnostic list.
  */
 class FeedListBuilderTest {
 
@@ -56,200 +50,140 @@ class FeedListBuilderTest {
         )
     }
 
-    // ============== Trivial / empty ==============
+    // ============== build: agnostic newest-first ==============
 
-    @Test fun `empty input → empty output`() {
-        assertEquals(emptyList<FeedListEntry>(), FeedListBuilder.build(emptyList(), NOW))
+    @Test fun `empty input to empty output`() {
+        assertEquals(emptyList<FeedItem>(), FeedListBuilder.build(emptyList()))
     }
 
-    @Test fun `single-source input → one header + items`() {
+    @Test fun `single source stays newest-first`() {
         val items = listOf(
-            item(1, "BBC", "headline a", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "headline b", publishedAtMinutesAgo = 12),
+            item(1, "BBC", "older", publishedAtMinutesAgo = 60),
+            item(2, "BBC", "newest", publishedAtMinutesAgo = 5),
+            item(3, "BBC", "middle", publishedAtMinutesAgo = 30),
         )
-        val out = FeedListBuilder.build(items, NOW)
-        assertEquals(3, out.size)
-        assertTrue(out[0] is FeedListEntry.Header)
-        assertEquals("BBC", (out[0] as FeedListEntry.Header).source)
-        assertEquals(2, (out[0] as FeedListEntry.Header).itemCount)
-        assertTrue(out[1] is FeedListEntry.Item)
-        assertTrue(out[2] is FeedListEntry.Item)
+        assertEquals(
+            listOf("newest", "middle", "older"),
+            FeedListBuilder.build(items).map { it.title },
+        )
     }
 
-    // ============== Section ordering ==============
-
-    @Test fun `sections are alphabetical case-insensitive`() {
+    @Test fun `multiple sources interleave by time, NOT grouped by source`() {
         val items = listOf(
-            item(1, "Guardian World", "g", publishedAtMinutesAgo = 10),
-            item(2, "BBC", "b", publishedAtMinutesAgo = 10),
-            item(3, "al jazeera", "aj", publishedAtMinutesAgo = 10),
+            item(1, "BBC", "bbc-5", publishedAtMinutesAgo = 5),
+            item(2, "Guardian", "guardian-3", publishedAtMinutesAgo = 3),
+            item(3, "BBC", "bbc-10", publishedAtMinutesAgo = 10),
+            item(4, "NPR", "npr-1", publishedAtMinutesAgo = 1),
         )
-        val headers = FeedListBuilder.build(items, NOW)
-            .filterIsInstance<FeedListEntry.Header>()
-            .map { it.source }
-        assertEquals(listOf("al jazeera", "BBC", "Guardian World"), headers)
+        // Newest-first across ALL sources: npr-1, guardian-3, bbc-5, bbc-10.
+        // If it were grouped by source, BBC's two would be adjacent — they
+        // are NOT here, proving the agnostic interleave.
+        assertEquals(
+            listOf("npr-1", "guardian-3", "bbc-5", "bbc-10"),
+            FeedListBuilder.build(items).map { it.title },
+        )
     }
 
-    @Test fun `items with blank source land in a single Unknown source section`() {
-        val items = listOf(
-            item(1, "", "blank1", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "bbc1", publishedAtMinutesAgo = 5),
-            item(3, "", "blank2", publishedAtMinutesAgo = 5),
-        )
-        val headers = FeedListBuilder.build(items, NOW)
-            .filterIsInstance<FeedListEntry.Header>()
-            .map { it.source }
-        // Two sections: "BBC" + an unknown bucket
-        assertEquals(2, headers.size)
-        assertTrue(headers.any { it.equals("BBC", ignoreCase = true) })
-        assertTrue(headers.any { it.contains("nknown", ignoreCase = true) })
-    }
-
-    // ============== Within-section ordering ==============
-
-    @Test fun `within a section, items are newest first by published time`() {
-        val items = listOf(
-            item(10, "BBC", "older", publishedAtMinutesAgo = 60),
-            item(11, "BBC", "newest", publishedAtMinutesAgo = 5),
-            item(12, "BBC", "middle", publishedAtMinutesAgo = 30),
-        )
-        val sectionItems = FeedListBuilder.build(items, NOW)
-            .filterIsInstance<FeedListEntry.Item>()
-            .map { it.item.title }
-        assertEquals(listOf("newest", "middle", "older"), sectionItems)
-    }
-
-    @Test fun `published time wins over fetched time when both present`() {
-        // publishedAt 30 min ago, fetchedAt 5 min ago — published wins (older sort key).
-        // Compared against another item where publishedAt is null and fetchedAt is 60 min ago.
+    @Test fun `published time preferred over fetched`() {
         val a = item(1, "BBC", "a", publishedAtMinutesAgo = 30, fetchedAtMinutesAgo = 5)
-        val b = item(2, "BBC", "b", fetchedAtMinutesAgo = 60)  // no publishedAt
-        val sectionItems = FeedListBuilder.build(listOf(a, b), NOW)
-            .filterIsInstance<FeedListEntry.Item>()
-            .map { it.item.title }
-        // a's published 30min < b's fetched 60min, so a is newer → first.
-        assertEquals(listOf("a", "b"), sectionItems)
+        val b = item(2, "NPR", "b", fetchedAtMinutesAgo = 60)  // no publishedAt
+        // a's published 30min < b's fetched 60min → a newer → first.
+        assertEquals(listOf("a", "b"), FeedListBuilder.build(listOf(a, b)).map { it.title })
     }
 
-    @Test fun `fetched time falls back when published is null`() {
+    @Test fun `fetched falls back when published null, no-timestamp items sort last`() {
         val items = listOf(
-            item(10, "BBC", "no-times"),  // both null
-            item(11, "BBC", "fetched-only", fetchedAtMinutesAgo = 5),
-            item(12, "BBC", "published-only", publishedAtMinutesAgo = 30),
+            item(10, "BBC", "no-times"),                        // both null
+            item(11, "NPR", "fetched-only", fetchedAtMinutesAgo = 5),
+            item(12, "Guardian", "published-only", publishedAtMinutesAgo = 30),
         )
-        val titles = FeedListBuilder.build(items, NOW)
-            .filterIsInstance<FeedListEntry.Item>()
-            .map { it.item.title }
-        // fetched-only (5 min) is newest, published-only (30 min) next, no-times last.
-        assertEquals(listOf("fetched-only", "published-only", "no-times"), titles)
+        assertEquals(
+            listOf("fetched-only", "published-only", "no-times"),
+            FeedListBuilder.build(items).map { it.title },
+        )
     }
 
-    // ============== Freshness classification ==============
-
-    @Test fun `section newest 5min ago is Fresh`() {
-        val items = listOf(item(1, "BBC", "x", publishedAtMinutesAgo = 5))
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertEquals(SectionFreshness.Fresh, header.freshness)
-    }
-
-    @Test fun `section newest 3 hours ago is Warm`() {
-        val items = listOf(item(1, "BBC", "x", publishedAtMinutesAgo = 3 * 60))
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertEquals(SectionFreshness.Warm, header.freshness)
-    }
-
-    @Test fun `section newest 18 hours ago is NotUpdating`() {
-        val items = listOf(item(1, "BBC", "x", publishedAtMinutesAgo = 18 * 60))
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertEquals(SectionFreshness.NotUpdating, header.freshness)
-    }
-
-    @Test fun `freshness is computed from the NEWEST item, not the oldest`() {
-        // Mix of fresh + ancient — should classify as Fresh (newest wins).
+    @Test fun `ties among distinct ids break newest-id first`() {
         val items = listOf(
-            item(1, "BBC", "fresh", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "ancient", publishedAtMinutesAgo = 24 * 60),
+            item(1, "BBC", "lo-id", publishedAtMinutesAgo = 10),
+            item(2, "NPR", "hi-id", publishedAtMinutesAgo = 10),
         )
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertEquals(SectionFreshness.Fresh, header.freshness)
+        assertEquals(listOf("hi-id", "lo-id"), FeedListBuilder.build(items).map { it.title })
     }
 
-    @Test fun `section with no timestamps gets Unknown freshness`() {
-        val items = listOf(item(1, "BBC", "no-times"))
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertEquals(SectionFreshness.Unknown, header.freshness)
-        assertNull(header.newestAgeMs)
+    // ============== rowKey (LazyColumn key uniqueness) ==============
+
+    @Test fun `rowKey uses the helper id when present`() {
+        assertEquals(7L, FeedListBuilder.rowKey(item(7, "BBC", "x", publishedAtMinutesAgo = 1), 3))
     }
 
-    @Test fun `boundary at staleAfter is exclusive for Fresh inclusive for Warm`() {
-        // Custom thresholds for sharp boundary test: stale=60min, dead=120min.
-        val stale = 60 * 60_000L
-        val dead = 120 * 60_000L
-        // 59 min → Fresh; 60 min → Warm; 119 min → Warm; 120 min → NotUpdating.
-        fun freshAt(min: Long): SectionFreshness {
-            val items = listOf(item(1, "X", "x", publishedAtMinutesAgo = min))
-            return (FeedListBuilder.build(items, NOW, stale, dead).first() as FeedListEntry.Header)
-                .freshness
-        }
-        assertEquals(SectionFreshness.Fresh, freshAt(59))
-        assertEquals(SectionFreshness.Warm, freshAt(60))
-        assertEquals(SectionFreshness.Warm, freshAt(119))
-        assertEquals(SectionFreshness.NotUpdating, freshAt(120))
+    @Test fun `rowKey never collides for id-less duplicate items`() {
+        // Two cross-posted wire stories: identical source+title, no id (-1).
+        // A title-hash key would collide and crash the LazyColumn; the
+        // index-qualified fallback must keep them distinct.
+        val a = FeedItem(id = -1, source = "AP", title = "Breaking: same", summary = "", link = null, publishedAtIso = null, fetchedAtIso = null)
+        val k0 = FeedListBuilder.rowKey(a, 0)
+        val k1 = FeedListBuilder.rowKey(a, 1)
+        assertTrue("id-less keys must differ by index", k0 != k1)
     }
 
-    // ============== Flat-item invariant (focus-index mapping) ==============
-
-    @Test fun `flat-item order matches focus traversal order`() {
-        val items = listOf(
-            item(1, "Guardian World", "g1", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "b1", publishedAtMinutesAgo = 5),
-            item(3, "BBC", "b2", publishedAtMinutesAgo = 15),
-            item(4, "Guardian World", "g2", publishedAtMinutesAgo = 20),
-        )
-        val out = FeedListBuilder.build(items, NOW)
-        val flat = FeedListBuilder.flattenItems(out)
-        // Sections alphabetical: BBC first then Guardian World.
-        // Within each, newest-first: BBC[b1, b2], Guardian[g1, g2].
-        assertEquals(listOf("b1", "b2", "g1", "g2"), flat.map { it.title })
-    }
-
-    @Test fun `entriesIndexForFocus maps past headers correctly`() {
-        val items = listOf(
-            item(1, "BBC", "b1", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "b2", publishedAtMinutesAgo = 15),
-            item(3, "Guardian", "g1", publishedAtMinutesAgo = 5),
-        )
-        val out = FeedListBuilder.build(items, NOW)
-        // out indices: 0=Header(BBC), 1=Item(b1), 2=Item(b2), 3=Header(Guardian), 4=Item(g1)
-        assertEquals(1, FeedListBuilder.entriesIndexForFocus(out, 0))
-        assertEquals(2, FeedListBuilder.entriesIndexForFocus(out, 1))
-        assertEquals(4, FeedListBuilder.entriesIndexForFocus(out, 2))
-    }
-
-    @Test fun `entriesIndexForFocus returns -1 for out-of-range focus`() {
-        val items = listOf(item(1, "BBC", "b1", publishedAtMinutesAgo = 5))
-        val out = FeedListBuilder.build(items, NOW)
-        assertEquals(-1, FeedListBuilder.entriesIndexForFocus(out, -1))
-        assertEquals(-1, FeedListBuilder.entriesIndexForFocus(out, 5))
-    }
-
-    @Test fun `flat-item count equals total input item count`() {
+    @Test fun `flat count equals input count`() {
         val items = (1..15).map { i ->
             val src = listOf("BBC", "Guardian", "NPR")[i % 3]
-            item(i.toLong(), src, "title $i", publishedAtMinutesAgo = i.toLong())
+            item(i.toLong(), src, "t$i", publishedAtMinutesAgo = i.toLong())
         }
-        val out = FeedListBuilder.build(items, NOW)
-        assertEquals(15, FeedListBuilder.flattenItems(out).size)
+        assertEquals(15, FeedListBuilder.build(items).size)
     }
 
-    @Test fun `newestAgeMs on header equals NOW minus newest items timestamp`() {
+    // ============== sourceLabel ==============
+
+    @Test fun `sourceLabel collapses blank to Unknown bucket`() {
+        assertEquals("BBC", FeedListBuilder.sourceLabel(item(1, "BBC", "x")))
+        assertEquals("Unknown source", FeedListBuilder.sourceLabel(item(2, "", "x")))
+        assertEquals("Unknown source", FeedListBuilder.sourceLabel(item(3, "   ", "x")))
+    }
+
+    // ============== applyFilters ==============
+
+    @Test fun `source denylist drops case-insensitively, blank via Unknown bucket`() {
         val items = listOf(
-            item(1, "BBC", "newest", publishedAtMinutesAgo = 5),
-            item(2, "BBC", "older", publishedAtMinutesAgo = 60),
+            item(1, "BBC", "b"),
+            item(2, "Reason", "r"),
+            item(3, "", "blank"),
         )
-        val header = FeedListBuilder.build(items, NOW).first() as FeedListEntry.Header
-        assertNotNull(header.newestAgeMs)
-        // 5 minutes = 300_000 ms
-        assertEquals(5 * 60_000L, header.newestAgeMs)
+        val kept = FeedListBuilder.applyFilters(items, setOf("reason"), FeedRecency.All, NOW)
+        assertEquals(listOf("b", "blank"), kept.map { it.title })
+        // Hiding the Unknown bucket drops blank-source items.
+        val noBlank = FeedListBuilder.applyFilters(items, setOf("Unknown source"), FeedRecency.All, NOW)
+        assertEquals(listOf("b", "r"), noBlank.map { it.title })
+    }
+
+    @Test fun `recency drops old, keeps no-timestamp under All, drops under bounded`() {
+        val items = listOf(
+            item(1, "BBC", "recent", publishedAtMinutesAgo = 30),
+            item(2, "BBC", "old", publishedAtMinutesAgo = 5 * 60),
+            item(3, "BBC", "no-ts"),  // no timestamp
+        )
+        // All → everything (no-ts kept).
+        assertEquals(3, FeedListBuilder.applyFilters(items, emptySet(), FeedRecency.All, NOW).size)
+        // Last hour → only "recent" (old dropped, no-ts dropped — not provably recent).
+        val hour = FeedListBuilder.applyFilters(items, emptySet(), FeedRecency.Hour, NOW)
+        assertEquals(listOf("recent"), hour.map { it.title })
+    }
+
+    // ============== distinctSources ==============
+
+    @Test fun `distinctSources alphabetical case-insensitive, blank to Unknown`() {
+        val items = listOf(
+            item(1, "Guardian World", "g"),
+            item(2, "BBC", "b"),
+            item(3, "al jazeera", "aj"),
+            item(4, "", "blank"),
+            item(5, "BBC", "b2"),
+        )
+        assertEquals(
+            listOf("al jazeera", "BBC", "Guardian World", "Unknown source"),
+            FeedListBuilder.distinctSources(items),
+        )
     }
 }

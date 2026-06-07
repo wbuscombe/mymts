@@ -10,11 +10,15 @@ import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.settings.FeedWidth
 import com.mymts.data.settings.FeedRecency
+import com.mymts.data.settings.Overscan
+import com.mymts.data.settings.UiScale
 import com.mymts.data.settings.WallSettings
 import com.mymts.data.settings.feedRecencyFromOrdinal
 import com.mymts.data.settings.feedFontScaleFromOrdinal
 import com.mymts.data.settings.feedSideFromOrdinal
 import com.mymts.data.settings.feedWidthFromOrdinal
+import com.mymts.data.settings.overscanFromOrdinal
+import com.mymts.data.settings.uiScaleFromOrdinal
 import org.json.JSONArray
 import org.json.JSONException
 
@@ -101,7 +105,21 @@ class LineupStore(context: Context) {
             .putInt(KEY_FEED_RECENCY, settings.feedRecency.ordinal)
             .putString(KEY_HIDDEN_LEAGUES, encodeStringSet(settings.hiddenLeagues))
             .putBoolean(KEY_TICKER_NEWS, settings.tickerNewsEnabled)
+            .putInt(KEY_UI_SCALE, settings.uiScale.ordinal)
+            .putInt(KEY_OVERSCAN, settings.overscan.ordinal)
             .apply()
+    }
+
+    /** Cycle the global UI scale (Compact → Default → Roomy → Compact). */
+    fun cycleUiScale() {
+        val next = UiScale.values().let { it[(_wallSettings.value.uiScale.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(uiScale = next))
+    }
+
+    /** Cycle the overscan-safe inset (None → 3% → 5% → 7% → None). */
+    fun cycleOverscan() {
+        val next = Overscan.values().let { it[(_wallSettings.value.overscan.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(overscan = next))
     }
 
     /** Toggle a sports league's visibility in the ticker (denylist). */
@@ -223,31 +241,14 @@ class LineupStore(context: Context) {
     private fun readAudibleSlotFromDisk(): Int =
         prefs.getInt(KEY_AUDIBLE_SLOT, -1)
 
-    private fun readWallSettingsFromDisk(): WallSettings {
-        // Each component falls back to its own default if absent or
-        // out-of-range — partial corruption (e.g. a stored width
-        // ordinal that no longer exists after a refactor) doesn't
-        // discard the other two values.
-        if (!prefs.contains(KEY_FEED_WIDTH) &&
-            !prefs.contains(KEY_FEED_FONT) &&
-            !prefs.contains(KEY_FEED_SIDE) &&
-            !prefs.contains(KEY_FEED_HIDDEN_SOURCES) &&
-            !prefs.contains(KEY_FEED_RECENCY) &&
-            !prefs.contains(KEY_HIDDEN_LEAGUES) &&
-            !prefs.contains(KEY_TICKER_NEWS)
-        ) {
-            return WallSettings.Default
-        }
-        return WallSettings(
-            feedWidth = feedWidthFromOrdinal(prefs.getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
-            feedFontScale = feedFontScaleFromOrdinal(prefs.getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
-            feedSide = feedSideFromOrdinal(prefs.getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
-            hiddenSources = readStringSet(KEY_FEED_HIDDEN_SOURCES),
-            feedRecency = feedRecencyFromOrdinal(prefs.getInt(KEY_FEED_RECENCY, FeedRecency.All.ordinal)),
-            hiddenLeagues = readStringSet(KEY_HIDDEN_LEAGUES),
-            tickerNewsEnabled = prefs.getBoolean(KEY_TICKER_NEWS, false),
-        )
-    }
+    // Delegates to the PURE [resolveWallSettings] (companion) so the
+    // key-wiring + defaults are unit-testable without an Android context.
+    private fun readWallSettingsFromDisk(): WallSettings = resolveWallSettings(
+        contains = prefs::contains,
+        getInt = prefs::getInt,
+        getStringSet = ::readStringSet,
+        getBoolean = prefs::getBoolean,
+    )
 
     private fun readStringSet(key: String): Set<String> {
         val raw = prefs.getString(key, null) ?: return emptySet()
@@ -283,7 +284,46 @@ class LineupStore(context: Context) {
         private const val KEY_FEED_RECENCY = "wall_settings_feed_recency"
         private const val KEY_HIDDEN_LEAGUES = "wall_settings_hidden_leagues"
         private const val KEY_TICKER_NEWS = "wall_settings_ticker_news"
+        private const val KEY_UI_SCALE = "wall_settings_ui_scale"
+        private const val KEY_OVERSCAN = "wall_settings_overscan"
         private const val TAG = "MyMTS.LineupStore"
+
+        /**
+         * Pure resolver for the persisted wall settings — accessor lambdas
+         * stand in for SharedPreferences so the key-wiring + per-field
+         * defaults are unit-testable without an Android context. Each field
+         * falls back to its own default if absent/out-of-range (partial
+         * corruption doesn't discard the others); ALL keys absent → the full
+         * [WallSettings.Default]. `overscan` defaults to the TV-safe Medium
+         * (not None), so an existing install gains the safe inset on first
+         * run after this update without losing its other prefs.
+         */
+        internal fun resolveWallSettings(
+            contains: (String) -> Boolean,
+            getInt: (String, Int) -> Int,
+            getStringSet: (String) -> Set<String>,
+            getBoolean: (String, Boolean) -> Boolean,
+        ): WallSettings {
+            if (!contains(KEY_FEED_WIDTH) && !contains(KEY_FEED_FONT) &&
+                !contains(KEY_FEED_SIDE) && !contains(KEY_FEED_HIDDEN_SOURCES) &&
+                !contains(KEY_FEED_RECENCY) && !contains(KEY_HIDDEN_LEAGUES) &&
+                !contains(KEY_TICKER_NEWS) && !contains(KEY_UI_SCALE) &&
+                !contains(KEY_OVERSCAN)
+            ) {
+                return WallSettings.Default
+            }
+            return WallSettings(
+                feedWidth = feedWidthFromOrdinal(getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
+                feedFontScale = feedFontScaleFromOrdinal(getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
+                feedSide = feedSideFromOrdinal(getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
+                hiddenSources = getStringSet(KEY_FEED_HIDDEN_SOURCES),
+                feedRecency = feedRecencyFromOrdinal(getInt(KEY_FEED_RECENCY, FeedRecency.All.ordinal)),
+                hiddenLeagues = getStringSet(KEY_HIDDEN_LEAGUES),
+                tickerNewsEnabled = getBoolean(KEY_TICKER_NEWS, false),
+                uiScale = uiScaleFromOrdinal(getInt(KEY_UI_SCALE, UiScale.Default.ordinal)),
+                overscan = overscanFromOrdinal(getInt(KEY_OVERSCAN, Overscan.Medium.ordinal)),
+            )
+        }
 
         /**
          * Pure JSON decoder — kept package-internal + testable without

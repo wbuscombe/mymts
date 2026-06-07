@@ -157,4 +157,55 @@ class WallSettingsTest {
         assertNotEquals(a, a.copy(feedFontScale = FeedFontScale.Large))
         assertNotEquals(a, a.copy(feedSide = FeedSide.Right))
     }
+
+    // ============== Panel-fit: UI scale + overscan (2026-06-07) ==============
+
+    @Test fun `defaults are Default scale and Medium (5pct) overscan`() {
+        // Overscan defaults to the TV-safe 5% so an overscan panel fits
+        // without operator action; UI scale defaults to 1.0 (unchanged look).
+        assertEquals(UiScale.Default, WallSettings.Default.uiScale)
+        assertEquals(Overscan.Medium, WallSettings.Default.overscan)
+        assertEquals(1.0f, UiScale.Default.multiplier, 0.0001f)
+        assertEquals(0.05f, Overscan.Medium.fraction, 0.0001f)
+    }
+
+    @Test fun `UiScale Compact shrinks (below 1) so it can fit a too-big wall`() {
+        assertTrue("Compact must be < Default to shrink", UiScale.Compact.multiplier < UiScale.Default.multiplier)
+        assertTrue("Roomy must be > Default", UiScale.Roomy.multiplier > UiScale.Default.multiplier)
+    }
+
+    @Test fun `Overscan presets are ordered None lt Small lt Medium lt Large`() {
+        assertEquals(0.0f, Overscan.None.fraction, 0.0001f)
+        assertTrue(Overscan.None.fraction < Overscan.Small.fraction)
+        assertTrue(Overscan.Small.fraction < Overscan.Medium.fraction)
+        assertTrue(Overscan.Medium.fraction < Overscan.Large.fraction)
+        // A safe-area inset shouldn't eat more than ~10% of an edge.
+        assertTrue("Large overscan stays sane", Overscan.Large.fraction <= 0.10f)
+    }
+
+    @Test fun `uiScaleFromOrdinal maps in-range and falls back to Default`() {
+        assertEquals(UiScale.Compact, uiScaleFromOrdinal(UiScale.Compact.ordinal))
+        assertEquals(UiScale.Roomy, uiScaleFromOrdinal(UiScale.Roomy.ordinal))
+        assertEquals(UiScale.Default, uiScaleFromOrdinal(-1))
+        assertEquals(UiScale.Default, uiScaleFromOrdinal(99))
+    }
+
+    @Test fun `overscanFromOrdinal maps in-range and falls back to Medium`() {
+        assertEquals(Overscan.None, overscanFromOrdinal(Overscan.None.ordinal))
+        assertEquals(Overscan.Large, overscanFromOrdinal(Overscan.Large.ordinal))
+        // Out-of-range falls back to the TV-safe Medium, not None — a
+        // corrupt read keeps the safe inset rather than risking clipping.
+        assertEquals(Overscan.Medium, overscanFromOrdinal(-1))
+        assertEquals(Overscan.Medium, overscanFromOrdinal(42))
+    }
+
+    @Test fun `equality and copy cover the new fields`() {
+        val a = WallSettings.Default
+        assertNotEquals(a, a.copy(uiScale = UiScale.Compact))
+        assertNotEquals(a, a.copy(overscan = Overscan.None))
+        // copy preserves the panel-fit fields when other knobs change.
+        val next = a.copy(feedWidth = FeedWidth.Wide)
+        assertEquals(UiScale.Default, next.uiScale)
+        assertEquals(Overscan.Medium, next.overscan)
+    }
 }

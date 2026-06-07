@@ -70,6 +70,8 @@ fun SettingsOverlay(
     onOpenSourceFilter: () -> Unit,
     onToggleTickerNews: () -> Unit,
     onOpenLeagueFilter: () -> Unit,
+    onCycleUiScale: () -> Unit,
+    onCycleOverscan: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -93,6 +95,8 @@ fun SettingsOverlay(
                 onOpenSourceFilter = onOpenSourceFilter,
                 onToggleTickerNews = onToggleTickerNews,
                 onOpenLeagueFilter = onOpenLeagueFilter,
+                onCycleUiScale = onCycleUiScale,
+                onCycleOverscan = onCycleOverscan,
                 onCancel = onCancel,
             )
         }
@@ -109,6 +113,8 @@ private fun SettingsCard(
     onOpenSourceFilter: () -> Unit,
     onToggleTickerNews: () -> Unit,
     onOpenLeagueFilter: () -> Unit,
+    onCycleUiScale: () -> Unit,
+    onCycleOverscan: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -138,11 +144,24 @@ private fun SettingsCard(
         )
         Spacer(modifier = Modifier.height(4.dp))
 
+        // Panel-fit controls first — the operator lands here. "Display
+        // size" scales the WHOLE wall; "Overscan inset" pulls content in
+        // from the panel edges so nothing clips.
+        SettingRow(
+            title = "Display size",
+            valueLabel = settings.uiScale.displayName,
+            onCycle = onCycleUiScale,
+            modifier = Modifier.focusRequester(firstRowFocusRequester),
+        )
+        SettingRow(
+            title = "Overscan inset",
+            valueLabel = settings.overscan.displayName,
+            onCycle = onCycleOverscan,
+        )
         SettingRow(
             title = "Feed width",
             valueLabel = settings.feedWidth.displayName,
             onCycle = onCycleFeedWidth,
-            modifier = Modifier.focusRequester(firstRowFocusRequester),
         )
         SettingRow(
             title = "Feed font",
