@@ -39,6 +39,29 @@ def test_migrate_idempotent(tmp_path: Path) -> None:
     assert v1 == v2
 
 
+def test_migrate_survives_partial_additive_apply(tmp_path: Path) -> None:
+    """Reproduces the crash window for an additive ALTER migration: the
+    column-add commits but the process dies before the schema_version bump,
+    so on the next boot migrate() re-runs the same ALTER against a DB that
+    ALREADY has the column. SQLite has no `ADD COLUMN IF NOT EXISTS`, so
+    that re-run raises 'duplicate column name' — which migrate() must treat
+    as already-applied (and let the version bump catch up) rather than
+    propagate and wedge boot."""
+    p = tmp_path / "test.db"
+    final = db.migrate(p)            # fully migrate to head
+    conn = db.connect(p)
+    # Simulate the partial apply: the column from the LAST migration exists,
+    # but schema_version is rewound to before it (as if the bump never ran).
+    conn.execute(
+        "UPDATE meta SET value=? WHERE key='schema_version'", (str(final - 1),)
+    )
+    conn.close()
+    # Re-running must NOT raise (duplicate column is swallowed) and must
+    # finish at head again.
+    assert db.migrate(p) == final
+    assert db.current_schema_version(db.connect(p)) == final
+
+
 def test_wal_mode_set(tmp_path: Path) -> None:
     p = tmp_path / "test.db"
     db.migrate(p)

@@ -59,6 +59,45 @@ def _is_media_playlist(body: bytes) -> bool:
     return b"#EXTINF" in body and b"#EXT-X-STREAM-INF" not in body
 
 
+def classify_browser_playable(*bodies: bytes | None) -> bool:
+    """Best-effort: is this HLS chain playable in an HTTPS-served browser?
+
+    The web client is served over HTTPS; a browser refuses to load any
+    `http://` sub-resource from an HTTPS page ("mixed content"), which
+    silently kills the tile. The native ExoPlayer has no such rule, so
+    every resolvable channel plays on the TV — only the HTTPS-clean subset
+    plays in the browser.
+
+    The decisive, deterministic signal the helper CAN see server-side is
+    the scheme of the chain's sub-resource URLs. We scan the master and the
+    followed-variant playlist bodies for the literal `http://` — a variant
+    entry, segment URL, `#EXT-X-MAP`/`#EXT-X-KEY` URI, etc. served over
+    plaintext http. Note `https://` does NOT contain `http://` (the byte
+    after `http` is `s`, not `:`), so this never false-positives on https
+    URLs. Relative segment URLs resolve against the HTTPS playlist → https,
+    and are correctly NOT flagged.
+
+    Returns False if ANY `http://` is found (conservative: we'd rather
+    honestly say "on the TV wall" than promise a tile that won't load),
+    else True. CORS is a separate browser blocker the helper cannot
+    predict from the body — it's caught by the client's runtime load
+    result, the ultimate honesty fallback.
+
+    NOTE: this is a flat substring scan over the WHOLE body, not just
+    sub-resource URL lines. An `http://` inside a non-fetched tag attribute
+    (e.g. an `#EXT-X-DATERANGE` / SCTE-35 ad-marker URI the player never
+    loads) would also trip it and mislabel an otherwise-clean stream
+    TV-only. That over-broad bias is intentional and safe: the cost of a
+    false "no" is only an honest "on the TV wall" label for a channel that
+    might have played; the client's runtime attempt is the real authority
+    when the hint is "yes"/unclassified, so nothing is ever shown faked-live.
+    """
+    for body in bodies:
+        if body and b"http://" in body:
+            return False
+    return True
+
+
 def _pick_variant_url(body: bytes, master_url: str) -> str | None:
     """Pick one variant playlist URL from a master manifest.
 
@@ -170,7 +209,8 @@ class ChannelProber:
         # contains #EXTINF, no #EXT-X-STREAM-INF) is its own variant.
         if _is_media_playlist(master.body):
             await self._record(c.id, status="live", current_url=c.source_url,
-                               error=None, success=True)
+                               error=None, success=True,
+                               browser_playable=classify_browser_playable(master.body))
             return
 
         variant_url = _pick_variant_url(master.body, master.url)
@@ -199,13 +239,16 @@ class ChannelProber:
             return
 
         # Master + at least one variant both fetchable. Now the helper's
-        # `live` matches what the player can actually reach.
+        # `live` matches what the player can actually reach. Classify
+        # browser-playability from the scheme of the master + variant chain
+        # (a hint for the web picker; the TV plays it regardless).
         await self._record(c.id, status="live", current_url=c.source_url,
-                           error=None, success=True)
+                           error=None, success=True,
+                           browser_playable=classify_browser_playable(master.body, variant.body))
 
     async def _record(
         self, channel_id: int, *, status: str, current_url: str | None,
-        error: str | None, success: bool,
+        error: str | None, success: bool, browser_playable: bool | None = None,
     ) -> None:
         loop = asyncio.get_running_loop()
 
@@ -219,6 +262,7 @@ class ChannelProber:
                     current_url=current_url,
                     error=error,
                     success=success,
+                    browser_playable=browser_playable,
                 )
             finally:
                 conn.close()

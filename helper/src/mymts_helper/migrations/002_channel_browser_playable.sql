@@ -1,0 +1,15 @@
+-- Channel browser-playability hint (web-client mixed-content reality).
+--
+-- The native ExoPlayer plays every resolvable channel. The LAN web client
+-- is served over HTTPS, so the browser blocks any channel whose HLS chain
+-- pulls http:// sub-resources (variant playlists / segments / keys) —
+-- "mixed content". The prober classifies the scheme server-side (the
+-- browser can't introspect a blocked stream) and records the result here:
+--   1    = HTTPS-clean chain → browser-playable
+--   0    = an http:// sub-resource was found → browser-blocked (TV-only)
+--   NULL = not yet classified / not currently live
+-- It is a best-effort HINT for the web picker; the browser's actual
+-- <video> load result is the ground truth (and also catches CORS, which
+-- the helper cannot predict). The helper never proxies video — it stays
+-- the resolver/shield, out of the video data path.
+ALTER TABLE channels ADD COLUMN browser_playable INTEGER;

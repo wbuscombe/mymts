@@ -105,7 +105,21 @@ def migrate(path: str | Path) -> int:
             # rollback for many statements) — the outer `meta.schema_version`
             # update is therefore the source of truth for "did this
             # migration finish."
-            conn.executescript(sql)
+            #
+            # Additive `ALTER TABLE ADD COLUMN` migrations have no IF NOT
+            # EXISTS in SQLite, so if the process died AFTER the column-add
+            # committed but BEFORE the schema_version bump below, a re-run
+            # would raise "duplicate column name" and wedge boot. Treat that
+            # specific case as already-applied and let the version bump catch
+            # up — keeping additive migrations effectively idempotent.
+            try:
+                conn.executescript(sql)
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e).lower():
+                    log.warning("db_migrate_column_exists",
+                                extra={"migration": p.name, "detail": str(e)})
+                else:
+                    raise
             conn.execute(
                 "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

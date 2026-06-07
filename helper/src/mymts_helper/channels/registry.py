@@ -43,6 +43,9 @@ class ChannelRow:
     last_success_at: str | None
     last_error: str | None
     error_count: int
+    # Web-client mixed-content hint: True = HTTPS-clean (browser-playable),
+    # False = http:// sub-resource found (TV-only), None = unclassified.
+    browser_playable: bool | None = None
 
 
 def validate_slug(slug: str) -> str:
@@ -108,7 +111,7 @@ def upsert_channel(
 def list_channels(conn: sqlite3.Connection, *, enabled_only: bool = False) -> list[ChannelRow]:
     sql = (
         "SELECT id, slug, label, kind, source_url, enabled, current_url, status, "
-        "last_check_at, last_success_at, last_error, error_count "
+        "last_check_at, last_success_at, last_error, error_count, browser_playable "
         "FROM channels"
     )
     if enabled_only:
@@ -128,6 +131,9 @@ def list_channels(conn: sqlite3.Connection, *, enabled_only: bool = False) -> li
             last_success_at=r["last_success_at"],
             last_error=r["last_error"],
             error_count=r["error_count"],
+            # NULL until classified; stored as 0/1 → surface as bool|None.
+            browser_playable=(None if r["browser_playable"] is None
+                              else bool(r["browser_playable"])),
         )
         for r in conn.execute(sql)
     ]
@@ -141,21 +147,27 @@ def update_status(
     current_url: str | None,
     error: str | None,
     success: bool,
+    browser_playable: bool | None = None,
 ) -> None:
     if status not in ("live", "unavailable", "unknown"):
         raise RegistryError(f"invalid_status: {status!r}")
+    # Stored as 0/1/NULL. Only meaningful when live; a channel that goes
+    # unavailable has its hint cleared to NULL so a stale "playable" never
+    # lingers on an offline channel.
+    bp = None if browser_playable is None else (1 if browser_playable else 0)
     now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
     if success:
         conn.execute(
-            f"UPDATE channels SET status=?, current_url=?, last_check_at={now}, "
-            f"last_success_at={now}, last_error=NULL, error_count=0 WHERE id=?",
-            (status, current_url, channel_id),
+            f"UPDATE channels SET status=?, current_url=?, browser_playable=?, "
+            f"last_check_at={now}, last_success_at={now}, last_error=NULL, "
+            "error_count=0 WHERE id=?",
+            (status, current_url, bp, channel_id),
         )
     else:
         conn.execute(
-            f"UPDATE channels SET status=?, current_url=?, last_check_at={now}, "
-            "last_error=?, error_count=error_count+1 WHERE id=?",
-            (status, current_url, (error or "")[:200], channel_id),
+            f"UPDATE channels SET status=?, current_url=?, browser_playable=?, "
+            f"last_check_at={now}, last_error=?, error_count=error_count+1 WHERE id=?",
+            (status, current_url, bp, (error or "")[:200], channel_id),
         )
 
 

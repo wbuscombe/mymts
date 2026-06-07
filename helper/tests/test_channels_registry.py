@@ -114,11 +114,37 @@ def test_update_status_live(tmp_path: Path) -> None:
                                   source_url="https://x.test/a.m3u8")
     registry.update_status(conn, channel_id=cid, status="live",
                            current_url="https://x.test/a.m3u8",
-                           error=None, success=True)
+                           error=None, success=True, browser_playable=True)
     rows = registry.list_channels(conn)
     assert rows[0].status == "live"
     assert rows[0].error_count == 0
     assert rows[0].current_url == "https://x.test/a.m3u8"
+    assert rows[0].browser_playable is True
+
+
+def test_browser_playable_roundtrips_true_false_none(tmp_path: Path) -> None:
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    cid = registry.upsert_channel(conn, slug="x", label="X",
+                                  source_url="https://x.test/a.m3u8")
+    # Unclassified by default → NULL → None.
+    assert registry.list_channels(conn)[0].browser_playable is None
+    # HTTPS-clean → True.
+    registry.update_status(conn, channel_id=cid, status="live",
+                           current_url="https://x.test/a.m3u8",
+                           error=None, success=True, browser_playable=True)
+    assert registry.list_channels(conn)[0].browser_playable is True
+    # Mixed-content → False (stored 0, surfaced as bool False not None).
+    registry.update_status(conn, channel_id=cid, status="live",
+                           current_url="https://x.test/a.m3u8",
+                           error=None, success=True, browser_playable=False)
+    row = registry.list_channels(conn)[0]
+    assert row.browser_playable is False
+    # Going unavailable clears the hint to None (no stale "playable").
+    registry.update_status(conn, channel_id=cid, status="unavailable",
+                           current_url=None, error="http_403", success=False)
+    assert registry.list_channels(conn)[0].browser_playable is None
 
 
 def test_update_status_failure_increments(tmp_path: Path) -> None:

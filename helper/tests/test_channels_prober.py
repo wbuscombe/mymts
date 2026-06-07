@@ -6,6 +6,7 @@ from mymts_helper.channels.prober import (
     _is_media_playlist,
     _looks_like_hls_manifest,
     _pick_variant_url,
+    classify_browser_playable,
 )
 
 
@@ -32,6 +33,57 @@ MASTER_WITH_ABSOLUTE_VARIANT = b"""#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=2000000
 https://cdn.test/x/720p/index.m3u8
 """
+
+
+def test_classify_browser_playable_clean_chain_is_true() -> None:
+    # All-relative segments + https master/variant → browser-playable.
+    assert classify_browser_playable(MASTER_WITH_TWO_VARIANTS, MEDIA_PLAYLIST_BODY) is True
+    assert classify_browser_playable(MASTER_WITH_ABSOLUTE_VARIANT) is True
+    assert classify_browser_playable(MEDIA_PLAYLIST_BODY) is True
+
+
+def test_classify_browser_playable_http_segment_is_false() -> None:
+    # An absolute http:// segment in the variant → mixed content → not playable.
+    variant = b"""#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXTINF:6.0,
+http://cdn.test/seg-001.ts
+"""
+    assert classify_browser_playable(MASTER_WITH_TWO_VARIANTS, variant) is False
+
+
+def test_classify_browser_playable_http_variant_in_master_is_false() -> None:
+    # hls.js may pick a variant the prober didn't follow; an http variant
+    # entry in the master is itself a mixed-content risk → not playable.
+    master = b"""#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2000000
+http://cdn.test/x/720p/index.m3u8
+"""
+    assert classify_browser_playable(master, None) is False
+
+
+def test_classify_browser_playable_http_key_uri_is_false() -> None:
+    # An AES key fetched over http is also mixed content (and would break
+    # in-browser decrypt) — caught by the same scan.
+    variant = b"""#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="http://keys.test/k1.key"
+#EXTINF:6.0,
+seg-001.ts
+"""
+    assert classify_browser_playable(variant) is False
+
+
+def test_classify_browser_playable_https_urls_do_not_false_positive() -> None:
+    # 'https://' contains 'http' but NOT 'http://' — must not be flagged.
+    body = b"""#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2000000
+https://cdn.test/720p/index.m3u8
+#EXT-X-MAP:URI="https://cdn.test/init.mp4"
+"""
+    assert classify_browser_playable(body) is True
+    # None / empty bodies are vacuously clean.
+    assert classify_browser_playable(None) is True
+    assert classify_browser_playable(b"") is True
 
 
 def test_looks_like_hls_manifest_accepts_extm3u_prefix() -> None:

@@ -130,7 +130,8 @@ def test_api_channels_pinned_fields(phantom_client: TestClient) -> None:
     body = phantom_client.get("/api/channels").json()
     item = body["channels"][0]
     for field in ("slug", "label", "kind", "current_url", "status", "enabled",
-                  "last_check_at", "last_success_at", "last_error", "error_count"):
+                  "last_check_at", "last_success_at", "last_error", "error_count",
+                  "browser_playable"):
         assert field in item, f"missing field: {field}"
 
 

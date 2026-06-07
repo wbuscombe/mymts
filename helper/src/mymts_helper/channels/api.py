@@ -36,6 +36,12 @@ def get_router(db_path: Path) -> APIRouter:
                     # current_url is what the TV plays; None on unavailable.
                     "current_url": c.current_url if c.status == "live" else None,
                     "status": c.status,
+                    # Web-client hint: True = HTTPS-clean (plays in the
+                    # browser), False = http:// sub-resource found (TV-only),
+                    # None = unclassified. The TV ignores this (it plays all
+                    # live channels); the LAN web client uses it to label
+                    # tiles honestly. Only meaningful when live.
+                    "browser_playable": c.browser_playable if c.status == "live" else None,
                     "enabled": c.enabled,
                     "last_check_at": c.last_check_at,
                     "last_success_at": c.last_success_at,
