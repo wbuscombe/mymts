@@ -449,6 +449,13 @@ The ESPN scoreboard returns future fixtures off-season; showing them would be st
 
 **Traces to:** **A1** (playback not reading), **C3** (honest "on the TV wall", honest diagnosis), the SSRF/egress boundary (no proxy, no new fetch), the native-over-web *separate-client* extension (still LAN-only/credential-free/no-CORS).
 
+## Fresh MyMTS release signing key — new signing identity (2026-06-07)
+
+The prior release key (used for the abandoned `.182` MyMTS dev install) was not recoverable on this machine, so a **fresh MyMTS release keystore** was generated for the permanent box provisioning. Posture:
+- **Key material is never committed.** `app/mymts-release.jks` and `app/keystore.properties` are gitignored (verified `git check-ignore` + absent from `git status` before every commit). The `.jks` is backed up to `~/Dropbox/secrets/` (the operator's secrets store, off-repo); the passwords live only in the operator's password manager (PKCS12 → single password) — reported once at generation, never written to the repo or docs.
+- **Signing identity going forward:** cert SHA-256 `7acc6315…c24ca8ca`, `CN=MyMTS, O=3SL Studios, C=US`. Installs on `.92` are signed with it; the old-key identity is dead (its archived APKs can't update-over the new key — expected, the `.182` install is abandoned). No cross-box signing-identity dependency exists (`.92` had no prior MyMTS).
+- **Kiosk surface unchanged:** the kiosk foreground service / boot receiver were already threat-modelled (opt-in, SPECIAL_USE FGS, no new network surface). The boot-time wall-foreground gap (BAL-blocked `startActivity`) and its candidate fix (HOME-launcher) are a UX/availability matter, not a new trust-boundary surface — the helper/network posture is untouched. **unrelated host services never touched.**
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

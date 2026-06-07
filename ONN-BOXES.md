@@ -1,16 +1,18 @@
 # Onn Box Identity — Source of Truth
 
-> **Shared reference for the WyzeGrid and MyMTS projects.** Both projects deploy to the same two physical Onn 4K Streaming Boxes. This file is the authoritative mapping of IP → physical box → role. Drop a copy in both repos and keep them identical. When a box's *role* changes, update the role line — never the stable name.
+> **Shared reference for the WyzeGrid and MyMTS projects.** Both projects deploy to the same **three** physical Onn 4K Streaming Boxes. This file is the authoritative mapping of IP → physical box → role. Drop a copy in both repos and keep them identical. Names are **location + default (kiosk) function** (there are now two boxes in the office, so location alone no longer disambiguates).
 
 ## The mapping (authoritative)
 
 Confirmed by Will **in person** — he physically operated the MyMTS dashboard on the office box, so the box running MyMTS is definitively the upstairs office box.
 
+Naming is **location + default (kiosk) function** — there are now two boxes in the office, so location alone no longer disambiguates them.
+
 | Stable name | IP (ADB) | Physical location | Hardware | Roles (changeable) |
 |---|---|---|---|---|
-| **`onn-office`** | `<LAN_IP>:5555` | Upstairs office | onn. 4K Streaming Box (Amlogic S905Y4, armeabi-v7a, Android 14 / API 34, ~1.97 GB RAM). Has a small attached panel (1280×720). | WyzeGrid (cameras) **+ lingering MyMTS dev install (kiosk OFF — inert)** |
-| **`onn-basement`** | `<LAN_IP>:5555` | Basement | onn. 4K Streaming Box | WyzeGrid (cameras) |
-| **`onn-mymts`** *(pre-staged — fill in at provisioning, 2026-06-06)* | `TBD-at-provision:5555` | TBD (where the production TV lives) | onn. 4K Streaming Box (confirm Amlogic S905Y4 / armeabi-v7a / Android 14 / API 34 at provision) | **MyMTS kiosk (sole kiosk on this box — Model A)** |
+| **`Office ONN Box - WyzeGrid`** | `<LAN_IP>:5555` | Upstairs office | onn. 4K Streaming Box (Amlogic S905Y4, armeabi-v7a, Android 14 / API 34, ~1.97 GB RAM). Small attached panel (1280×720). | **WyzeGrid kiosk (cameras)** + lingering MyMTS dev install (kiosk OFF — inert) |
+| **`Basement ONN Box - WyzeGrid`** | `<LAN_IP>:5555` | Basement | onn. 4K Streaming Box | **WyzeGrid kiosk (cameras)** |
+| **`Office ONN Box - MyMTS`** | `<LAN_IP>:5555` | Upstairs office | onn. 4K Streaming Box (Amlogic S905Y4 / `s4` board, armeabi-v7a, Android 14 / API 34, build `URO4.260304.011.B1`, serial `GUSA2541026903`). MAC `<MAC>` (DHCP-reserved). 720p panel, **no EDID emulator** (the emulator was the garble cause — removed; the panel auto-negotiates 720p60 natively, `defaultModeId`=720p). | **MyMTS kiosk (sole kiosk, Model A — release-signed with the fresh key)** + WyzeGrid debug-dormant (installed, no kiosk flag, does not autostart) |
 
 ## ⚠️ Correction notice — older WyzeGrid records are BACKWARDS
 
@@ -24,14 +26,13 @@ Practical consequence for WyzeGrid: any past "deploy to office" command that tar
 - **Treat function/role as a separate, changeable attribute** — listed in the "Roles" column, updated freely as what-runs-where changes.
 - Do **not** name a box by its current job (e.g. "the MyMTS box" or "the cameras box"). The office box currently runs *both* WyzeGrid and MyMTS; naming it by one job breaks when that changes.
 
-## Known upcoming change — IN PROGRESS (box arriving 2026-06-06)
+## Provisioning — DONE 2026-06-07
 
-MyMTS moves to its **own dedicated hardware** (per `MyMTS/docs/foundation/04-TECHNICAL-APPROACH.md §4` portability posture). The `onn-mymts` row above is **pre-staged** for it — at provisioning, fill in the reserved IP (replacing `TBD-at-provision`), confirm the hardware/TV resolution, and rename `onn-mymts` if a location-based name fits better (the stable name should reflect where it physically lives; `onn-mymts` is a role-ish placeholder). The full provisioning runbook is in `docs/OPERATIONS.md §"New MyMTS box provisioning" → "Migration runbook"`.
+MyMTS moved to its **own dedicated hardware** (`Office ONN Box - MyMTS` = `<LAN_IP>`, MAC `<MAC>`) per `04-TECHNICAL-APPROACH.md §4` portability posture. Provisioning completed 2026-06-07: aggressive reversible debloat (12 pkgs), a **fresh MyMTS release key** generated (the prior `.182`-era key was abandoned), MyMTS installed release-signed + kiosked (sole kiosk, Model A) reaching LIVE on the 720p panel, WyzeGrid installed debug-dormant. See `docs/OPERATIONS.md §"Office ONN Box - MyMTS provisioning (DONE 2026-06-07)"`.
 
-When provisioning completes:
-- `onn-office`'s role line stays WyzeGrid-only (the lingering MyMTS dev install there is inert — kiosk OFF by default — and may be uninstalled).
-- `onn-mymts` becomes the active MyMTS deploy target; MyMTS runs kiosk mode there as the **sole** kiosk on that box (Model A).
-- No existing names change — only the new row's IP/name/details get filled in.
+- The WyzeGrid office box (`.182`) is unchanged — still WyzeGrid's cameras kiosk; its lingering MyMTS dev install stays inert (kiosk OFF).
+- The MyMTS box (`.92`) runs MyMTS kiosk as the **sole** kiosk (Model A); WyzeGrid is present-but-dormant (no kiosk flag).
+- The emulator that caused the garble is removed; the bare panel auto-negotiates 720p natively.
 
 ## Maintenance
 

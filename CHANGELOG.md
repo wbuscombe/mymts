@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## MyMTS provisioned onto its permanent box + fresh release key + deploy-script fix (2026-06-07)
+
+- **Migration:** MyMTS now runs on `Office ONN Box - MyMTS` (`<LAN_IP>`, MAC `<MAC>`, 720p panel, no EDID emulator). Aggressive reversible debloat (12 pkgs); MyMTS installed **release-signed + kiosked** (sole kiosk, Model A) reaching LIVE (119 `TILE_READY`, 0 dead); all 4 default tiles LIVE on the box's WiFi path (bloomberg-tv, cbs-sports-hq, bbc-news, cnn); WyzeGrid installed debug-**dormant**. See `docs/OPERATIONS.md §"Office ONN Box - MyMTS provisioning (DONE 2026-06-07)"` + `ONN-BOXES.md`.
+- **Fresh release key:** generated a new MyMTS release keystore (the prior `.182`-era key abandoned). `.jks` gitignored + backed up to `~/Dropbox/secrets/`; passwords in the operator's password manager. New signing identity going forward (cert SHA-256 `7acc6315…`).
+- **`scripts/deploy-app.sh` fix:** the signing verification parsed apksigner's legacy `Subject:` label; build-tools 33+ prints `Signer #1 certificate DN:`. Now matches both, so a correctly-signed release no longer falsely fails the gate.
+- **Reboot/boot finding (known gap):** on reboot the box auto-restores 720p + the `KioskService` foreground service (network ADB survives reboot), but the **wall activity doesn't auto-foreground over the Google TV launcher** (Android 14 background-activity-launch blocks the boot-time `startActivity`). Recommended fix logged: make MyMTS a HOME launcher (operator decision — changes HOME-button behavior on the dedicated box). The wall works when launched.
+- No app code changed (provisioning + scripts/docs only); the `1b8d1b0` build is what shipped.
+
 ## Web rework round 2 — ticker league markers, agnostic feed, cell-count grid, channel picker, mixed-content honesty (2026-06-06)
 
 Second hands-on pass on the LAN web client. Plus an honest diagnosis course-correction on the video.
