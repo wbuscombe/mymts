@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Panel fit (overscan inset + global UI scale) + native feed → agnostic with source-per-headline (2026-06-07)
+
+Two hands-on issues from running the wall on the new box's 720p panel.
+
+### Panel fit — overscan-safe inset + global UI scale
+- The wall clipped at the panel edges on `.92` (the box outputs a clean 1280×720 @ density 213; the **panel physically overscans** — the WyzeGrid box's panel doesn't). Fix is app-side + panel-agnostic:
+  - **Overscan inset** (`WallSettings.Overscan`: None / 3% / 5% / 7%, default **5%** = TV action-safe). Measured in real screen space (`BoxWithConstraints`, before the scale) so it's a true physical safe-area margin; the black background shows through it.
+  - **Global UI scale** (`WallSettings.UiScale`: Compact 0.80 / Default 1.0 / Roomy 1.15) — a single `LocalDensity` override scaling the **whole wall** (ticker, feed, grid chrome, labels, overlays) together. **Compact** is the shrink-to-fit lever; the per-piece feed width/font still tune within it.
+  - Both are D-pad-cyclable in Settings (the new **"Display size"** + **"Overscan inset"** rows lead the panel; the operator lands on them), persisted in `LineupStore`. This cashes in the deferred "global UI sizing" BACKLOG item.
+  - Box output is correct (720p/tvdpi); `wm overscan` was removed in modern Android, so the app-side inset is the right fix. A panel-side "just scan / picture size" setting can help too (operator, box-side).
+
+### Native feed → agnostic chronological with source-per-headline
+- Per the operator's decision after living with the sectioned version: the native feed is now **one newest-first list across all sources**, with the **source label next to each headline** — matching the reworked web client (`feedChronological` + `sourceLabel`). `FeedListBuilder.build` returns a flat `List<FeedItem>`; `FeedPane` renders source (accent) + age + headline + summary per row. Per-source sections + freshness chips removed.
+- **Focus model unchanged** — the feed is still a flat N-item focus zone; `feedIndex == list index` directly (no headers to skip). All 49 `WallFocusModelTest` cases pass unchanged.
+- **C3 honesty without sections:** per-item age on each row + the pane header's honest "feed not updating" / "helper unreachable". **A1 held** — inert plain text, no WebView. Feed filtering (source denylist + recency) reconciled to narrow the single list.
+
+### Tests / deploy
+- App **245** unit tests (FeedListBuilderTest rewritten for the agnostic interleave; WallSettingsTest +panel-fit presets; focus model 49 unchanged). Deployed to `.92` (health-gate PASS, 127 `TILE_READY`, 0 dead). Operator confirms the visual fit + feed on the panel; tune Display size / Overscan inset to the panel if needed.
+
+### Standing rules
+- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched. No secrets/absolute-paths.
+
 ## MyMTS provisioned onto its permanent box + fresh release key + deploy-script fix (2026-06-07)
 
 - **Migration:** MyMTS now runs on `Office ONN Box - MyMTS` (`<LAN_IP>`, MAC `<MAC>`, 720p panel, no EDID emulator). Aggressive reversible debloat (12 pkgs); MyMTS installed **release-signed + kiosked** (sole kiosk, Model A) reaching LIVE (119 `TILE_READY`, 0 dead); all 4 default tiles LIVE on the box's WiFi path (bloomberg-tv, cbs-sports-hq, bbc-news, cnn); WyzeGrid installed debug-**dormant**. See `docs/OPERATIONS.md §"Office ONN Box - MyMTS provisioning (DONE 2026-06-07)"` + `ONN-BOXES.md`.

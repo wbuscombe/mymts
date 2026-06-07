@@ -970,7 +970,18 @@ All controls are rows in `SettingsOverlay` ("Ticker news" on/off, "Sports league
 
 ---
 
-## 21. What this document deliberately does NOT specify yet
+## 21. Panel fit (global UI scale + overscan inset) + native agnostic feed (2026-06-07)
+
+On the dedicated box's 720p panel, two things surfaced. **(1) Panel fit.** The box outputs a clean 1280×720 @ density 213, but the *panel physically overscans* (cuts the outer edge) where the WyzeGrid box's panel doesn't, and modern Android removed the software overscan knob (`wm overscan`). The fix is app-side + panel-agnostic, via two `WallSettings` presets persisted in `LineupStore` and cycled from Settings ("Display size" + "Overscan inset" rows lead the card):
+
+- **`UiScale`** (Compact 0.80 / Default 1.0 / Roomy 1.15) — a single `LocalDensity` override in `WallScreen` (`Density(base.density × multiplier, base.fontScale)`) wrapping the entire wall, so all chrome (ticker, feed, grid, labels, overlays) scales together. Scaling `density` scales dp and sp uniformly; the per-piece feed width/font tune *within* the scaled layout. Cashes in the deferred "global UI sizing" item.
+- **`Overscan`** (None 0% / 3% / 5% / 7%, default 5% = TV action-safe) — a safe-area inset measured in **real screen space** (`BoxWithConstraints` *outside* the density override, so it's a true physical margin, not itself scaled); the black root shows through the inset.
+
+**(2) Native agnostic feed.** Per the operator's on-hardware decision, `FeedListBuilder.build` now returns a flat newest-first `List<FeedItem>` across all sources (per-source sections + `FeedListEntry`/`SectionFreshness` removed); `FeedPane` shows the source label (accent) + age per headline — matching the web client. The `WallFocusModel` is **unchanged** (the feed was already a flat N-item focus zone; `feedIndex == list index` now, no headers to skip — 49 focus tests pass). C3 honesty moves from per-section chips to per-item age + the pane header's "not updating"/"unreachable"; A1 unchanged (inert plain text). Both clients' feeds are now the same model.
+
+---
+
+## 22. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.
