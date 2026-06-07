@@ -54,24 +54,32 @@ Then browse (on the LAN) to **`https://<LAN_IP>:8443/app/`**.
 ## What it renders — mirrors the Onn wall
 
 The layout mirrors `WallScreen`: a **scrolling ticker** across the top,
-a **feed pane** on the left, and a **2×2 video grid** on the right, in
-the MyMTS dark theme. A **gear button** (top-right) opens mouse-driven
-settings (there's no D-pad in a browser).
+an **agnostic feed pane** on the left, and a **cell-count video grid** on
+the right, in the MyMTS dark theme. A **gear button** (top-right) opens
+mouse-driven settings (there's no D-pad in a browser).
 
 - **Ticker** — a real horizontal **marquee** that scrolls; rotates
-  markets ↔ sports every ~18 s; hover to pause-and-read. SAMPLE pills
-  and stale notes preserved (never shows sample/stale as live).
-- **Video grid** — 2×2, plays the same public HLS the helper resolves
-  via `/api/channels`, using the vendored **`hls.js`** (`web/vendor/`,
-  pinned) or native HLS (Safari). A stream that won't load shows an
-  honest **offline** tile, never a faked-live one.
-- **Feed** — sectioned by source, newest-first, plain-text summaries.
-  Honest empty states. Source show/hide + text size live in Settings.
-- **Settings (gear)** — video-grid size (slider **and** a draggable
-  splitter), feed text size, feed source show/hide, and the channel
-  live/offline roster. **These are browser-local view prefs**
-  (localStorage) — the wall's own settings live on the TV; the web
-  client can't write them (no per-client helper state — that's the
+  markets ↔ sports every ~18 s; hover to pause-and-read. Sports show
+  **ESPN-BottomLine-style league markers** — the league shows once as an
+  accent pill, then its games follow (no redundant per-game prefix).
+  SAMPLE pills and stale notes preserved (never shows sample/stale as
+  live).
+- **Feed** — a single **agnostic chronological river** across all
+  sources, newest-first, with the **source next to each headline** (the
+  original Onn style — not per-source sections; the native app keeps its
+  sections on purpose). Plain-text summaries, honest per-item age. Source
+  show/hide + text size live in Settings.
+- **Video grid** — **cell-count** layout (1 / 2 / 4 / 6 / 9), plays the
+  same public HLS the helper resolves via `/api/channels` using the
+  vendored **`hls.js`** (`web/vendor/`, pinned, `enableWorker:false` so
+  the CSP needs no `worker-src`) or native HLS (Safari). **Click a cell**
+  to pick its channel; the picker shows each channel's honest status
+  (plays-in-browser / on-the-TV-wall-only / offline). A stream that won't
+  load shows the honest **"on the TV wall"** tile, never a faked-live one.
+- **Settings (gear)** — video cell count, feed width, feed text size, and
+  feed source show/hide. **These are browser-local view prefs**
+  (localStorage) — the wall's own settings live on the TV; the web client
+  can't write them (no per-client helper state — that's the
   cross-platform-profiles fork, deferred).
 
 ## A1 / CSP — video playback is not web reading
@@ -79,12 +87,26 @@ settings (there's no D-pad in a browser).
 In-browser HLS is **inert stream playback** (the same thing the native
 ExoPlayer does), NOT article-web-reading — the closed door is about a web
 *reader*, which this isn't. The page CSP keeps `frame-src 'none'` and
-`object-src 'none'` (no iframes, no article embeds) and `script-src
-'self'` (vendored hls.js, no CDN); it widens `connect-src`/`media-src`
-to `https:` because hls.js fetches `.m3u8` + segments from arbitrary
-public stream CDNs. The client is **credential-free**, so a broad
-`connect-src` has nothing to exfiltrate, and the stream URLs come from
-the helper — not arbitrary input.
+`object-src 'none'` (no iframes, no article embeds), `script-src 'self'`
+(vendored hls.js, no CDN), and adds **no `worker-src`** — hls.js runs
+`enableWorker:false`, so no `blob:` worker is spawned and the CSP stays as
+locked as the pre-video version. `connect-src`/`media-src` are scoped to
+`https:`/`blob:` because hls.js fetches `.m3u8` + segments from public
+stream CDNs and feeds the `<video>` via a blob MediaSource. The client is
+**credential-free**, so a broad `connect-src` has nothing to exfiltrate,
+and the stream URLs come from the helper — not arbitrary input.
+
+### Play-what-works, label the rest (no proxy)
+
+The browser plays only HTTPS-clean, CORS-allowed streams; the native
+ExoPlayer has no such limits, so the **TV is the full-fidelity client**.
+The helper sends a best-effort `browser_playable` hint per channel (it
+classifies the stream scheme server-side — the browser can't introspect a
+blocked stream), and the picker shows it. The **ground truth** is the
+runtime load result: a stream that can't load (mixed-content, CORS, geo,
+dead) flips the tile to the honest **"Not playable in browser — on the TV
+wall"** state. The helper **never proxies video** — it stays the
+resolver/shield, out of the video data path.
 
 ## Tests
 

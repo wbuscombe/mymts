@@ -59,6 +59,113 @@ export function tickerStaleNote(envelope) {
   return "";
 }
 
+// ----- ticker league grouping (ESPN-BottomLine style) -----
+
+/**
+ * Group consecutive ticker entries that share a symbol into one labelled
+ * run — the ESPN-BottomLine pattern: the league/symbol marker appears
+ * ONCE, then its rows follow without repeating the prefix. The helper
+ * already emits a league's games contiguously (all MLB, then all NHL),
+ * so consecutive-grouping reproduces "MLB ⟨game⟩ ⟨game⟩ … NHL ⟨game⟩".
+ *
+ * Markets symbols are each distinct, so every markets entry becomes its
+ * own single-row group — visually unchanged from the per-symbol layout.
+ * Sports entries collapse: eight "MLB | …" rows become one "MLB" marker
+ * with eight rows, killing the redundant per-item league prefix.
+ *
+ * Pure. Returns [{ label, cells: [{ value, glyph, dirClass, sample }] }].
+ * Each cell is a tickerRow() minus the symbol (which moved to the label).
+ */
+export function groupTickerByLeague(entries) {
+  const groups = [];
+  for (const entry of entries ?? []) {
+    const row = tickerRow(entry);
+    const last = groups[groups.length - 1];
+    const cell = { value: row.value, glyph: row.glyph, dirClass: row.dirClass, sample: row.sample };
+    if (last && last.label === row.symbol) {
+      last.cells.push(cell);
+    } else {
+      groups.push({ label: row.symbol, cells: [cell] });
+    }
+  }
+  return groups;
+}
+
+// ----- feed: agnostic chronological list (web client — Onn style) -----
+
+/**
+ * Flatten feed items into a single agnostic, newest-first list across ALL
+ * sources — the original Onn-box style the operator prefers for the WEB
+ * client: one chronological river with the SOURCE shown next to each
+ * headline (not grouped into per-source sections). Pure; each item keeps
+ * its `source` so the caller renders it inline.
+ *
+ * Honest staleness stays expressible per item via the time/age the caller
+ * renders (relativeTime) — an item that hasn't refreshed simply shows its
+ * true age. Source attribution uses the same "Unknown source" bucket label
+ * as the grouped view, so a blank source is never silently dropped.
+ *
+ * NOTE: the NATIVE app intentionally keeps per-source SECTIONS (Stage 7,
+ * FeedListBuilder) — this divergence is a per-client preference, not a
+ * reversal of the native decision. Whether the native feed should also go
+ * agnostic is flagged for the operator (BACKLOG), not changed here.
+ */
+export function feedChronological(items) {
+  return (items ?? []).slice().sort(byNewestFirst);
+}
+
+/** The display source label for an item (blank → the Unknown bucket). */
+export function sourceLabel(item) {
+  return (item && item.source && item.source.trim()) ? item.source : "Unknown source";
+}
+
+// ----- video grid: cell-count layout (replaces freeform size drag) -----
+
+/** The video-cell counts the web grid offers (TV is capped at 4; the
+ *  laptop/browser isn't the constrained S905Y4, so it goes higher). */
+export const GRID_CELL_COUNTS = [1, 2, 4, 6, 9];
+
+/**
+ * Lay out N video cells into a near-square grid: the operator picks a
+ * COUNT (1/2/4/6/9), not a freeform size — intuitive and matching the
+ * native wall's tile-count model. Pure: returns { count, cols, rows }.
+ * An unknown count clamps to the nearest supported value (default 4).
+ */
+export function gridLayout(cellCount) {
+  const count = GRID_CELL_COUNTS.includes(cellCount) ? cellCount : 4;
+  const cols = { 1: 1, 2: 2, 4: 2, 6: 3, 9: 3 }[count];
+  const rows = Math.ceil(count / cols);
+  return { count, cols, rows };
+}
+
+// ----- browser playability hint (mixed-content / CORS reality) -----
+
+/**
+ * Whether a channel can play IN THE BROWSER. The helper serves the web
+ * client over HTTPS; browsers block an HTTPS page from loading http://
+ * stream sub-resources ("mixed content"), and hls.js needs CORS-allowed
+ * manifests. The native ExoPlayer has neither limit, so every resolvable
+ * channel plays on the TV wall — only a subset plays in the browser.
+ *
+ * The helper classifies the scheme server-side and sends `browser_playable`
+ * (true = HTTPS-clean chain, false = http:// sub-resource found, null =
+ * not yet classified). This returns a tri-state HINT for the picker:
+ *   "yes"   — playable + helper says HTTPS-clean → try to play
+ *   "no"    — not playable, OR playable but helper found mixed content →
+ *             show the honest "on the TV wall" state, don't attempt
+ *   "maybe" — playable but unclassified (browser_playable null) → attempt;
+ *             the runtime load-failure is the ultimate honest fallback
+ *             (it also catches CORS, which the helper can't predict).
+ * Pure. The hint informs the UI; the actual <video> load result is truth.
+ */
+export function browserPlayability(channel) {
+  const { playable } = channelStatus(channel);
+  if (!playable) return "no";
+  if (channel.browser_playable === true) return "yes";
+  if (channel.browser_playable === false) return "no";
+  return "maybe";
+}
+
 // ----- feed source filter (browser-local view pref, mirrors the wall) -----
 
 /**

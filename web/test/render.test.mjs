@@ -18,6 +18,12 @@ import {
   helperUnreachable,
   filterHiddenSources,
   playableChannels,
+  groupTickerByLeague,
+  feedChronological,
+  sourceLabel,
+  gridLayout,
+  GRID_CELL_COUNTS,
+  browserPlayability,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -119,4 +125,87 @@ test("playableChannels: only live + with a URL", () => {
     { status: "unavailable", current_url: null },
   ];
   assert.equal(playableChannels(ch).length, 1);
+});
+
+test("groupTickerByLeague: sports collapse under one marker; markets stay per-symbol", () => {
+  // Sports: consecutive same-symbol entries → one labelled run.
+  const sports = [
+    { symbol: "MLB", display: "SEA 4–0 DET · Final", direction: "none", is_sample: false },
+    { symbol: "MLB", display: "KC 1–2 MIN · Top 9th", direction: "none", is_sample: false },
+    { symbol: "NHL", display: "CAR @ VGK · 8:00 PM", direction: "none", is_sample: false },
+  ];
+  const g = groupTickerByLeague(sports);
+  assert.deepEqual(g.map((x) => x.label), ["MLB", "NHL"]);
+  assert.equal(g[0].cells.length, 2);                     // both MLB games under one marker
+  assert.equal(g[0].cells[0].value, "SEA 4–0 DET · Final");
+  assert.equal(g[1].cells.length, 1);
+  // Markets: each symbol distinct → its own single-cell group (unchanged look).
+  const markets = [
+    { symbol: "S&P 500", display: "5,820", direction: "up", is_sample: true },
+    { symbol: "DOW", display: "44,910", direction: "down", is_sample: true },
+  ];
+  const m = groupTickerByLeague(markets);
+  assert.equal(m.length, 2);
+  assert.equal(m[0].cells.length, 1);
+  assert.equal(m[0].cells[0].glyph, "▲");
+  assert.equal(m[0].cells[0].sample, true);               // honesty preserved through grouping
+  assert.deepEqual(groupTickerByLeague([]), []);
+  assert.deepEqual(groupTickerByLeague(null), []);
+});
+
+test("groupTickerByLeague: non-adjacent same league stays separate runs (mirrors emit order)", () => {
+  // If the helper ever interleaved leagues, grouping is by ADJACENCY, not a
+  // global bucket — so we never reorder the marquee out of emit order.
+  const entries = [
+    { symbol: "MLB", display: "a", direction: "none" },
+    { symbol: "NHL", display: "b", direction: "none" },
+    { symbol: "MLB", display: "c", direction: "none" },
+  ];
+  const g = groupTickerByLeague(entries);
+  assert.deepEqual(g.map((x) => x.label), ["MLB", "NHL", "MLB"]);
+});
+
+test("feedChronological: agnostic newest-first across ALL sources, source retained", () => {
+  const items = [
+    { id: 1, source: "Guardian", title: "g-old", published_at: "2026-06-01T10:00:00.000Z" },
+    { id: 2, source: "BBC", title: "b-new", published_at: "2026-06-05T10:00:00.000Z" },
+    { id: 3, source: "Reuters", title: "r-mid", published_at: "2026-06-03T10:00:00.000Z" },
+  ];
+  const out = feedChronological(items);
+  // Single river, newest-first, NOT grouped by source.
+  assert.deepEqual(out.map((i) => i.title), ["b-new", "r-mid", "g-old"]);
+  assert.deepEqual(out.map((i) => i.source), ["BBC", "Reuters", "Guardian"]);  // source kept per item
+  assert.deepEqual(feedChronological([]), []);
+  assert.deepEqual(feedChronological(null), []);
+});
+
+test("sourceLabel: blank/whitespace → Unknown source bucket", () => {
+  assert.equal(sourceLabel({ source: "BBC" }), "BBC");
+  assert.equal(sourceLabel({ source: "  " }), "Unknown source");
+  assert.equal(sourceLabel({ source: "" }), "Unknown source");
+  assert.equal(sourceLabel({}), "Unknown source");
+});
+
+test("gridLayout: supported counts → near-square; unknown clamps to 4 (2×2)", () => {
+  assert.deepEqual(gridLayout(1), { count: 1, cols: 1, rows: 1 });
+  assert.deepEqual(gridLayout(2), { count: 2, cols: 2, rows: 1 });
+  assert.deepEqual(gridLayout(4), { count: 4, cols: 2, rows: 2 });
+  assert.deepEqual(gridLayout(6), { count: 6, cols: 3, rows: 2 });
+  assert.deepEqual(gridLayout(9), { count: 9, cols: 3, rows: 3 });
+  assert.deepEqual(gridLayout(3), { count: 4, cols: 2, rows: 2 });   // unsupported → default 4
+  assert.deepEqual(gridLayout(undefined), { count: 4, cols: 2, rows: 2 });
+  assert.deepEqual(GRID_CELL_COUNTS, [1, 2, 4, 6, 9]);
+});
+
+test("browserPlayability: yes/no/maybe tri-state hint (mixed-content reality)", () => {
+  const url = "https://x/y.m3u8";
+  // playable + helper says HTTPS-clean → yes
+  assert.equal(browserPlayability({ status: "live", current_url: url, browser_playable: true }), "yes");
+  // playable but helper found mixed content → no (honest "on the TV wall")
+  assert.equal(browserPlayability({ status: "live", current_url: url, browser_playable: false }), "no");
+  // playable but unclassified → maybe (attempt; runtime load-failure is the truth, also catches CORS)
+  assert.equal(browserPlayability({ status: "live", current_url: url, browser_playable: null }), "maybe");
+  assert.equal(browserPlayability({ status: "live", current_url: url }), "maybe");
+  // not playable at all → no
+  assert.equal(browserPlayability({ status: "unavailable", current_url: null, browser_playable: null }), "no");
 });

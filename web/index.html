@@ -4,15 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!--
-    CSP — A1 guard for the web client, updated for in-browser HLS video.
+    CSP — A1 guard for the web client, scoped for in-browser HLS video.
     - script-src 'self' : only our own JS (incl. vendored hls.js); NO CDN.
     - connect-src 'self' https: : the API is same-origin; hls.js fetches
-      .m3u8 + segments from arbitrary public stream CDNs (https only), so
-      connect-src must allow https:. The client is CREDENTIAL-FREE — there
-      is nothing to exfiltrate — and the stream URLs come from the helper.
-    - media-src 'self' https: blob: : <video>/MSE playback of those streams.
+      .m3u8 + segments from arbitrary public stream CDNs (https only).
+      The client is CREDENTIAL-FREE — nothing to exfiltrate — and the
+      stream URLs come from the helper.
+    - media-src 'self' https: blob: : <video>/MSE playback. hls.js feeds
+      the <video> via a blob: MediaSource URL, so blob: is required here.
     - frame-src 'none' / object-src 'none' : NO iframes, NO article embeds —
       the closed door stays shut. This is video PLAYBACK, not a web reader.
+    NOTE: hls.js runs with enableWorker:false (see video.mjs) precisely so
+    we do NOT need to widen CSP with a worker-src blob: — the posture stays
+    as locked as the prior version; only a <video>/blob MediaSource is used.
   -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; connect-src 'self' https:; media-src 'self' https: blob:; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
@@ -20,40 +24,62 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Top scrolling ticker (markets ↔ sports, marquee) + gear, like the wall. -->
+  <!-- Top scrolling ticker — markets ↔ sports, with ESPN-BottomLine-style
+       league section markers (the league shows once, its games follow). -->
   <header class="ticker-bar">
     <div class="ticker-mode-tag" id="ticker-mode">MARKETS</div>
+    <span class="ticker-note" id="ticker-note"></span>
     <div class="ticker-viewport"><div class="ticker-track" id="ticker-track"></div></div>
     <button class="gear" id="gear" title="Settings" aria-label="Settings">⚙</button>
   </header>
 
-  <!-- Wall body: feed pane (left) + 2×2 video grid (right) — mirrors WallScreen.
-       The split ratio is the operator's sizable-grid control (CSS var). -->
+  <!-- Wall body: feed pane (left, agnostic chronological) + video grid
+       (right, cell-count layout) — mirrors WallScreen. Feed width is a
+       settings control (--feed-pct); the grid lays out N cells. -->
   <main class="wall" id="wall">
     <section class="feed-pane" aria-label="feed">
       <div class="pane-head"><span class="pane-title">FEED</span><span id="feed-status" class="pane-status"></span></div>
       <div id="feed" class="feed"></div>
     </section>
-    <div class="splitter" id="splitter" title="Drag to resize the video grid"></div>
     <section class="grid-pane" aria-label="video grid">
       <div id="grid" class="video-grid"></div>
     </section>
   </main>
 
-  <!-- Settings (mouse-driven, adapted from the native menu). Hidden by default. -->
+  <!-- Settings (mouse-driven). Hidden by default. -->
   <div class="modal-scrim hidden" id="settings-modal">
     <div class="modal">
-      <div class="modal-head"><span>WALL SETTINGS</span><button class="x" id="settings-close">✕</button></div>
+      <div class="modal-head"><span>WALL SETTINGS</span><button class="x" id="settings-close" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <label class="row"><span>Video grid size</span>
-          <input type="range" id="grid-size" min="30" max="80" step="5" /></label>
+        <label class="row"><span>Video cells</span>
+          <select id="cell-count">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4" selected>4 (2×2)</option>
+            <option value="6">6</option>
+            <option value="9">9</option>
+          </select></label>
+        <label class="row"><span>Feed width</span>
+          <input type="range" id="feed-width" min="22" max="55" step="1" /></label>
         <label class="row"><span>Feed text size</span>
           <select id="feed-font"><option value="0.88">Small</option><option value="1" selected>Default</option><option value="1.18">Large</option></select></label>
         <div class="row col"><span>Feed sources (uncheck to hide)</span>
           <div id="source-toggles" class="toggles"></div></div>
-        <div class="row col"><span>Channels</span>
-          <div id="channel-list" class="channel-list"></div></div>
-        <p class="note">View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.</p>
+        <p class="note">Tip: click a video cell to choose its channel. View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channel picker — opened by clicking a video cell. Lists every
+       channel with honest live/offline + browser-playable status. -->
+  <div class="modal-scrim hidden" id="picker-modal">
+    <div class="modal">
+      <div class="modal-head"><span id="picker-title">CHOOSE A CHANNEL</span><button class="x" id="picker-close" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div id="picker-list" class="picker-list"></div>
+        <p class="note"><span class="legend"><span class="dot dot-live"></span> live · plays in browser</span>
+          <span class="legend"><span class="dot dot-tvonly"></span> live · on the TV wall only</span>
+          <span class="legend"><span class="dot dot-offline"></span> offline</span></p>
       </div>
     </div>
   </div>
