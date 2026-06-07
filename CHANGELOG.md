@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Web rework round 2 — ticker league markers, agnostic feed, cell-count grid, channel picker, mixed-content honesty (2026-06-06)
+
+Second hands-on pass on the LAN web client. Plus an honest diagnosis course-correction on the video.
+
+### Ticker — ESPN-BottomLine league markers (both clients)
+- The league/market marker now shows **once** as an accent pill, then its games/values follow — the redundant per-item "MLB … / MLB …" prefix is gone. `render.mjs::groupTickerByLeague` (web) + `ui/wall/TickerGrouping.kt` (native, 5 tests) group **consecutive** same-symbol entries identically, so both clients read the same. Markets symbols are distinct → each stays its own marker+value (unchanged). SAMPLE pills survive grouping.
+
+### Feed — agnostic chronological with source-per-headline (WEB ONLY)
+- The web feed is now a single newest-first **river across all sources**, with the **source next to each headline** (the original Onn style) — `render.mjs::feedChronological` + `sourceLabel`. Honest staleness stays per-item via the time/age.
+- **The NATIVE feed is deliberately left as-is** (per-source sections, Stage 7). This is a per-client preference, not a reversal. **Open question flagged for the operator** (BACKLOG): revert the native feed to agnostic too? Not changed unilaterally.
+
+### Video grid — cell-count config + click-to-pick channels
+- Replaced the freeform size slider + draggable splitter with **cell-count** configuration (1 / 2 / 4 / 6 / 9) — `render.mjs::gridLayout` → `--grid-cols/--grid-rows`. Matches the native wall's tile-count model; the browser isn't the constrained S905Y4, so it goes past 4. **Feed width** is now a clean Settings control. Cell count + per-cell assignment + feed width persist (`mymts.web.prefs.v2`).
+- **Intuitive channel selection:** click a cell → a picker listing every channel with an honest badge (green "plays in browser", amber "on the TV wall only", grey "offline") + a "Clear this cell" row, browser-playable first. The tile labels which channel it holds and shows a "click to change" chip; empty cells show "＋ Add channel".
+
+### Video playback — diagnosis, honest course-correction
+- **Diagnosed the HTTPS/mixed-content/CORS split** for all 10 live channels (full chain: master → every variant → real segments + AES keys), each classification **adversarially re-verified**. **Result: all 10 are HTTPS-clean AND CORS-allowed.** Mixed content is NOT why the tiles were blank for the current set — reported truthfully rather than asserting the convenient hypothesis (C3 applies to our own diagnosis).
+- **Suspected real cause + fix:** hls.js `enableWorker:true` spawns a `blob:` worker the locked CSP blocks → switched to **`enableWorker:false`** (main-thread demux; no CSP widening). Added a **click-to-play** fallback for blocked autoplay.
+- **Built the honest play-what-works system anyway** (correct + future-proof): helper `browser_playable` hint (`prober.py::classify_browser_playable` + migration 002 + `/api/channels`), client `browserPlayability` tri-state, and — the ground truth — a runtime load-failure that flips a tile to the honest **"Not playable in browser — on the TV wall"** state (catches CORS/geo/dead too). **No proxy** — the helper stays out of the video data path; the TV plays everything.
+
+### Tests
+- Helper **181** (+6: classifier + browser_playable round-trip). Web **17** (+6). App **246** (+5 TickerGrouping); debug APK builds.
+
+### Security / standing rules
+- CSP no less locked than before (no `worker-src`/CDN added; frame-src/object-src/script-src/base-uri/form-action all still locked). hls.js vendored+pinned. A1 held (video ≠ web reading). LAN-only / same-origin / credential-free / no-proxy. `.182`/WyzeGrid untouched. unrelated host services never touched. No secrets/absolute-paths.
+
+### Operator action
+- Helper redeploy required (migration 002 + classifier are helper-side): `scripts/deploy-helper.sh`; the web rework is static (same deploy rsyncs `web/`). Re-verify `/api/channels` exposes `browser_playable`.
+
 ## Web client reworked to mirror the wall + scrolling ticker + ESPN current-games sports (2026-06-06)
 
 Hands-on feedback: the web client looked like a foreign dashboard, the ticker didn't scroll, the video grid wasn't sizable, and the sports ticker showed stale out-of-season fixtures (NFL preseason months away, in June). All fixed.

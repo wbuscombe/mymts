@@ -437,6 +437,18 @@ The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW
 
 The ESPN scoreboard returns future fixtures off-season; showing them would be stale-as-current (a C3 violation). `ticker/sports.py::parse_scoreboard` filters to current games only (in-progress / recent-final / soon-scheduled; far-future + stale dropped; empty leagues omitted) — same SSRF-safe fetcher, same defensive strict parse (never raises), same keyless source. No new surface; the change is a correctness/honesty filter over already-fetched data. Pure + unit-tested. **Traces to:** **C3** (current, not stale-future), **A1** (defensive parse unchanged).
 
+## Web client rework round 2 — mixed-content honesty, no proxy, CSP stays locked (2026-06-06)
+
+**Claim:** round 2 (ticker league markers, agnostic feed, cell-count grid, channel picker, play-what-works video, helper `browser_playable` hint) adds **no new attack surface** and keeps every lock from the prior entry.
+
+- **CSP is no less locked — and arguably tighter.** No directive was widened vs the prior rework: `frame-src 'none'`, `object-src 'none'`, `script-src 'self'`, `base-uri 'none'`, `form-action 'none'` all stay; `connect-src`/`media-src` remain `https:`/`blob:`. We did **not** add `worker-src` — hls.js now runs `enableWorker:false`, so no `blob:` Web Worker is spawned (which a strict `default-src 'self'` would block anyway). The only blob used is the `<video>` MediaSource, already covered by `media-src blob:`.
+- **No video proxy — helper egress unchanged.** The helper does **not** enter the video data path. The new `browser_playable` classification reuses the manifest body the prober **already fetches** through the SSRF-safe fetcher (no extra request, no new host, no relay of bytes to the client). It stores a 0/1/NULL hint; `/api/channels` exposes it only when live. The SSRF guards, the https-only egress, and the resolver/shield boundary are untouched. The **native app stays the full-fidelity client**; the browser is an honest best-effort viewer.
+- **Honest by construction (C3).** A stream that can't load — mixed-content, CORS, geo, or dead — is shown as **"Not playable in browser — on the TV wall"**, never a black box as live. The `browser_playable` hint is best-effort (scheme-based); the runtime `<video>` load result is the ground truth and catches what the hint can't predict. Diagnosis confirmed the current 10 live channels are all HTTPS-clean + CORS-OK (finding 16), so nothing is mislabeled today.
+- **Diagnosis honesty.** The mixed-content hypothesis was tested against live streams and **refuted** for the current set; we reported that rather than asserting the convenient cause (C3 applied to our own engineering).
+- **Unchanged:** LAN-only, credential-free (`credentials:"omit"`), same-origin (no CORS opened), DOM text via `textContent` only (no markup from helper strings), hls.js vendored+pinned, A1 closed door held (playback ≠ reading). View prefs browser-local (`mymts.web.prefs.v2`: cell count, per-cell channel assignment, feed width, source show/hide) — non-sensitive; no secret stored. Migration 002 is an additive `ALTER TABLE ADD COLUMN` (NULL for existing rows) — no data-exposure change.
+
+**Traces to:** **A1** (playback not reading), **C3** (honest "on the TV wall", honest diagnosis), the SSRF/egress boundary (no proxy, no new fetch), the native-over-web *separate-client* extension (still LAN-only/credential-free/no-CORS).
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.

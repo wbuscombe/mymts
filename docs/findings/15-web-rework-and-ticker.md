@@ -1,5 +1,7 @@
 # Finding 15 — Web client rework + scrolling ticker + ESPN current-games sports
 
+> **PARTLY SUPERSEDED by [finding 16](16-web-rework-r2-and-mixed-content.md) (round 2, same day):** the video-grid **size slider + draggable splitter** (`--grid-pct`) described below (lines ~32) were replaced by **cell-count** grid config (1/2/4/6/9) with feed width as `--feed-pct`; the per-source **sectioned** web feed became an **agnostic chronological** list; the bare "offline" tile became the honest "Not playable in browser — on the TV wall" / "Couldn't play in browser" states; and the sports ticker gained ESPN-BottomLine **league markers**. The sections below describe the round-1 UI.
+
 > **Status: BUILT + TESTED 2026-06-06.** Web client reworked to mirror the Onn wall (scrolling ticker + feed + 2×2 hls.js video grid + mouse settings gear); the ticker now actually scrolls on both clients; and the sports ticker shows **only current games** (ESPN-BottomLine-style) — far-future fixtures and out-of-season leagues are suppressed. Helper suite 175, web tests 11, app suite unaffected. The ESPN current-games filter is helper-side → **requires a helper redeploy** to take effect.
 
 ## What the operator flagged (hands-on)
