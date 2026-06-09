@@ -53,11 +53,28 @@ data class WallSettings(
     // small black border, an honest cost for a panel-agnostic default).
     val uiScale: UiScale = UiScale.Default,
     val overscan: Overscan = Overscan.Medium,
+    // Position offset (panel-fit, 2026-06-09): nudge the WHOLE wall by these
+    // dp in REAL screen space to recenter a panel that overscans
+    // asymmetrically / shifts the image and has no hardware menu to adjust
+    // itself. Display size (scale) + Overscan inset are symmetric/centered —
+    // they can't recenter a shifted image; this can. Default 0,0 (no nudge —
+    // correct on a clean/centered panel). Clamped to ±[OFFSET_RANGE_DP].
+    val offsetXDp: Int = 0,
+    val offsetYDp: Int = 0,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
     }
 }
+
+/** Position-offset bounds (dp), real screen space, symmetric around 0. The
+ *  range covers a typical overscan shift (~±5% of a 1280-wide panel); the
+ *  step is the per-keypress nudge the operator dials in by eye. */
+const val OFFSET_RANGE_DP: Int = 64
+const val OFFSET_STEP_DP: Int = 8
+
+/** Clamp a position offset to the allowed range (defensive on read + nudge). */
+fun clampOffsetDp(value: Int): Int = value.coerceIn(-OFFSET_RANGE_DP, OFFSET_RANGE_DP)
 
 /**
  * Global UI scale — a single density multiplier applied to the entire

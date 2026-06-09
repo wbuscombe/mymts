@@ -1,6 +1,7 @@
 package com.mymts.data.lineup
 
 import com.mymts.data.settings.FeedWidth
+import com.mymts.data.settings.OFFSET_RANGE_DP
 import com.mymts.data.settings.Overscan
 import com.mymts.data.settings.UiScale
 import com.mymts.data.settings.WallSettings
@@ -25,6 +26,22 @@ class LineupStoreWallSettingsResolveTest {
         assertEquals(WallSettings.Default, s)
         assertEquals(Overscan.Medium, s.overscan)
         assertEquals(UiScale.Default, s.uiScale)
+        assertEquals(0, s.offsetXDp)
+        assertEquals(0, s.offsetYDp)
+    }
+
+    @Test fun `position offset is read from prefs and clamped on read`() {
+        // contains=true (not the all-absent shortcut); getInt returns an
+        // out-of-range value for every key → the offset must clamp to the
+        // bound (a corrupt stored value can't shove the wall off-screen).
+        val s = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { _, _ -> 9999 },
+            getStringSet = { emptySet() },
+            getBoolean = { _, _ -> false },
+        )
+        assertEquals(OFFSET_RANGE_DP, s.offsetXDp)
+        assertEquals(OFFSET_RANGE_DP, s.offsetYDp)
     }
 
     @Test fun `present ordinals are READ from prefs, not hardcoded`() {

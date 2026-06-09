@@ -208,4 +208,34 @@ class WallSettingsTest {
         assertEquals(UiScale.Default, next.uiScale)
         assertEquals(Overscan.Medium, next.overscan)
     }
+
+    // ============== Position offset (2026-06-09) ==============
+
+    @Test fun `position offset defaults to 0,0 (no nudge)`() {
+        assertEquals(0, WallSettings.Default.offsetXDp)
+        assertEquals(0, WallSettings.Default.offsetYDp)
+    }
+
+    @Test fun `offset bounds are symmetric and the step divides the range`() {
+        assertTrue("range positive", OFFSET_RANGE_DP > 0)
+        assertTrue("step positive + smaller than range", OFFSET_STEP_DP in 1 until OFFSET_RANGE_DP)
+        // A whole number of steps reaches the bound exactly (clean by-eye dial).
+        assertEquals(0, OFFSET_RANGE_DP % OFFSET_STEP_DP)
+    }
+
+    @Test fun `clampOffsetDp keeps in-range values and clamps out-of-range, symmetric`() {
+        assertEquals(0, clampOffsetDp(0))
+        assertEquals(OFFSET_STEP_DP, clampOffsetDp(OFFSET_STEP_DP))
+        assertEquals(-OFFSET_STEP_DP, clampOffsetDp(-OFFSET_STEP_DP))
+        assertEquals(OFFSET_RANGE_DP, clampOffsetDp(OFFSET_RANGE_DP))
+        assertEquals(OFFSET_RANGE_DP, clampOffsetDp(OFFSET_RANGE_DP + 999))   // over → clamped
+        assertEquals(-OFFSET_RANGE_DP, clampOffsetDp(-OFFSET_RANGE_DP - 999)) // under → clamped
+    }
+
+    @Test fun `equality and copy cover the offset fields`() {
+        val a = WallSettings.Default
+        assertNotEquals(a, a.copy(offsetXDp = 8))
+        assertNotEquals(a, a.copy(offsetYDp = -8))
+        assertEquals(0, a.copy(uiScale = UiScale.Compact).offsetXDp)  // untouched by other changes
+    }
 }

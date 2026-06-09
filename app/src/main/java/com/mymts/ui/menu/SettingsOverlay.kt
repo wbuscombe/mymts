@@ -42,6 +42,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.WallSettings
 
 /**
@@ -72,6 +73,8 @@ fun SettingsOverlay(
     onOpenLeagueFilter: () -> Unit,
     onCycleUiScale: () -> Unit,
     onCycleOverscan: () -> Unit,
+    onNudgeOffsetX: (Int) -> Unit,
+    onNudgeOffsetY: (Int) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -97,6 +100,8 @@ fun SettingsOverlay(
                 onOpenLeagueFilter = onOpenLeagueFilter,
                 onCycleUiScale = onCycleUiScale,
                 onCycleOverscan = onCycleOverscan,
+                onNudgeOffsetX = onNudgeOffsetX,
+                onNudgeOffsetY = onNudgeOffsetY,
                 onCancel = onCancel,
             )
         }
@@ -115,6 +120,8 @@ private fun SettingsCard(
     onOpenLeagueFilter: () -> Unit,
     onCycleUiScale: () -> Unit,
     onCycleOverscan: () -> Unit,
+    onNudgeOffsetX: (Int) -> Unit,
+    onNudgeOffsetY: (Int) -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -157,6 +164,21 @@ private fun SettingsCard(
             title = "Overscan inset",
             valueLabel = settings.overscan.displayName,
             onCycle = onCycleOverscan,
+        )
+        // Position offset — recenter a panel that overscans off-center (this
+        // panel has no hardware menu). LEFT/RIGHT nudge live by ±8 dp; watch
+        // the wall move and dial it in by eye.
+        AdjustRow(
+            title = "Position X  ‹ left · right ›",
+            valueLabel = formatOffset(settings.offsetXDp),
+            onLeft = { onNudgeOffsetX(-OFFSET_STEP_DP) },
+            onRight = { onNudgeOffsetX(OFFSET_STEP_DP) },
+        )
+        AdjustRow(
+            title = "Position Y  ‹ up · down ›",
+            valueLabel = formatOffset(settings.offsetYDp),
+            onLeft = { onNudgeOffsetY(-OFFSET_STEP_DP) },
+            onRight = { onNudgeOffsetY(OFFSET_STEP_DP) },
         )
         SettingRow(
             title = "Feed width",
@@ -277,4 +299,83 @@ private fun SettingRow(
             Text(text = "›", color = MenuColors.FocusAccent, fontSize = 18.sp)
         }
     }
+}
+
+/**
+ * A bidirectional adjust row — LEFT decrements ([onLeft]), RIGHT increments
+ * ([onRight]), each live-applied so the operator sees the wall move and dials
+ * the value in by eye (used for the Position X/Y nudges, where a number
+ * against the panel edge isn't readable). SELECT nudges RIGHT (a friendly
+ * forward). Same visual register as [SettingRow].
+ */
+@Composable
+private fun AdjustRow(
+    title: String,
+    valueLabel: String,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onRight,
+            )
+            .focusable(interactionSource = interactionSource)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> { onLeft(); true }
+                    Key.DirectionRight -> { onRight(); true }
+                    else -> false
+                }
+            }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(20.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (isFocused) MenuColors.FocusAccent else Color.Transparent),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                color = if (isFocused) MenuColors.RowLabel else MenuColors.RowLabelMuted,
+                fontSize = 14.sp,
+                fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = "‹", color = MenuColors.FocusAccent, fontSize = 18.sp)
+            Text(
+                text = valueLabel,
+                color = MenuColors.RowDetail,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(text = "›", color = MenuColors.FocusAccent, fontSize = 18.sp)
+        }
+    }
+}
+
+/** Format a position offset (dp) for display: 0 → "0", positive → "+N dp". */
+private fun formatOffset(dp: Int): String = when {
+    dp == 0 -> "0"
+    dp > 0 -> "+$dp dp"
+    else -> "$dp dp"
 }

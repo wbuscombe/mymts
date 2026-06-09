@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Divider
@@ -300,7 +301,15 @@ fun WallScreen(
             density = baseDensity.density * wallSettings.uiScale.multiplier,
             fontScale = baseDensity.fontScale,
         )
-        Box(modifier = Modifier.fillMaxSize().padding(horizontal = insetH, vertical = insetV)) {
+        // Position offset (real screen space — applied OUTSIDE the density
+        // override, like the inset, so it's a true physical nudge that recenters
+        // a shifted panel regardless of the Display-size scale).
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(x = wallSettings.offsetXDp.dp, y = wallSettings.offsetYDp.dp)
+                .padding(horizontal = insetH, vertical = insetV),
+        ) {
           CompositionLocalProvider(LocalDensity provides scaledDensity) {
         val wallAlpha = if (menu.isOpen || menu.pendingSelection != null) 0.45f else 1f
         Column(modifier = Modifier.fillMaxSize().alpha(wallAlpha)) {
@@ -446,6 +455,8 @@ fun WallScreen(
                 onOpenLeagueFilter = { menu.openLeagueFilter() },
                 onCycleUiScale = { lineupStore.cycleUiScale() },
                 onCycleOverscan = { lineupStore.cycleOverscan() },
+                onNudgeOffsetX = { delta -> lineupStore.nudgeOffsetX(delta) },
+                onNudgeOffsetY = { delta -> lineupStore.nudgeOffsetY(delta) },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )

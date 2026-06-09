@@ -19,6 +19,8 @@ import com.mymts.data.settings.feedSideFromOrdinal
 import com.mymts.data.settings.feedWidthFromOrdinal
 import com.mymts.data.settings.overscanFromOrdinal
 import com.mymts.data.settings.uiScaleFromOrdinal
+import com.mymts.data.settings.OFFSET_STEP_DP
+import com.mymts.data.settings.clampOffsetDp
 import org.json.JSONArray
 import org.json.JSONException
 
@@ -107,6 +109,8 @@ class LineupStore(context: Context) {
             .putBoolean(KEY_TICKER_NEWS, settings.tickerNewsEnabled)
             .putInt(KEY_UI_SCALE, settings.uiScale.ordinal)
             .putInt(KEY_OVERSCAN, settings.overscan.ordinal)
+            .putInt(KEY_OFFSET_X, settings.offsetXDp)
+            .putInt(KEY_OFFSET_Y, settings.offsetYDp)
             .apply()
     }
 
@@ -120,6 +124,19 @@ class LineupStore(context: Context) {
     fun cycleOverscan() {
         val next = Overscan.values().let { it[(_wallSettings.value.overscan.ordinal + 1) % it.size] }
         updateWallSettings(_wallSettings.value.copy(overscan = next))
+    }
+
+    /** Nudge the wall's horizontal position by [delta] dp (clamped). LEFT/RIGHT
+     *  pass ∓[OFFSET_STEP_DP]; live-applied so the operator recenters by eye. */
+    fun nudgeOffsetX(delta: Int) {
+        val next = clampOffsetDp(_wallSettings.value.offsetXDp + delta)
+        updateWallSettings(_wallSettings.value.copy(offsetXDp = next))
+    }
+
+    /** Nudge the wall's vertical position by [delta] dp (clamped). */
+    fun nudgeOffsetY(delta: Int) {
+        val next = clampOffsetDp(_wallSettings.value.offsetYDp + delta)
+        updateWallSettings(_wallSettings.value.copy(offsetYDp = next))
     }
 
     /** Toggle a sports league's visibility in the ticker (denylist). */
@@ -286,6 +303,8 @@ class LineupStore(context: Context) {
         private const val KEY_TICKER_NEWS = "wall_settings_ticker_news"
         private const val KEY_UI_SCALE = "wall_settings_ui_scale"
         private const val KEY_OVERSCAN = "wall_settings_overscan"
+        private const val KEY_OFFSET_X = "wall_settings_offset_x_dp"
+        private const val KEY_OFFSET_Y = "wall_settings_offset_y_dp"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -308,7 +327,8 @@ class LineupStore(context: Context) {
                 !contains(KEY_FEED_SIDE) && !contains(KEY_FEED_HIDDEN_SOURCES) &&
                 !contains(KEY_FEED_RECENCY) && !contains(KEY_HIDDEN_LEAGUES) &&
                 !contains(KEY_TICKER_NEWS) && !contains(KEY_UI_SCALE) &&
-                !contains(KEY_OVERSCAN)
+                !contains(KEY_OVERSCAN) && !contains(KEY_OFFSET_X) &&
+                !contains(KEY_OFFSET_Y)
             ) {
                 return WallSettings.Default
             }
@@ -322,6 +342,10 @@ class LineupStore(context: Context) {
                 tickerNewsEnabled = getBoolean(KEY_TICKER_NEWS, false),
                 uiScale = uiScaleFromOrdinal(getInt(KEY_UI_SCALE, UiScale.Default.ordinal)),
                 overscan = overscanFromOrdinal(getInt(KEY_OVERSCAN, Overscan.Medium.ordinal)),
+                // Clamp on read — a corrupt/out-of-range stored offset can't
+                // shove the wall off-screen.
+                offsetXDp = clampOffsetDp(getInt(KEY_OFFSET_X, 0)),
+                offsetYDp = clampOffsetDp(getInt(KEY_OFFSET_Y, 0)),
             )
         }
 
