@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Panel-fit: added Position-offset (X/Y) lever to recenter an off-center overscan panel (2026-06-09)
+
+The shipped Display size + Overscan inset are symmetric/centered — they fix "too big" but can't recenter a **shifted** image. This panel overscans off-center and has no hardware menu, so added a **Position offset (X/Y)** lever to nudge the whole wall in real screen space, completing the set (scale + inset + offset) for full software compensation.
+
+- `WallSettings.offsetXDp` / `offsetYDp` (Int dp, default 0,0; clamped ±64 dp, 8 dp step). Applied in `WallScreen` as `Modifier.offset` on the inset Box — **outside** the `LocalDensity` scale override, so it's a true physical nudge that shifts layout + hit-testing together (D-pad focus still lands on shifted content) and behaves predictably at any Display-size setting.
+- D-pad-adjustable, **live**: new **"Position X"** / **"Position Y"** rows (an `AdjustRow` — LEFT decrements, RIGHT increments, SELECT nudges right), grouped with Display size + Overscan inset so the fit controls lead the Settings card. Persisted per keypress in `LineupStore` (clamped on nudge **and** on read, so a corrupt value can't shove the wall off-screen).
+- Focus model unchanged (the offset is a layout translation, not a focus change — 49 focus tests pass). App **255** unit tests (+offset clamp/defaults/constants + resolver clamp-on-read). Deployed to `.92` (health-gate PASS, 125 `TILE_READY`, 0 dead).
+- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched.
+
 ## Panel fit (overscan inset + global UI scale) + native feed → agnostic with source-per-headline (2026-06-07)
 
 Two hands-on issues from running the wall on the new box's 720p panel.

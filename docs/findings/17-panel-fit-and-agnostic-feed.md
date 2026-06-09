@@ -17,6 +17,10 @@ Both are discrete D-pad-cyclable presets in Settings (the new **"Display size"**
 
 **Box-side note (operator, optional):** if the panel has its own "picture size / aspect / just-scan / overscan" menu setting, switching it to "just scan"/1:1 reduces the physical overscan and may let the operator dial the app inset back down. The HDMI output mode itself is correct (720p); only the panel's display geometry overscans.
 
+### Update 2026-06-09 — Position offset (the panel also shifts off-center)
+
+Hands-on follow-up: this panel doesn't just zoom, it overscans **off-center** (the image is shifted), and it has **no hardware menu** to adjust itself. Scale + inset are symmetric/centered — they can't recenter a shifted image. Added a third lever, **Position offset** (`WallSettings.offsetXDp`/`offsetYDp`, ±64 dp / 8 dp step, default 0,0): a `Modifier.offset` on the inset Box (real screen space, **outside** the density scale, like the inset), nudging the whole wall — ticker + feed + grid + overlays — to recenter it. `Modifier.offset` shifts layout + hit-testing together, so D-pad focus is unaffected (49 focus tests still pass). D-pad-adjustable **live** via new "Position X" / "Position Y" rows (LEFT/RIGHT, an `AdjustRow`), persisted per keypress (clamped on nudge AND read). The set is now complete: **scale + inset + offset = full in-app compensation for a non-adjustable panel.** Adversarial-reviewed (offset confirmed real-space, hit-testing intact, clamp on both paths) — clean. App 255 tests; deployed `.92` (health-gate PASS, 125 `TILE_READY`, 0 dead). Operator dials the three by eye on the panel.
+
 ## Part B — native feed → agnostic chronological with source-per-headline
 
 The operator decided (after living with the Stage-7 per-source sections on hardware) to switch the **native** feed to the agnostic style the web client uses: one newest-first list across all sources, source label per headline.
