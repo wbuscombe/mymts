@@ -42,6 +42,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.data.settings.FIT_SCALE_STEP_PCT
+import com.mymts.data.settings.FIT_STRETCH_Y_STEP_PCT
 import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.WallSettings
 
@@ -75,6 +77,9 @@ fun SettingsOverlay(
     onCycleOverscan: () -> Unit,
     onNudgeOffsetX: (Int) -> Unit,
     onNudgeOffsetY: (Int) -> Unit,
+    onNudgeFitScale: (Int) -> Unit,
+    onNudgeFitStretchY: (Int) -> Unit,
+    onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -102,6 +107,9 @@ fun SettingsOverlay(
                 onCycleOverscan = onCycleOverscan,
                 onNudgeOffsetX = onNudgeOffsetX,
                 onNudgeOffsetY = onNudgeOffsetY,
+                onNudgeFitScale = onNudgeFitScale,
+                onNudgeFitStretchY = onNudgeFitStretchY,
+                onToggleCalibration = onToggleCalibration,
                 onCancel = onCancel,
             )
         }
@@ -122,6 +130,9 @@ private fun SettingsCard(
     onCycleOverscan: () -> Unit,
     onNudgeOffsetX: (Int) -> Unit,
     onNudgeOffsetY: (Int) -> Unit,
+    onNudgeFitScale: (Int) -> Unit,
+    onNudgeFitStretchY: (Int) -> Unit,
+    onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -160,6 +171,24 @@ private fun SettingsCard(
             onCycle = onCycleUiScale,
             modifier = Modifier.focusRequester(firstRowFocusRequester),
         )
+        // Fit scale — shrink the whole wall toward the TOP-LEFT corner so a
+        // panel that overflows the bottom/right edges pulls back into view
+        // (top-left stays pinned). LEFT = smaller, RIGHT = larger.
+        AdjustRow(
+            title = "Fit scale  ‹ smaller · larger ›",
+            valueLabel = "${settings.fitScalePct}%",
+            onLeft = { onNudgeFitScale(-FIT_SCALE_STEP_PCT) },
+            onRight = { onNudgeFitScale(FIT_SCALE_STEP_PCT) },
+        )
+        // Vertical stretch — height-only grow (top-left anchored) to close a
+        // residual bottom band after Fit scale has seated the sides. RIGHT =
+        // taller, LEFT = back toward 1:1. Default 100% (no stretch).
+        AdjustRow(
+            title = "Vertical stretch  ‹ less · more ›",
+            valueLabel = "${settings.fitStretchYPct}%",
+            onLeft = { onNudgeFitStretchY(-FIT_STRETCH_Y_STEP_PCT) },
+            onRight = { onNudgeFitStretchY(FIT_STRETCH_Y_STEP_PCT) },
+        )
         SettingRow(
             title = "Overscan inset",
             valueLabel = settings.overscan.displayName,
@@ -179,6 +208,14 @@ private fun SettingsCard(
             valueLabel = formatOffset(settings.offsetYDp),
             onLeft = { onNudgeOffsetY(-OFFSET_STEP_DP) },
             onRight = { onNudgeOffsetY(OFFSET_STEP_DP) },
+        )
+        // Calibration border — draws a bright outline + labelled corners at the
+        // wall edge so the operator can SEE which edges the panel is cropping.
+        // Turn on, dial inset/offset until all four corners show, turn off.
+        SettingRow(
+            title = "Calibration border",
+            valueLabel = if (settings.calibrationBorder) "On" else "Off",
+            onCycle = onToggleCalibration,
         )
         SettingRow(
             title = "Feed width",
@@ -245,12 +282,12 @@ private fun SettingRow(
         modifier = modifier
             .fillMaxWidth()
             .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onCycle,
-            )
-            .focusable(interactionSource = interactionSource)
+            // The key handler MUST sit ABOVE .clickable()/.focusable() in the
+            // chain. A key-input modifier only receives events when the focus
+            // target is its DESCENDANT; placed below .focusable() it silently
+            // never fires, so LEFT/RIGHT would no-op (the row still takes focus
+            // and SELECT still cycles via clickable, which masks the bug).
+            // Verified on-device 2026-06-09.
             .onPreviewKeyEvent { event ->
                 // LEFT and RIGHT both cycle — discrete presets cycle
                 // forward unidirectionally (only 2-3 values per
@@ -263,6 +300,12 @@ private fun SettingRow(
                     else -> false
                 }
             }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onCycle,
+            )
+            .focusable(interactionSource = interactionSource)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -323,12 +366,8 @@ private fun AdjustRow(
         modifier = modifier
             .fillMaxWidth()
             .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onRight,
-            )
-            .focusable(interactionSource = interactionSource)
+            // Key handler ABOVE .clickable()/.focusable() — see SettingRow note:
+            // below .focusable() it never fires and the nudges silently no-op.
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
@@ -337,6 +376,12 @@ private fun AdjustRow(
                     else -> false
                 }
             }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onRight,
+            )
+            .focusable(interactionSource = interactionSource)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,

@@ -1,11 +1,15 @@
 package com.mymts.data.lineup
 
 import com.mymts.data.settings.FeedWidth
+import com.mymts.data.settings.FIT_SCALE_MAX_PCT
+import com.mymts.data.settings.FIT_STRETCH_Y_MAX_PCT
 import com.mymts.data.settings.OFFSET_RANGE_DP
 import com.mymts.data.settings.Overscan
 import com.mymts.data.settings.UiScale
 import com.mymts.data.settings.WallSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -28,6 +32,55 @@ class LineupStoreWallSettingsResolveTest {
         assertEquals(UiScale.Default, s.uiScale)
         assertEquals(0, s.offsetXDp)
         assertEquals(0, s.offsetYDp)
+        assertFalse(s.calibrationBorder)
+        assertEquals(100, s.fitScalePct)
+        assertEquals(100, s.fitStretchYPct)
+    }
+
+    @Test fun `fit scale is read from prefs and clamped on read`() {
+        // Only the fit-scale key returns an over-range value → it must clamp to
+        // the max (a corrupt stored scale can't blow the wall up or vanish it),
+        // and it must be wired to its OWN key, not another Int setting.
+        val s = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { key, d -> if (key.contains("fit_scale")) 9999 else d },
+            getStringSet = { emptySet() },
+            getBoolean = { _, d -> d },
+        )
+        assertEquals(FIT_SCALE_MAX_PCT, s.fitScalePct)
+        assertEquals(UiScale.Default, s.uiScale)   // other Int settings unaffected
+    }
+
+    @Test fun `vertical stretch is read from its own key and clamped on read`() {
+        val s = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { key, d -> if (key.contains("fit_stretch")) 9999 else d },
+            getStringSet = { emptySet() },
+            getBoolean = { _, d -> d },
+        )
+        assertEquals(FIT_STRETCH_Y_MAX_PCT, s.fitStretchYPct)
+        assertEquals(FIT_SCALE_MAX_PCT, s.fitScalePct)   // the OTHER fit key unaffected
+    }
+
+    @Test fun `calibration border is read from prefs (its own key)`() {
+        // getBoolean returns true ONLY for the calibration key — so a true
+        // result proves the resolver wired calibration to its own pref, not
+        // (e.g.) to the ticker-news boolean.
+        val on = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { _, d -> d },
+            getStringSet = { emptySet() },
+            getBoolean = { key, _ -> key.contains("calibration") },
+        )
+        assertTrue(on.calibrationBorder)
+        assertFalse(on.tickerNewsEnabled)   // the other boolean stays off
+        val off = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { _, d -> d },
+            getStringSet = { emptySet() },
+            getBoolean = { _, _ -> false },
+        )
+        assertFalse(off.calibrationBorder)
     }
 
     @Test fun `position offset is read from prefs and clamped on read`() {

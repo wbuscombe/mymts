@@ -174,13 +174,24 @@ class WallSettingsTest {
         assertTrue("Roomy must be > Default", UiScale.Roomy.multiplier > UiScale.Default.multiplier)
     }
 
-    @Test fun `Overscan presets are ordered None lt Small lt Medium lt Large`() {
+    @Test fun `Overscan presets ascend strictly None through Max`() {
+        // Pin the ladder so a dropped/inserted rung fails loudly (the cycle +
+        // the on-device fit both depend on the full set being reachable).
+        assertEquals("Overscan ladder length", 8, Overscan.values().size)
+        assertEquals(Overscan.None, Overscan.values().first())
+        assertEquals(Overscan.Max, Overscan.values().last())
         assertEquals(0.0f, Overscan.None.fraction, 0.0001f)
-        assertTrue(Overscan.None.fraction < Overscan.Small.fraction)
-        assertTrue(Overscan.Small.fraction < Overscan.Medium.fraction)
-        assertTrue(Overscan.Medium.fraction < Overscan.Large.fraction)
-        // A safe-area inset shouldn't eat more than ~10% of an edge.
-        assertTrue("Large overscan stays sane", Overscan.Large.fraction <= 0.10f)
+        // Strictly increasing across the whole ladder, including the high
+        // presets added for severely-overscanning panels (the .92 panel).
+        val ladder = Overscan.values().toList()
+        ladder.zipWithNext().forEach { (lo, hi) ->
+            assertTrue("${lo.name} (${lo.fraction}) must be < ${hi.name} (${hi.fraction})", lo.fraction < hi.fraction)
+        }
+        // Default presets stay action-safe; the deliberate severe-overscan
+        // ceiling (Max) caps at 20% per edge so the wall can't vanish entirely.
+        assertEquals("Large is the 7% action-safe rung", 0.07f, Overscan.Large.fraction, 0.0001f)
+        assertEquals(0.20f, Overscan.Max.fraction, 0.0001f)
+        assertTrue("Max stays bounded", Overscan.Max.fraction <= 0.25f)
     }
 
     @Test fun `uiScaleFromOrdinal maps in-range and falls back to Default`() {
@@ -203,10 +214,38 @@ class WallSettingsTest {
         val a = WallSettings.Default
         assertNotEquals(a, a.copy(uiScale = UiScale.Compact))
         assertNotEquals(a, a.copy(overscan = Overscan.None))
+        assertNotEquals(a, a.copy(calibrationBorder = true))
+        assertNotEquals(a, a.copy(fitScalePct = 80))
+        assertNotEquals(a, a.copy(fitStretchYPct = 110))
         // copy preserves the panel-fit fields when other knobs change.
         val next = a.copy(feedWidth = FeedWidth.Wide)
         assertEquals(UiScale.Default, next.uiScale)
         assertEquals(Overscan.Medium, next.overscan)
+    }
+
+    @Test fun `calibration border defaults off (it is a diagnostic)`() {
+        assertEquals(false, WallSettings.Default.calibrationBorder)
+    }
+
+    @Test fun `fit scale defaults to 100 (full size) and clamps to range`() {
+        assertEquals(100, WallSettings.Default.fitScalePct)
+        assertEquals(FIT_SCALE_MAX_PCT, WallSettings.Default.fitScalePct)
+        assertTrue("min below max", FIT_SCALE_MIN_PCT < FIT_SCALE_MAX_PCT)
+        // A corrupt/over-range value can't blow up or vanish the wall.
+        assertEquals(FIT_SCALE_MAX_PCT, clampFitScalePct(9999))
+        assertEquals(FIT_SCALE_MIN_PCT, clampFitScalePct(0))
+        assertEquals(FIT_SCALE_MIN_PCT, clampFitScalePct(-100))
+        assertEquals(74, clampFitScalePct(74))   // in-range passes through
+    }
+
+    @Test fun `vertical stretch defaults to 100 (none) and clamps to range`() {
+        assertEquals(100, WallSettings.Default.fitStretchYPct)
+        assertEquals(FIT_STRETCH_Y_MIN_PCT, WallSettings.Default.fitStretchYPct)
+        assertTrue("never shrinks below 1:1", FIT_STRETCH_Y_MIN_PCT == 100)
+        assertTrue("ceiling above floor", FIT_STRETCH_Y_MAX_PCT > FIT_STRETCH_Y_MIN_PCT)
+        assertEquals(FIT_STRETCH_Y_MAX_PCT, clampFitStretchYPct(9999))
+        assertEquals(FIT_STRETCH_Y_MIN_PCT, clampFitStretchYPct(50))   // can't go below 100
+        assertEquals(110, clampFitStretchYPct(110))
     }
 
     // ============== Position offset (2026-06-09) ==============

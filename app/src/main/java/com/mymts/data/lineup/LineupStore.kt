@@ -21,6 +21,10 @@ import com.mymts.data.settings.overscanFromOrdinal
 import com.mymts.data.settings.uiScaleFromOrdinal
 import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.clampOffsetDp
+import com.mymts.data.settings.FIT_SCALE_MAX_PCT
+import com.mymts.data.settings.clampFitScalePct
+import com.mymts.data.settings.FIT_STRETCH_Y_MIN_PCT
+import com.mymts.data.settings.clampFitStretchYPct
 import org.json.JSONArray
 import org.json.JSONException
 
@@ -111,6 +115,9 @@ class LineupStore(context: Context) {
             .putInt(KEY_OVERSCAN, settings.overscan.ordinal)
             .putInt(KEY_OFFSET_X, settings.offsetXDp)
             .putInt(KEY_OFFSET_Y, settings.offsetYDp)
+            .putBoolean(KEY_CALIBRATION, settings.calibrationBorder)
+            .putInt(KEY_FIT_SCALE, settings.fitScalePct)
+            .putInt(KEY_FIT_STRETCH_Y, settings.fitStretchYPct)
             .apply()
     }
 
@@ -120,7 +127,8 @@ class LineupStore(context: Context) {
         updateWallSettings(_wallSettings.value.copy(uiScale = next))
     }
 
-    /** Cycle the overscan-safe inset (None → 3% → 5% → 7% → None). */
+    /** Cycle the overscan-safe inset (None → 3 → 5 → 7 → 10 → 13 → 16 → 20% →
+     *  None). The high presets fit a severely-overscanning panel. */
     fun cycleOverscan() {
         val next = Overscan.values().let { it[(_wallSettings.value.overscan.ordinal + 1) % it.size] }
         updateWallSettings(_wallSettings.value.copy(overscan = next))
@@ -139,6 +147,21 @@ class LineupStore(context: Context) {
         updateWallSettings(_wallSettings.value.copy(offsetYDp = next))
     }
 
+    /** Nudge the top-left-anchored fit scale by [delta] percent (clamped).
+     *  LEFT passes -[FIT_SCALE_STEP_PCT] (shrink toward top-left so the
+     *  bottom-right comes on-screen); RIGHT grows it back toward full size. */
+    fun nudgeFitScale(delta: Int) {
+        val next = clampFitScalePct(_wallSettings.value.fitScalePct + delta)
+        updateWallSettings(_wallSettings.value.copy(fitScalePct = next))
+    }
+
+    /** Nudge the vertical stretch by [delta] percent (clamped). RIGHT grows
+     *  height to close a bottom band; LEFT eases it back toward 1:1. */
+    fun nudgeFitStretchY(delta: Int) {
+        val next = clampFitStretchYPct(_wallSettings.value.fitStretchYPct + delta)
+        updateWallSettings(_wallSettings.value.copy(fitStretchYPct = next))
+    }
+
     /** Toggle a sports league's visibility in the ticker (denylist). */
     fun toggleHiddenLeague(league: String) {
         val current = _wallSettings.value.hiddenLeagues
@@ -149,6 +172,12 @@ class LineupStore(context: Context) {
     /** Toggle news as a third ticker rotation mode (default off). */
     fun toggleTickerNews() {
         updateWallSettings(_wallSettings.value.copy(tickerNewsEnabled = !_wallSettings.value.tickerNewsEnabled))
+    }
+
+    /** Toggle the panel-fit calibration border (bright outline + labelled
+     *  corners at the wall edge) so the operator can see what's being cropped. */
+    fun toggleCalibration() {
+        updateWallSettings(_wallSettings.value.copy(calibrationBorder = !_wallSettings.value.calibrationBorder))
     }
 
     /** Advance the recency window (All → 1h → 6h → 24h → All). */
@@ -305,6 +334,9 @@ class LineupStore(context: Context) {
         private const val KEY_OVERSCAN = "wall_settings_overscan"
         private const val KEY_OFFSET_X = "wall_settings_offset_x_dp"
         private const val KEY_OFFSET_Y = "wall_settings_offset_y_dp"
+        private const val KEY_CALIBRATION = "wall_settings_calibration"
+        private const val KEY_FIT_SCALE = "wall_settings_fit_scale_pct"
+        private const val KEY_FIT_STRETCH_Y = "wall_settings_fit_stretch_y_pct"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -328,7 +360,8 @@ class LineupStore(context: Context) {
                 !contains(KEY_FEED_RECENCY) && !contains(KEY_HIDDEN_LEAGUES) &&
                 !contains(KEY_TICKER_NEWS) && !contains(KEY_UI_SCALE) &&
                 !contains(KEY_OVERSCAN) && !contains(KEY_OFFSET_X) &&
-                !contains(KEY_OFFSET_Y)
+                !contains(KEY_OFFSET_Y) && !contains(KEY_CALIBRATION) &&
+                !contains(KEY_FIT_SCALE) && !contains(KEY_FIT_STRETCH_Y)
             ) {
                 return WallSettings.Default
             }
@@ -346,6 +379,10 @@ class LineupStore(context: Context) {
                 // shove the wall off-screen.
                 offsetXDp = clampOffsetDp(getInt(KEY_OFFSET_X, 0)),
                 offsetYDp = clampOffsetDp(getInt(KEY_OFFSET_Y, 0)),
+                calibrationBorder = getBoolean(KEY_CALIBRATION, false),
+                // Clamp on read — a corrupt scale can't blow up or zero the wall.
+                fitScalePct = clampFitScalePct(getInt(KEY_FIT_SCALE, FIT_SCALE_MAX_PCT)),
+                fitStretchYPct = clampFitStretchYPct(getInt(KEY_FIT_STRETCH_Y, FIT_STRETCH_Y_MIN_PCT)),
             )
         }
 

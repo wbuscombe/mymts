@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -301,12 +303,28 @@ fun WallScreen(
             density = baseDensity.density * wallSettings.uiScale.multiplier,
             fontScale = baseDensity.fontScale,
         )
+        // Fit scale — a uniform downscale of the WHOLE wall anchored at the
+        // TOP-LEFT corner (transformOrigin 0,0), for a panel that renders the
+        // wall larger than its visible area from a top-left origin. Shrinking
+        // keeps top-left pinned and brings the off-screen bottom-right back in;
+        // black fills the freed bottom/right. A pure render transform on top of
+        // the inset/offset/density layout, so it composes with them.
+        val fitScale = wallSettings.fitScalePct / 100f
+        // Vertical stretch — an EXTRA height-only factor on top of the uniform
+        // fit scale (also top-left anchored), to close a residual bottom band
+        // without moving the sides. 100% = none.
+        val fitScaleY = fitScale * (wallSettings.fitStretchYPct / 100f)
         // Position offset (real screen space — applied OUTSIDE the density
         // override, like the inset, so it's a true physical nudge that recenters
         // a shifted panel regardless of the Display-size scale).
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = fitScale
+                    scaleY = fitScaleY
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
                 .offset(x = wallSettings.offsetXDp.dp, y = wallSettings.offsetYDp.dp)
                 .padding(horizontal = insetH, vertical = insetV),
         ) {
@@ -457,6 +475,9 @@ fun WallScreen(
                 onCycleOverscan = { lineupStore.cycleOverscan() },
                 onNudgeOffsetX = { delta -> lineupStore.nudgeOffsetX(delta) },
                 onNudgeOffsetY = { delta -> lineupStore.nudgeOffsetY(delta) },
+                onNudgeFitScale = { delta -> lineupStore.nudgeFitScale(delta) },
+                onNudgeFitStretchY = { delta -> lineupStore.nudgeFitStretchY(delta) },
+                onToggleCalibration = { lineupStore.toggleCalibration() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -492,6 +513,15 @@ fun WallScreen(
             )
         }
           } // CompositionLocalProvider (global UI scale)
+          // Panel-fit calibration overlay — a sibling of the scaled wall inside
+          // the inset Box but OUTSIDE the density override, so it fills the TRUE
+          // wall content rectangle (after position offset + overscan inset) and
+          // draws real-px boundary lines exactly where the content edge is.
+          // Drawn last → on top, so the operator can see which edges the panel
+          // crops. Toggled from WALL SETTINGS; default off.
+          if (wallSettings.calibrationBorder) {
+              CalibrationOverlay(modifier = Modifier.fillMaxSize())
+          }
         }   // inset Box
       }     // BoxWithConstraints (overscan safe-area)
     }

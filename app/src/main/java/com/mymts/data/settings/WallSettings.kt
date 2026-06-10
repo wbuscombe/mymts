@@ -61,6 +61,32 @@ data class WallSettings(
     // correct on a clean/centered panel). Clamped to ±[OFFSET_RANGE_DP].
     val offsetXDp: Int = 0,
     val offsetYDp: Int = 0,
+    // Fit scale (panel-fit, 2026-06-10): a uniform downscale of the WHOLE wall
+    // ANCHORED AT THE TOP-LEFT corner (graphicsLayer scale with
+    // transformOrigin = top-left, in WallScreen). This is the lever for a panel
+    // that renders the wall larger than its visible area FROM A TOP-LEFT ORIGIN
+    // (top-left seated correctly, bottom-right overflowing off-screen) — shrink
+    // toward the pinned top-left until the bottom-right comes into view; black
+    // fills the freed bottom/right. Distinct from `overscan` (which insets
+    // toward CENTRE, the wrong anchor here) and `uiScale` (which resizes chrome
+    // but not the footprint). Stored as a percent; 100 = no scale. See
+    // [FIT_SCALE_MIN_PCT]..[FIT_SCALE_MAX_PCT].
+    val fitScalePct: Int = 100,
+    // Vertical stretch (panel-fit, 2026-06-10): an EXTRA height-only scale on
+    // top of [fitScalePct], anchored top-left, to close a residual black band
+    // at the BOTTOM after a uniform Fit scale has seated the sides edge-to-edge
+    // (growing Fit scale itself would push the sides off — this stretches height
+    // ONLY). Slight aspect distortion (content a touch taller); the operator
+    // dials the minimum needed. Default 100 (no stretch) so it's panel-specific
+    // and never affects a display that doesn't need it. See [FIT_STRETCH_Y_MIN_PCT].
+    val fitStretchYPct: Int = 100,
+    // Calibration border (panel-fit aid, 2026-06-09). A toggleable bright
+    // outline + labelled corners (TL/TR/BL/BR) drawn at the EXACT wall edge,
+    // so an operator can SEE which edges the panel's overscan is cropping —
+    // the catch-22 is you can't otherwise tell what's off-screen. Turn on,
+    // raise the inset / nudge the offset until all four corners + the whole
+    // border are visible, then turn off. Default OFF (it's a diagnostic).
+    val calibrationBorder: Boolean = false,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
@@ -75,6 +101,27 @@ const val OFFSET_STEP_DP: Int = 8
 
 /** Clamp a position offset to the allowed range (defensive on read + nudge). */
 fun clampOffsetDp(value: Int): Int = value.coerceIn(-OFFSET_RANGE_DP, OFFSET_RANGE_DP)
+
+/** Top-left-anchored fit-scale bounds (percent). 100 = full size (no scale);
+ *  the floor lets a badly-overscanning panel shrink the wall to ~half so the
+ *  off-screen bottom-right edge comes back into the visible area. Stepped for
+ *  per-keypress D-pad nudges the operator dials in by eye. */
+const val FIT_SCALE_MIN_PCT: Int = 50
+const val FIT_SCALE_MAX_PCT: Int = 100
+const val FIT_SCALE_STEP_PCT: Int = 2
+
+/** Clamp a fit-scale percent to the allowed range (defensive on read + nudge). */
+fun clampFitScalePct(value: Int): Int = value.coerceIn(FIT_SCALE_MIN_PCT, FIT_SCALE_MAX_PCT)
+
+/** Vertical-stretch bounds (percent of the fit-scaled height). 100 = no extra
+ *  stretch; the ceiling lets a residual bottom band close (≈ the inverse of a
+ *  20%-band fit scale) while capping aspect distortion. Stepped for D-pad. */
+const val FIT_STRETCH_Y_MIN_PCT: Int = 100
+const val FIT_STRETCH_Y_MAX_PCT: Int = 130
+const val FIT_STRETCH_Y_STEP_PCT: Int = 2
+
+/** Clamp a vertical-stretch percent to the allowed range. */
+fun clampFitStretchYPct(value: Int): Int = value.coerceIn(FIT_STRETCH_Y_MIN_PCT, FIT_STRETCH_Y_MAX_PCT)
 
 /**
  * Global UI scale — a single density multiplier applied to the entire
@@ -97,12 +144,24 @@ enum class UiScale(val multiplier: Float, val displayName: String) {
  * box outputs a full frame, the panel just doesn't show it all). `None`
  * is edge-to-edge (clean panels); the others inset by the named fraction
  * per edge. Default `Medium` (5%) = the classic TV action-safe margin.
+ *
+ * NOTE: the inset is the ONLY lever that shrinks the wall's actual footprint
+ * (the wall Column fills the inset area; `UiScale`/Display-size only scales the
+ * chrome WITHIN that footprint, it does not shrink the box). So on a panel with
+ * severe overscan the wall is fitted by raising this inset until the footprint
+ * sits inside the visible area, then nudging it into place with the position
+ * offset. The high presets (`XLarge`..`Max`) exist for exactly those panels —
+ * the .92 panel needed >7% on the bottom/right edges (2026-06-09).
  */
 enum class Overscan(val fraction: Float, val displayName: String) {
     None(0.00f, "None"),
     Small(0.03f, "3%"),
     Medium(0.05f, "5%"),
     Large(0.07f, "7%"),
+    XLarge(0.10f, "10%"),
+    XXLarge(0.13f, "13%"),
+    Huge(0.16f, "16%"),
+    Max(0.20f, "20%"),
 }
 
 internal fun uiScaleFromOrdinal(ordinal: Int): UiScale =
