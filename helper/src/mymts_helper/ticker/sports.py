@@ -22,7 +22,7 @@ import logging
 import time
 from datetime import datetime
 
-from . import DIR_NONE, TickerEntryDTO
+from . import DIR_NONE, GameDTO, TickerEntryDTO
 
 log = logging.getLogger("mymts_helper.ticker.sports")
 
@@ -42,19 +42,33 @@ log = logging.getLogger("mymts_helper.ticker.sports")
 FINAL_WINDOW_MS = 12 * 60 * 60 * 1000      # a final from up to ~12h ago is "today"
 UPCOMING_WINDOW_MS = 12 * 60 * 60 * 1000   # a game starting within ~12h is "later today"
 
-# Default curated leagues. The operator's feedback named MLB/NFL/NBA/NHL;
-# per-team/league curation UI is a deferred follow-on (BACKLOG).
+# The pool of leagues fetched, league-grouped + auto-cycled on the wall. All
+# eight are the team sports ESPN's keyless scoreboard exposes in the standard
+# 2-competitor score+clock+status shape (verified 2026-06-10) — they all map
+# cleanly onto the game-card + status-block design. The OPERATOR defines which
+# of these actually cycle via the in-menu "Sports leagues…" filter (the enabled
+# set = the pool); the helper just fetches the slate. Structurally-different
+# leagues (UFC fight cards, PGA leaderboard, tennis sets, F1 race) need bespoke
+# card shapes and are STAGED — see docs/findings/19 + BACKLOG.
 DEFAULT_LEAGUES: list[tuple[str, str, str]] = [
     # (display label, ESPN sport, ESPN league)
-    ("MLB", "baseball", "mlb"),
     ("NFL", "football", "nfl"),
+    ("NCAAF", "football", "college-football"),
+    ("UFL", "football", "ufl"),
     ("NBA", "basketball", "nba"),
+    ("WNBA", "basketball", "wnba"),
+    ("NCAAB", "basketball", "mens-college-basketball"),
+    ("MLB", "baseball", "mlb"),
     ("NHL", "hockey", "nhl"),
 ]
 
 # Cap games per league so one busy night can't flood the marquee.
 MAX_GAMES_PER_LEAGUE = 8
 MAX_SCORE_LEN = 4
+
+# Live-first ordering within a league block: in-progress leads, then upcoming,
+# then finals — so the most ticker-worthy game shows first (no team favouritism).
+_LIVE_FIRST = {"in": 0, "pre": 1, "post": 2}
 
 
 def scoreboard_url(sport: str, league: str) -> str:
@@ -90,16 +104,17 @@ def parse_scoreboard(
     DIR_NONE — sports have no up/down semantics, so the TV draws no arrow.
     """
     now = now_ms if now_ms is not None else int(time.time() * 1000)
-    out: list[TickerEntryDTO] = []
+    # (live-first priority, entry) pairs; sorted + capped to the league block.
+    scored: list[tuple[int, TickerEntryDTO]] = []
     try:
         data = json.loads(body)
     except (json.JSONDecodeError, ValueError):
-        return out
+        return []
     if not isinstance(data, dict):
-        return out
+        return []
     events = data.get("events")
     if not isinstance(events, list):
-        return out
+        return []
 
     for ev in events:
         if not isinstance(ev, dict):
@@ -135,18 +150,34 @@ def parse_scoreboard(
         if not away_abbr or not home_abbr:
             continue
 
+        away_score = _clean_score(away.get("score"))
+        home_score = _clean_score(home.get("score"))
+        norm_state = state if state in ("pre", "in", "post") else "pre"
         display = _format_game(state, ev, away_abbr, home_abbr, away.get("score"), home.get("score"))
-        out.append(
-            TickerEntryDTO(
-                symbol=league_label,
-                display=display,
-                direction=DIR_NONE,
-                is_sample=False,
-            )
+        game = GameDTO(
+            league=league_label,
+            away=away_abbr,
+            # A pre-game matchup has no meaningful score — keep it empty so the
+            # card draws the time, not a phantom 0–0.
+            away_score="" if norm_state == "pre" else away_score,
+            home=home_abbr,
+            home_score="" if norm_state == "pre" else home_score,
+            state=norm_state,
+            status=_status_short(ev),
         )
-        if len(out) >= MAX_GAMES_PER_LEAGUE:
-            break
-    return out
+        entry = TickerEntryDTO(
+            symbol=league_label,
+            display=display,
+            direction=DIR_NONE,
+            is_sample=False,
+            game=game,
+        )
+        scored.append((_LIVE_FIRST.get(state, 3), entry))
+
+    # Live-first within the league block (stable sort keeps ESPN's order within
+    # a priority), then cap so one busy night can't flood the block.
+    scored.sort(key=lambda pe: pe[0])
+    return [entry for _, entry in scored[:MAX_GAMES_PER_LEAGUE]]
 
 
 def _is_current(state: str, start_ms: int | None, now_ms: int) -> bool:

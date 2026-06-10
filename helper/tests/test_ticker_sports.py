@@ -157,3 +157,50 @@ def test_sample_slate_is_all_sample() -> None:
 def test_no_games_entry_is_truthful_not_sample() -> None:
     e = sports.no_games_entry()
     assert e.is_sample is False and "no games" in e.display.lower()
+
+
+# ---- structured game payload (BottomLine cards, 2026-06-10) ----
+
+def test_game_payload_populated_for_live() -> None:
+    out = _parse([_event("NYR", "2", "TOR", "1", state="in", short="5:42 - 1st", date_ms=NOW_MS)])
+    g = out[0].game
+    assert g is not None
+    assert (g.league, g.away, g.away_score, g.home, g.home_score) == ("MLB", "NYR", "2", "TOR", "1")
+    assert g.state == "in" and g.status == "5:42 - 1st"
+
+
+def test_game_payload_pre_has_empty_scores_not_phantom_zeroes() -> None:
+    out = _parse([_event("LAL", "0", "BOS", "0", state="pre", short="7:30 PM ET", date_ms=NOW_MS + 3 * HOUR)])
+    g = out[0].game
+    assert g.state == "pre" and g.away_score == "" and g.home_score == ""
+    assert g.away == "LAL" and g.home == "BOS" and g.status == "7:30 PM ET"
+
+
+def test_live_first_ordering_within_league_block() -> None:
+    events = [
+        _event("FA", "5", "FB", "4", state="post", short="Final", date_ms=NOW_MS - 2 * HOUR),   # final
+        _event("LA", "1", "LB", "0", state="in", short="Top 3rd", date_ms=NOW_MS),              # live
+        _event("PA", "0", "PB", "0", state="pre", short="8 PM", date_ms=NOW_MS + 2 * HOUR),      # upcoming
+    ]
+    out = sports.parse_scoreboard(_body(events), league_label="MLB", now_ms=NOW_MS)
+    assert [e.game.away for e in out] == ["LA", "PA", "FA"]   # live → upcoming → final
+
+
+def test_entry_to_json_includes_game_for_sports() -> None:
+    out = _parse([_event("A", "1", "B", "2", state="in", short="2nd", date_ms=NOW_MS)])
+    j = out[0].to_json()
+    assert "game" in j and j["game"]["away"] == "A" and j["game"]["state"] == "in"
+
+
+def test_markets_style_entry_omits_game_on_wire() -> None:
+    # A non-sports entry leaves game=None → the key is absent on the wire, so
+    # markets/news stay byte-identical to the v1 contract (additive change).
+    from mymts_helper.ticker import DIR_UP, TickerEntryDTO
+
+    e = TickerEntryDTO("S&P 500", "5,820", DIR_UP, False)
+    assert "game" not in e.to_json()
+
+
+def test_eight_team_leagues_in_default_pool() -> None:
+    labels = [lbl for lbl, _sport, _league in sports.DEFAULT_LEAGUES]
+    assert labels == ["NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL"]

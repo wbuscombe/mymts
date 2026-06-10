@@ -39,18 +39,49 @@ DIR_NONE = "none"
 
 
 @dataclass(frozen=True)
+class GameDTO:
+    """Structured sports game — the BottomLine card payload (2026-06-10).
+
+    Lets the TV draw a real game CARD (team abbrs + scores + a weighted
+    status block) instead of parsing a flat `display` string. `state` is the
+    ESPN lifecycle token (`pre` | `in` | `post`); `status` is ESPN's
+    `shortDetail` ("Final", "5:42 - 1st", "9/9 - 8:20 PM EDT"). Scores are the
+    already-cleaned digit strings (empty for a `pre` matchup). Additive: only
+    sports entries carry a `game`; markets/news leave it `None`.
+    """
+
+    league: str
+    away: str
+    away_score: str
+    home: str
+    home_score: str
+    state: str
+    status: str
+
+    def to_json(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TickerEntryDTO:
     """One ticker cell, wire-shaped for the `/api/ticker/*` envelope.
 
     `symbol` is the short label ("S&P 500", "BTC", "MLB"); `display` is
     the preformatted value the TV draws verbatim; `direction` is one of
-    the DIR_* tokens; `is_sample` is the honesty flag.
+    the DIR_* tokens; `is_sample` is the honesty flag. `game` carries the
+    structured card payload for sports (None for markets/news).
     """
 
     symbol: str
     display: str
     direction: str
     is_sample: bool
+    game: GameDTO | None = None
 
     def to_json(self) -> dict[str, object]:
-        return asdict(self)
+        d = asdict(self)
+        # Additive on the wire: omit `game` entirely for markets/news so their
+        # entries stay byte-identical to schema v1 (the TV pins the contract).
+        if d.get("game") is None:
+            d.pop("game", None)
+        return d
