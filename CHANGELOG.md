@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Panel-fit: top-left Fit scale + Vertical stretch + Calibration border; fixed settings LEFT/RIGHT handler (2026-06-10)
+
+Hands-on follow-up dialing the wall into `.92`'s panel. The panel renders the wall **larger than its visible area from a top-left origin** (top-left seated correctly, bottom-right overflowing off-screen) — an anchor neither the centred Overscan inset nor the ±64 dp Position offset can fix. Added the geometrically-correct lever plus supporting work; the wall now fits at **Fit scale 80% + Vertical stretch 110%** (operator-dialled).
+
+- **fix(settings): LEFT/RIGHT row adjust never fired.** In `SettingsOverlay`'s `SettingRow` / `AdjustRow`, `onPreviewKeyEvent` was placed **after** `.clickable()/.focusable()` in the chain — a key-input modifier only receives events when the focus target is its descendant, so LEFT/RIGHT silently no-op'd (SELECT, via `clickable`, masked the bug). Moved the handler above `clickable`/`focusable`. This is why every slider adjusts from the remote now. Verified on-device.
+- **feat(wall): top-left-anchored Fit scale** (`WallSettings.fitScalePct`, 50–100%, default 100). A `graphicsLayer` uniform scale with `transformOrigin = (0,0)` on the inset Box — shrinks the whole wall toward the **pinned top-left corner** so an overflowing bottom-right pulls into view; black fills the freed bottom/right. The correct lever for top-left-anchored overscan (the centred inset shrinks the wrong way; a uniform grow would push the sides off).
+- **feat(wall): Vertical stretch** (`fitStretchYPct`, 100–130%, default 100). An extra **height-only** factor on top of Fit scale (also top-left anchored) to close a residual **bottom band** without moving the sides. Slight aspect distortion; default-off so it stays panel-specific.
+- **feat(wall): Calibration border** (`calibrationBorder`, default off) — a bright magenta boundary + cyan **TL/TR/BL/BR** corner brackets at the true wall edge, so the operator can SEE which edges a panel crops (otherwise invisible by definition). The tool that diagnosed this panel.
+- **feat(settings): extended Overscan inset** to None/3/5/7/10/13/16/20% (was capped at 7%); `cycleOverscan` reaches the new presets.
+- Tests: `WallSettingsTest` + `LineupStoreWallSettingsResolveTest` cover the new fields (defaults, clamp-on-read, per-key wiring, the Overscan ladder length). Focus model **49** unchanged — the fit scale is a render transform, not a focus change. Deployed to `.92` via `adb push` + `pm install -r` (streamed `adb install` deadlocks on this box's flaky Wi-Fi transport — push the APK, install the local file, verify `lastUpdateTime` advances).
+- **Hardware finding:** the box output is geometrically perfect (full 1280×720, `scale=1.0`, no software overscan) — the crop is the **panel**. A 480p-EDID SD panel earlier read as the cause was a red herring; with it removed the real panel simply overscans the HD frame from a top-left origin, fixed by Fit scale. Android TV floors output at 720p (won't emit the panel's native 480p) and exposes no root/sysfs overscan lever on this build, so compensation stays **app-side**.
+- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched.
+
 ## Panel-fit: added Position-offset (X/Y) lever to recenter an off-center overscan panel (2026-06-09)
 
 The shipped Display size + Overscan inset are symmetric/centered — they fix "too big" but can't recenter a **shifted** image. This panel overscans off-center and has no hardware menu, so added a **Position offset (X/Y)** lever to nudge the whole wall in real screen space, completing the set (scale + inset + offset) for full software compensation.
