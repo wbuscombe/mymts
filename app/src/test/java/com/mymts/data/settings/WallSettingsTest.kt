@@ -217,6 +217,7 @@ class WallSettingsTest {
         assertNotEquals(a, a.copy(calibrationBorder = true))
         assertNotEquals(a, a.copy(fitScalePct = 80))
         assertNotEquals(a, a.copy(fitStretchYPct = 110))
+        assertNotEquals(a, a.copy(gridSize = GridSize.Nine))
         // copy preserves the panel-fit fields when other knobs change.
         val next = a.copy(feedWidth = FeedWidth.Wide)
         assertEquals(UiScale.Default, next.uiScale)
@@ -236,6 +237,14 @@ class WallSettingsTest {
         assertEquals(FIT_SCALE_MIN_PCT, clampFitScalePct(0))
         assertEquals(FIT_SCALE_MIN_PCT, clampFitScalePct(-100))
         assertEquals(74, clampFitScalePct(74))   // in-range passes through
+    }
+
+    @Test fun `grid size defaults to Four (2x2) and exposes 1-2-4-6-9 cells`() {
+        assertEquals(GridSize.Four, WallSettings.Default.gridSize)
+        assertEquals(4, GridSize.Four.cells)
+        assertEquals(listOf(1, 2, 4, 6, 9), GridSize.values().map { it.cells })
+        assertEquals(GridSize.Four, gridSizeFromOrdinal(99))                 // fallback
+        assertEquals(GridSize.Nine, gridSizeFromOrdinal(GridSize.Nine.ordinal))
     }
 
     @Test fun `vertical stretch defaults to 100 (none) and clamps to range`() {

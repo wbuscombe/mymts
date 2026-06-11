@@ -50,6 +50,12 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 **Why-not-now:** the operator wants it **bundled with a future menu-interface overhaul** (improve the broader menu at the same time), not a one-off.
 **Reconsider when:** the menu-interface overhaul is scheduled — build the league picker as part of it.
 
+## Hardware-aware optimal grid configs (2026-06-11)
+
+**What:** the video grid count is now operator-configurable (1/2/4/6/9, default 2×2) and the layout is dynamic (measured-area → cells → [video + label]). Next: derive the SENSIBLE grid options from the panel's actual dimensions + resolution and **only offer those** — e.g. don't let a small 720p panel select a 9-cell grid where each video is unwatchably tiny (or the label strip can't fit); a large 4K display could allow denser grids. The system would compute viable grid counts from the real hardware (resolution, physical/usable area, min legible cell size) and present only those in the Video-grid menu.
+**Why-not-now:** the operator's direction ("only allow optimal grid configs based on the actual hardware + resolution") is a refinement on top of the now-shipped configurable grid; v1 offers the fixed 1/2/4/6/9 set.
+**Reconsider when:** the operator wants the menu to self-limit to viable grids. The **measured-area infrastructure from this chapter is the foundation** — the section already measures its safe area + cell sizes, so the viable-count computation (min cell size vs. measured area) is the natural next step. Pairs with the sports-selection menu under the broader menu-interface overhaul.
+
 ---
 
 ## Stage 1.x — confirmatory 4K-panel soak

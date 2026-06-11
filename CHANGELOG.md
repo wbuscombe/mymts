@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Video section refactor — measured area → cells → [video + label] units + configurable grid (2026-06-11)
+
+The proper architectural fix for video-tile labels, replacing the prior bolt-on heuristics (overlay-on-video, then the dimension-aware below/above/bubble picker). The video section now **lays out structurally**, so a uniform below-video label that never clips is a property of the layout, not a per-tile guess — at **any** grid size.
+- **[video + label] cell unit (`WallTile`):** each cell is a `Column` — a `weight(1f)` video area above a fixed-height label strip. The video area letterboxes via Media3 `RESIZE_MODE_FIT` (real `videoAspect`, no manual math); the label sits in its own reserved strip **below** the picture. The bottom row is no longer a special clipping case — every cell reserves its own label space. `TileLabel.kt` (the heuristic placement) is **deleted** — superseded by structure.
+- **Section safe area (`VideoGrid`):** the grid `Column` reserves a `SECTION_SAFE_BOTTOM` (28dp) band so the bottom row's label strip stays inside the panel's visible area — derived from the residual overscan clip, **reading** the locked panel-fit (Fit 80% / Stretch 110% / Overscan None / Position 0,0), never changing it.
+- **Grid-agnostic dimensions:** `gridColumnsFor(count)` + new `gridRowsFor(count, columns)` give 1×1 / 2×1 / 2×2 / 3×2 / 3×3 for 1 / 2 / 4 / 6 / 9 cells. The cell unit is identical at every size.
+- **Configurable grid count:** new **"Video grid"** setting (`WallSettings.GridSize`: 1 / 2 / 4 / 6 / 9, **default 4 · 2×2**) in the Settings menu, persisted via `LineupStore` (SharedPreferences, ordinal + fallback-to-Four). `WallScreen` drives the grid, slot resolver, and focus model off `gridSize.cells`. Channel choices reconcile across grid changes: explicit per-slot `overrides` are keyed by slot index and preserved; the default fill is a **stable prefix** (`LineupSelector` preferred→fallback→rest) so 4 → 6 → 4 returns the same lineup (only live-availability churn moves it, by design).
+- **Verified on-box (.92):** at the default 2×2 all four labels sit **below** their videos, uniform, nothing clipped; cycled the menu setting to 6 (3×2 — six cells, every label below) and back to 4. 0 fatals.
+- **BACKLOG:** hardware-aware optimal grid configs — offer only grids sensible for the panel's real dimensions/resolution (the measured-area infra here is the foundation).
+- Tests: `VideoGridLayoutTest` (cols×rows for 1/2/4/6/9 + `gridRowsFor` guards); `WallSettingsTest` + `LineupStoreWallSettingsResolveTest` extended for `GridSize` (default Four, ordinal round-trip, all-absent resolve). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched (read-only).
+
 ## Markets SAMPLE restyle + dimension-aware video tile labels (2026-06-11)
 
 Two polish items after the operator used the new ticker/feed/video.

@@ -317,8 +317,8 @@ app/src/main/java/com/mymts/
     ├── TickerStrip.kt             ← basicMarquee scroller; per-cell SAMPLE pill
     ├── FeedPane.kt                ← 10-foot UI list; native-text only (no WebView path)
     ├── RelativeTime.kt            ← "now/Nm/Nh/Nd/date" relative-time chip
-    ├── VideoGrid.kt               ← autofit grid; equal weight() rows × columns
-    ├── WallTile.kt                ← state-aware cell: surface + badge + label
+    ├── VideoGrid.kt               ← grid-agnostic cell grid (cols×rows for 1/2/4/6/9) + section safe-bottom
+    ├── WallTile.kt                ← [video + label] cell unit: weight(1f) video over a reserved label strip
     ├── LineupSelector.kt          ← preferred → fallback → rest, capped at N
     ├── TileSlotResolver.kt        ← cycles K live channels across N slots
     └── WallColors.kt              ← dark-newsroom palette
@@ -332,9 +332,19 @@ app/src/main/java/com/mymts/
 | Feed pane (left, 28% width) | `/api/feed?limit=80` via `FeedRepository` | 60 s poll | Header carries `"feed not updating"` / `"helper unreachable"`; old items don't pretend to be current |
 | Video grid (right, autofit fill) | `/api/channels` via `ChannelsRepository` → `LineupSelector` → `TileSlotResolver` | 30 s poll | Per-tile honest state from `StreamPlayer.state`; dead tile = quiet near-black panel (C2) |
 
-### Autofit + fit-width-letterbox
+### Measured area → cells → [video + label] units (grid-agnostic)
 
-The grid (`VideoGrid`) divides its parent region evenly: rows × columns each take `weight(1f)`, so each cell is `parentWidth/columns × parentHeight/rows`. Aspect-ratio correctness moves **inside the tile**: `StreamSurface` hosts a Media3 `PlayerView` with `RESIZE_MODE_FIT`, which fills the cell's width while preserving source aspect ratio and letterboxing with black bars where dimensions differ. Net effect: the grid fills the right-hand region edge-to-edge; each tile renders video centered with clean bars rather than floating at native size or stretching.
+The video section lays out structurally so the channel label is always a clean strip **below** the picture, inside the panel's safe area, at any grid size — not a per-tile heuristic.
+
+1. **Section safe area.** `VideoGrid` fills its parent region but reserves a bottom band (`SECTION_SAFE_BOTTOM = 28dp`) so the lowest row's label strip stays inside the panel's *visible* area. That band is the residual overscan clip left by the locked panel-fit (Fit 80% / Stretch 110% / Overscan None / Position 0,0) — the section **reads** that fit to size the safe band; it never changes it.
+2. **Cells.** The safe area is divided into `gridColumnsFor(count) × gridRowsFor(count, columns)` equal cells — 1×1 / 2×1 / 2×2 / 3×2 / 3×3 for the 1 / 2 / 4 / 6 / 9 configurable counts. Each cell takes `weight(1f)` in both axes, so a cell is `safeWidth/columns × safeHeight/rows`.
+3. **[video + label] unit.** Each cell is a `Column`: a `weight(1f)` video area above a fixed-height `LABEL_STRIP` (18dp). The video area letterboxes itself — `StreamSurface` hosts a Media3 `PlayerView` with `RESIZE_MODE_FIT`, which preserves source `videoAspect` and adds black bars where the cell and source dimensions differ (no manual aspect math in layout). The label renders in the reserved strip beneath, on the tile-gap background.
+
+Net effect: every cell — including the bottom row — shows its video letterboxed with a uniform label strip below it, never clipped, at any grid count. The bottom row stopped being a special case the moment label space became structural rather than overlaid.
+
+### Configurable grid count
+
+`WallSettings.GridSize` (1 / 2 / 4 / 6 / 9 cells; **default 4 · 2×2**) is an operator setting in the Settings menu, persisted by `LineupStore` (SharedPreferences ordinal, fallback-to-`Four` on absent/corrupt). `WallScreen` reads `gridSize.cells` as the effective tile count and feeds it to the slot resolver, `gridColumnsFor`, and the focus model — the whole section is grid-agnostic. Channel choices survive a grid-size change: explicit per-slot `overrides` are keyed by slot index, and the default fill is a stable prefix (see *Lineup selection*), so 4 → 6 → 4 restores the same lineup. *(Backlog: restrict the offered counts to those sensible for the panel's real dimensions/resolution — the measured-area model above is the foundation.)*
 
 ### Lineup selection
 

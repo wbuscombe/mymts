@@ -79,6 +79,7 @@ fun SettingsOverlay(
     onNudgeOffsetY: (Int) -> Unit,
     onNudgeFitScale: (Int) -> Unit,
     onNudgeFitStretchY: (Int) -> Unit,
+    onCycleGridSize: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -109,6 +110,7 @@ fun SettingsOverlay(
                 onNudgeOffsetY = onNudgeOffsetY,
                 onNudgeFitScale = onNudgeFitScale,
                 onNudgeFitStretchY = onNudgeFitStretchY,
+                onCycleGridSize = onCycleGridSize,
                 onToggleCalibration = onToggleCalibration,
                 onCancel = onCancel,
             )
@@ -132,6 +134,7 @@ private fun SettingsCard(
     onNudgeOffsetY: (Int) -> Unit,
     onNudgeFitScale: (Int) -> Unit,
     onNudgeFitStretchY: (Int) -> Unit,
+    onCycleGridSize: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -170,6 +173,13 @@ private fun SettingsCard(
             valueLabel = settings.uiScale.displayName,
             onCycle = onCycleUiScale,
             modifier = Modifier.focusRequester(firstRowFocusRequester),
+        )
+        // Video grid — how many channel cells the wall shows (1/2/4/6/9). Each
+        // cell is a [video + label] unit; the layout is grid-agnostic.
+        SettingRow(
+            title = "Video grid",
+            valueLabel = settings.gridSize.displayName,
+            onCycle = onCycleGridSize,
         )
         // Fit scale — shrink the whole wall toward the TOP-LEFT corner so a
         // panel that overflows the bottom/right edges pulls back into view

@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
+import com.mymts.data.settings.GridSize
+import com.mymts.data.settings.gridSizeFromOrdinal
 import com.mymts.data.settings.FeedWidth
 import com.mymts.data.settings.FeedRecency
 import com.mymts.data.settings.Overscan
@@ -118,6 +120,7 @@ class LineupStore(context: Context) {
             .putBoolean(KEY_CALIBRATION, settings.calibrationBorder)
             .putInt(KEY_FIT_SCALE, settings.fitScalePct)
             .putInt(KEY_FIT_STRETCH_Y, settings.fitStretchYPct)
+            .putInt(KEY_GRID_SIZE, settings.gridSize.ordinal)
             .apply()
     }
 
@@ -178,6 +181,13 @@ class LineupStore(context: Context) {
      *  corners at the wall edge) so the operator can see what's being cropped. */
     fun toggleCalibration() {
         updateWallSettings(_wallSettings.value.copy(calibrationBorder = !_wallSettings.value.calibrationBorder))
+    }
+
+    /** Cycle the video grid size (1 → 2 → 4 → 6 → 9 → 1). The measured-area cell
+     *  layout handles any preset; per-slot channel overrides survive by index. */
+    fun cycleGridSize() {
+        val next = GridSize.values().let { it[(_wallSettings.value.gridSize.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(gridSize = next))
     }
 
     /** Advance the recency window (All → 1h → 6h → 24h → All). */
@@ -337,6 +347,7 @@ class LineupStore(context: Context) {
         private const val KEY_CALIBRATION = "wall_settings_calibration"
         private const val KEY_FIT_SCALE = "wall_settings_fit_scale_pct"
         private const val KEY_FIT_STRETCH_Y = "wall_settings_fit_stretch_y_pct"
+        private const val KEY_GRID_SIZE = "wall_settings_grid_size"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -361,7 +372,8 @@ class LineupStore(context: Context) {
                 !contains(KEY_TICKER_NEWS) && !contains(KEY_UI_SCALE) &&
                 !contains(KEY_OVERSCAN) && !contains(KEY_OFFSET_X) &&
                 !contains(KEY_OFFSET_Y) && !contains(KEY_CALIBRATION) &&
-                !contains(KEY_FIT_SCALE) && !contains(KEY_FIT_STRETCH_Y)
+                !contains(KEY_FIT_SCALE) && !contains(KEY_FIT_STRETCH_Y) &&
+                !contains(KEY_GRID_SIZE)
             ) {
                 return WallSettings.Default
             }
@@ -383,6 +395,7 @@ class LineupStore(context: Context) {
                 // Clamp on read — a corrupt scale can't blow up or zero the wall.
                 fitScalePct = clampFitScalePct(getInt(KEY_FIT_SCALE, FIT_SCALE_MAX_PCT)),
                 fitStretchYPct = clampFitStretchYPct(getInt(KEY_FIT_STRETCH_Y, FIT_STRETCH_Y_MIN_PCT)),
+                gridSize = gridSizeFromOrdinal(getInt(KEY_GRID_SIZE, GridSize.Four.ordinal)),
             )
         }
 

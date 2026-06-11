@@ -163,12 +163,18 @@ fun WallScreen(
     val state by channels.state.collectAsState()
     val allChannels = remember(state.snapshot) { state.snapshot?.channels.orEmpty() }
     val playable = remember(allChannels) { allChannels.filter { it.isPlayable } }
-    val defaultOrder = remember(playable) {
-        LineupSelector.forWall(maxCount = tileCount).invoke(playable)
+    // The grid size is operator-configurable at runtime (MENU → Settings →
+    // Video grid); the build-time `tileCount` is the initial default the setting
+    // defaults to (Four = 4). Channel overrides are keyed by slot index, so the
+    // operator's per-cell channel choices survive a grid-size change for the
+    // slots that still exist.
+    val effectiveTileCount = wallSettings.gridSize.cells
+    val defaultOrder = remember(playable, effectiveTileCount) {
+        LineupSelector.forWall(maxCount = effectiveTileCount).invoke(playable)
     }
-    val slots = remember(tileCount, defaultOrder, allChannels, overrides) {
+    val slots = remember(effectiveTileCount, defaultOrder, allChannels, overrides) {
         TileSlotResolver.resolve(
-            tileCount = tileCount,
+            tileCount = effectiveTileCount,
             defaultChannels = defaultOrder,
             allChannels = allChannels,
             overrides = overrides,
@@ -478,6 +484,7 @@ fun WallScreen(
                 onNudgeOffsetY = { delta -> lineupStore.nudgeOffsetY(delta) },
                 onNudgeFitScale = { delta -> lineupStore.nudgeFitScale(delta) },
                 onNudgeFitStretchY = { delta -> lineupStore.nudgeFitStretchY(delta) },
+                onCycleGridSize = { lineupStore.cycleGridSize() },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),

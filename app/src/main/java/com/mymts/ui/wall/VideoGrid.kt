@@ -64,6 +64,17 @@ fun gridColumnsFor(slotCount: Int): Int = when (slotCount) {
     else -> ceil(sqrt(slotCount.toDouble())).toInt().coerceAtLeast(1)
 }
 
+/** Rows needed for [count] cells at [columns] columns — pure, so the layout and
+ *  any caller share the same grid math at any configured grid size. */
+fun gridRowsFor(count: Int, columns: Int): Int =
+    if (count <= 0 || columns <= 0) 1 else ceil(count / columns.toDouble()).toInt().coerceAtLeast(1)
+
+/** Overscan-safe bottom band reserved in the video section so the bottom row's
+ *  [video + label] cell stays inside what the panel actually shows (the residual
+ *  clip the operator's fit leaves). The cells + their below-labels are laid out
+ *  within the section MINUS this band. Read-only wrt the fit config. */
+private val SECTION_SAFE_BOTTOM = 28.dp
+
 @Composable
 fun VideoGrid(
     slots: List<Slot>,
@@ -159,9 +170,14 @@ private fun AutofitGrid(
     focusedCellIndex: Int?,
     modifier: Modifier = Modifier,
 ) {
-    val rows = ceil(bound.size / columns.toDouble()).toInt().coerceAtLeast(1)
+    val rows = gridRowsFor(bound.size, columns)
     Column(
-        modifier = modifier.fillMaxSize().padding(2.dp),
+        // Reserve the overscan-safe bottom band so the bottom row's label strip
+        // (and video) sit inside what the panel actually shows — the cells +
+        // their below-labels are laid out within this safe area, so no label
+        // can fall into the clipped edge at any grid size. (Derived from the
+        // residual clip the operator's fit leaves; the fit itself is untouched.)
+        modifier = modifier.fillMaxSize().padding(start = 2.dp, top = 2.dp, end = 2.dp, bottom = SECTION_SAFE_BOTTOM),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         for (r in 0 until rows) {
@@ -198,13 +214,6 @@ private fun AutofitGrid(
                             ) {
                                 WallTile(
                                     bound = tile,
-                                    // The bottom row's lower edge sits at the
-                                    // fitted wall's bottom (the overscan-clipped
-                                    // band) — its label can't go below the video
-                                    // safely, so it falls back to above. Other
-                                    // rows have headroom → label sits below the
-                                    // picture (the operator's preferred look).
-                                    isBottomRow = r == rows - 1,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }

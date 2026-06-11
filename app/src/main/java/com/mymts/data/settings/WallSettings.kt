@@ -87,11 +87,33 @@ data class WallSettings(
     // raise the inset / nudge the offset until all four corners + the whole
     // border are visible, then turn off. Default OFF (it's a diagnostic).
     val calibrationBorder: Boolean = false,
+    // Video grid size (2026-06-11): how many cells the wall shows. Default Four
+    // (2×2) on the Onn box; the measured-area cell layout is grid-agnostic so
+    // any preset lays out cleanly (each cell a [video + label] unit in the safe
+    // area). The operator's per-slot channel choices (overrides, keyed by slot
+    // index) survive a grid-size change for the slots that still exist.
+    val gridSize: GridSize = GridSize.Four,
 ) {
     companion object {
         val Default: WallSettings = WallSettings()
     }
 }
+
+/**
+ * Video grid presets — how many cells the wall shows. Mirrors the web client's
+ * 1/2/4/6/9; native default is Four (2×2). `cells` is the tile count fed to the
+ * slot resolver + the grid layout (columns via `gridColumnsFor`).
+ */
+enum class GridSize(val cells: Int, val displayName: String) {
+    One(1, "1"),
+    Two(2, "2"),
+    Four(4, "4 · 2×2"),
+    Six(6, "6"),
+    Nine(9, "9"),
+}
+
+internal fun gridSizeFromOrdinal(ordinal: Int): GridSize =
+    GridSize.values().getOrNull(ordinal) ?: GridSize.Four
 
 /** Position-offset bounds (dp), real screen space, symmetric around 0. The
  *  range covers a typical overscan shift (~±5% of a 1280-wide panel); the
