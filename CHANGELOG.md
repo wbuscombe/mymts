@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Ticker: whole-ticker paged flip — market quotes carded, scroll-within-page (2026-06-11)
+
+The operator, after the sports flip, asked for the WHOLE ticker to work that way. Now every mode is a flip **page** with one consistent motion: the market quotes are a carded page, each sports league is a page, news is a page — and the strip flips between them all (markets → league blocks → back) with the same hold-then-flip; markets flips IN exactly like a league block. Built + deployed to `.92`, verified on-box (markets cards + a live NBA card across the rotation).
+- **feat(ticker): `TickerPaging`** (pure, tested) turns one mode's entries into flip pages: games → one `League` page per block; arrow-bearing quotes → one `Markets` page; NONE-direction headlines → one `News` page. Each page has a stable flip key so the flip triggers on a real page change, not incidental equality.
+- **feat(ticker): market quotes are bordered cards** — the same cell language as the game cards (symbol + value + arrow + SAMPLE pill). News headlines carded too (source accent + headline). Consistent visual language across the strip.
+- **feat(ticker): scroll-within-an-overflowing-page** — each page is a `basicMarquee` row that scrolls only when its cards exceed the panel width (a wide markets set / a busy league night); a page that fits stays static. Flip BETWEEN pages, scroll WITHIN one.
+- **feat(ticker): consistent flip** — one `AnimatedContent` (keyed on the page key) drives every transition, including the markets↔sports mode rotation, so markets flips in like a league block.
+- **C3 intact:** SAMPLE pills on sample market/game cards; the STALE pill (leading, not scrolled) on aged real data; an empty/honest mode falls back to its line. Tests: `TickerPagingTest` (pages per mode, keys, wrap); existing `SportsTicker`/parse/source suites unchanged. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Video grid: fix clipped bottom-row tile labels on the fitted panel (2026-06-11)
 
 On `.92`'s fitted panel (Fit scale 80% / Vertical stretch 110%) the top tiles showed their name labels but the **bottom row did not** — the label sat flush at the tile's bottom edge (`6.dp`), which for the bottom row is the fitted wall's bottom, where the panel's overscan crops a sliver. Reserved a **bottom safe-area** inside every tile (`TILE_LABEL_BOTTOM_SAFE = 28.dp`, applied to `ChannelLabel` + the dead-tile label) so the label lifts into the visible area — a fix to the **video panel's internal label layout**, NOT the global fit (which stays Fit scale 80% / Vertical stretch 110% / Overscan None / Position 0,0). Verified on-box via screencap: all four tiles' labels now render inside the visible region. Deployed to `.92` (push + `pm install -r`, `lastUpdateTime` 19:29). Same release key.

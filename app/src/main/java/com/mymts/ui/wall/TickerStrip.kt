@@ -42,17 +42,18 @@ import com.mymts.data.ticker.TickerSource
 import kotlinx.coroutines.delay
 
 /**
- * Top-of-wall ticker.
+ * Top-of-wall ticker — a whole-ticker **paged flip** (2026-06-11).
  *
- * Two presentations on the one strip (sports flips, markets/news scroll —
- * 2026-06-10): when the current entries carry structured games it draws the
- * **BottomLine-style sports flip** — league-grouped game cards held long enough
- * to read, then flipping to the next league (clear boundaries + a weighted,
- * colour-coded status block, the operator's asks). Otherwise (markets/news, or
- * an honest "scores unavailable" line) it scrolls as a marquee, unchanged.
+ * Every mode is a flip page with the SAME motion: the market quotes are one
+ * carded page, each sports league is its own page (BottomLine game cards), news
+ * is one page — and the strip flips between them all (markets → league blocks →
+ * back) with a single hold-then-flip animation. A page wider than the panel
+ * scrolls horizontally (a marquee); the flip happens between pages. Consistent
+ * bordered-card visual language across markets + sports.
  *
- * Honesty (C3): every sample entry still shows a SAMPLE pill; a sports mode
- * with no games falls back to the honest scrolling line, never a faked card.
+ * Honesty (C3): sample entries keep the SAMPLE pill (on market cards + game
+ * cards); aged real data shows the STALE pill; a mode with nothing real falls
+ * back to its honest line. Nothing is fabricated.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -75,115 +76,144 @@ fun TickerStrip(
             ),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (entries.isEmpty()) {
-            // C2: empty source = empty strip. No error text, no chrome.
-            return@Box
-        }
-        val blocks = remember(entries) { SportsTicker.blocks(entries) }
-        if (blocks.isNotEmpty()) {
-            // SPORTS: held, flipping league card-sets (the flip ignores pause —
-            // it's already legible; pause is a marquee-only affordance).
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (stale) StaleChip()
-                SportsFlip(blocks)
-            }
-            return@Box
-        }
-        // MARKETS / NEWS / honest fallback: scroll as before.
-        val scrollModifier = if (paused) Modifier else {
-            Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(scrollModifier)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            if (paused) PausedChip()
-            if (stale) StaleChip()
-            TickerGrouping.group(entries).forEach { run -> TickerRun(run) }
-        }
+        if (entries.isEmpty()) return@Box // C2: empty source = empty strip.
+        val pages = remember(entries) { TickerPaging.pagesFor(entries) }
+        if (pages.isEmpty()) return@Box
+        PagedTicker(pages, stale = stale, paused = paused, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }
 
-/** How long a league's card-set holds before flipping to the next. */
-private const val BLOCK_DWELL_MS = 6500L
+/** How long a page holds before flipping to the next (within a multi-page mode). */
+private const val PAGE_DWELL_MS = 6500L
 
 /**
- * The sports flip: shows one [SportsTicker.LeagueBlock] at a time and advances
- * on a calm dwell, wrapping. A vertical slide + fade reads as a BottomLine
- * "flip". The index resets whenever the block set changes (a new poll) so a
- * shrunk slate can't land out of range.
+ * Flip through [pages] on a calm dwell, wrapping. The flip triggers on the
+ * page KEY (advance to the next league, or a mode rotation) so two equal-content
+ * pages can't suppress it; the index resets when the page set changes (a poll /
+ * mode switch) so a shrunk set can't land out of range.
  */
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-private fun SportsFlip(
-    blocks: List<SportsTicker.LeagueBlock>,
+private fun PagedTicker(
+    pages: List<TickerPaging.Page>,
+    stale: Boolean,
+    paused: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var index by remember(blocks) { mutableIntStateOf(0) }
-    LaunchedEffect(blocks) {
-        if (blocks.size <= 1) return@LaunchedEffect
+    var index by remember(pages) { mutableIntStateOf(0) }
+    LaunchedEffect(pages) {
+        if (pages.size <= 1) return@LaunchedEffect // single page (markets/news): hold until mode change
         while (true) {
-            delay(BLOCK_DWELL_MS)
-            index = SportsTicker.nextBlock(index, blocks.size)
+            delay(PAGE_DWELL_MS)
+            index = TickerPaging.nextPage(index, pages.size)
         }
     }
-    val safe = index.coerceIn(0, blocks.lastIndex)
+    val current = pages[index.coerceIn(0, pages.lastIndex)]
     AnimatedContent(
-        // Key the transition on the POSITION, not the block's content — two
-        // leagues with equal data would otherwise suppress the flip and look
-        // frozen for a dwell.
-        targetState = safe,
+        targetState = current,
+        contentKey = { it.key }, // flip on page change, not incidental content equality
         transitionSpec = {
             (slideInVertically(tween(260)) { it / 2 } + fadeIn(tween(260))) togetherWith
                 (slideOutVertically(tween(260)) { -it / 2 } + fadeOut(tween(200)))
         },
-        label = "sports-flip",
+        label = "ticker-paged-flip",
         modifier = modifier,
-    ) { idx ->
-        LeagueBlockRow(blocks[idx.coerceIn(0, blocks.lastIndex)])
-    }
-}
-
-@Composable
-private fun LeagueBlockRow(block: SportsTicker.LeagueBlock) {
-    Row(
-        modifier = Modifier.fillMaxHeight(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        LeagueMarker(block.label)
-        block.games.forEach { entry -> GameCard(entry) }
+    ) { page ->
+        PageRow(page, stale = stale, paused = paused)
     }
 }
 
 /**
- * One game as a discrete CARD — a bordered, dark box (the strong divider the
- * operator wanted: each game is its own boxed unit, not a run-together stream)
- * holding the matchup + a weighted, colour-coded status block. A SAMPLE game
- * still wears the SAMPLE pill (C3 — the card never passes sample data off as
- * live, same contract as the scroll path).
+ * One page's content as a horizontally-scrolling row of cards. The marquee
+ * only animates when the cards overflow the panel width (a wide league night /
+ * the full markets set); a page that fits stays static. A leading STALE pill
+ * (fixed, not scrolled) flags aged real data.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (stale) StaleChip()
+        val scroll = if (paused) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().then(scroll),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (paused) PausedChip()
+            when (page) {
+                is TickerPaging.Markets -> page.quotes.forEach { MarketCard(it) }
+                is TickerPaging.League -> {
+                    LeagueMarker(page.block.label)
+                    page.block.games.forEach { GameCard(it) }
+                }
+                is TickerPaging.News -> page.items.forEach { NewsCard(it) }
+            }
+        }
+    }
+}
+
+// ---------- card visual language (shared bordered cell) ----------
+
+private val CardBg = Color(0xFF15171A)
+private val CardBorder = Color(0x2EFFFFFF)
+
+@Composable
+private fun cardRow(content: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(CardBg)
+            .border(1.dp, CardBorder, RoundedCornerShape(5.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) { content() }
+}
+
+/** A market quote as a bordered card — the same cell language as a game card. */
+@Composable
+private fun MarketCard(entry: TickerEntry) = cardRow {
+    Text(entry.symbol, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Text(entry.display, color = WallColors.LabelMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+    val (arrow, color) = when (entry.direction) {
+        TickerEntry.Direction.UP -> "▲" to WallColors.BadgeLive
+        TickerEntry.Direction.DOWN -> "▼" to Color(0xFFEF5350)
+        TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
+        TickerEntry.Direction.NONE -> null to WallColors.LabelMuted
+    }
+    if (arrow != null) Text(arrow, color = color, fontSize = 11.sp)
+    if (entry.isSample) SampleChip()
+}
+
+/** A news headline as a bordered card — source accent + headline. */
+@Composable
+private fun NewsCard(entry: TickerEntry) = cardRow {
+    Text(
+        text = entry.symbol.uppercase(),
+        color = WallColors.BadgeLive,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+    )
+    Text(text = entry.display, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+    if (entry.isSample) SampleChip()
+}
+
+/**
+ * One game as a discrete CARD (strong divider — each game its own boxed unit)
+ * with a weighted, colour-coded status block. A SAMPLE game keeps the SAMPLE
+ * pill (C3 — never passes sample off as live).
  */
 @Composable
 private fun GameCard(entry: TickerEntry) {
     val game = entry.game ?: return
     val kind = SportsTicker.kindOf(game.state)
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(Color(0xFF15171A))
-            .border(1.dp, Color(0x2EFFFFFF), RoundedCornerShape(5.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    cardRow {
         Matchup(game, kind)
         StatusBlock(SportsTicker.formatStatus(game.state, game.status), kind)
         if (entry.isSample) SampleChip()
@@ -192,11 +222,7 @@ private fun GameCard(entry: TickerEntry) {
 
 @Composable
 private fun Matchup(game: TickerGame, kind: SportsTicker.StatusKind) {
-    // Pre-game has no score → "AWY @ HOM"; live/final → "AWY 2  1 HOM".
     val teamColor = if (kind == SportsTicker.StatusKind.FINAL) WallColors.LabelMuted else WallColors.LabelPrimary
-    // Fall back to the matchup line whenever EITHER score is missing — a
-    // half-populated live/final payload must never show a dangling blank score
-    // or silently hide a real one.
     val noScores = kind == SportsTicker.StatusKind.UPCOMING ||
         game.awayScore.isBlank() || game.homeScore.isBlank()
     Row(
@@ -212,25 +238,12 @@ private fun Matchup(game: TickerGame, kind: SportsTicker.StatusKind) {
                 fontWeight = FontWeight.SemiBold,
             )
         } else {
-            // Brighten only the ACTUAL leader's score, and only while live.
             val a = game.awayScore.toIntOrNull()
             val h = game.homeScore.toIntOrNull()
             val live = kind == SportsTicker.StatusKind.LIVE
             TeamScore(game.away, game.awayScore, teamColor, leading = live && a != null && h != null && a > h)
             TeamScore(game.home, game.homeScore, teamColor, leading = live && a != null && h != null && h > a)
         }
-    }
-}
-
-@Composable
-private fun SampleChip() {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color(0x33FFFFFF))
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-    ) {
-        Text(text = "SAMPLE", color = WallColors.LabelGhost, fontSize = 8.sp, letterSpacing = 1.sp)
     }
 }
 
@@ -248,11 +261,7 @@ private fun TeamScore(abbr: String, score: String, color: Color, leading: Boolea
     }
 }
 
-/**
- * The weighted status block — clearly separated from the score and colour-coded
- * so Final vs live vs upcoming reads at a glance (the operator's #2 ask):
- * LIVE = bright green, FINAL = muted grey, UPCOMING = neutral.
- */
+/** Weighted, colour-coded status block — LIVE green, FINAL grey, UPCOMING neutral. */
 @Composable
 private fun StatusBlock(text: String, kind: SportsTicker.StatusKind) {
     val (fg, bg) = when (kind) {
@@ -261,18 +270,28 @@ private fun StatusBlock(text: String, kind: SportsTicker.StatusKind) {
         SportsTicker.StatusKind.UPCOMING -> Color(0xFFBFC6CC) to Color(0x14FFFFFF)
     }
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(3.dp))
-            .background(bg)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(bg).padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Text(
-            text = text,
-            color = fg,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp,
-        )
+        Text(text = text, color = fg, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+    }
+}
+
+@Composable
+private fun LeagueMarker(label: String) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(WallColors.BadgeLive).padding(horizontal = 7.dp, vertical = 2.dp),
+    ) {
+        Text(text = label, color = Color(0xFF000000), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+    }
+}
+
+/** C3: a sample value never passes as live. */
+@Composable
+private fun SampleChip() {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 4.dp, vertical = 1.dp),
+    ) {
+        Text(text = "SAMPLE", color = WallColors.LabelGhost, fontSize = 8.sp, letterSpacing = 1.sp)
     }
 }
 
@@ -280,108 +299,17 @@ private fun StatusBlock(text: String, kind: SportsTicker.StatusKind) {
 @Composable
 private fun StaleChip() {
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color(0x33FFFFFF))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Text(
-            text = "STALE",
-            color = WallColors.BadgeStale,
-            fontSize = 9.sp,
-            letterSpacing = 1.4.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Text(text = "STALE", color = WallColors.BadgeStale, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 private fun PausedChip() {
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(2.dp))
-            .background(Color(0x33FFFFFF))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
-        Text(
-            text = "PAUSED",
-            color = WallColors.BadgeLive,
-            fontSize = 9.sp,
-            letterSpacing = 1.4.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-/**
- * One labelled run for the SCROLLING modes (markets / news / honest fallback):
- * the symbol/marker shown once, then its values follow. Unchanged from the
- * marquee era — only sports moved to the flip presenter above.
- */
-@Composable
-private fun TickerRun(run: TickerGrouping.Run) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        LeagueMarker(run.label)
-        run.entries.forEach { entry -> TickerValue(entry) }
-    }
-}
-
-@Composable
-private fun LeagueMarker(label: String) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(3.dp))
-            .background(WallColors.BadgeLive)
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-    ) {
-        Text(
-            text = label,
-            color = Color(0xFF000000),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
-        )
-    }
-}
-
-@Composable
-private fun TickerValue(entry: TickerEntry) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            text = entry.display,
-            color = WallColors.LabelMuted,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-        )
-        val (arrow, color) = when (entry.direction) {
-            TickerEntry.Direction.UP -> "▲" to WallColors.BadgeLive
-            TickerEntry.Direction.DOWN -> "▼" to Color(0xFFEF5350)
-            TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
-            TickerEntry.Direction.NONE -> null to WallColors.LabelMuted
-        }
-        if (arrow != null) {
-            Text(text = arrow, color = color, fontSize = 11.sp)
-        }
-        if (entry.isSample) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0x33FFFFFF))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
-            ) {
-                Text(
-                    text = "SAMPLE",
-                    color = WallColors.LabelGhost,
-                    fontSize = 8.sp,
-                    letterSpacing = 1.sp,
-                )
-            }
-        }
+        Text(text = "PAUSED", color = WallColors.BadgeLive, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold)
     }
 }
