@@ -261,10 +261,35 @@ private fun SportsEntryCard(entry: TickerEntry) {
     }
     when (card.kind) {
         "leaderboard" -> LeaderboardCard(card, entry.isSample)
-        // "fight" / "match" / "race" land as those sports ship; until then the
-        // generic card renders title + lines + status honestly.
+        "fight" -> FightCard(card, entry.isSample)
+        // "match" / "race" land as those sports ship; until then the generic
+        // card renders title + lines + status honestly.
         else -> SportCardGeneric(card, entry.isSample)
     }
+}
+
+/**
+ * UFC fight card — the matchup ("A vs B" / "A def. B") prominent, the weight
+ * class as a small muted tag, and a weighted status block (the bout time /
+ * round / method). Same bordered-card language; one card per bout in the UFC
+ * block.
+ */
+@Composable
+private fun FightCard(card: SportCard, isSample: Boolean) = cardRow {
+    Text(
+        text = card.title,
+        color = WallColors.LabelPrimary,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+    )
+    card.lines.forEach { wclass ->
+        Text(text = wclass, color = WallColors.LabelMuted, fontSize = 10.sp, maxLines = 1)
+    }
+    if (card.status.isNotBlank()) {
+        StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
+    }
+    if (isSample) SampleChip()
 }
 
 /**

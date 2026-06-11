@@ -91,3 +91,66 @@ def test_pga_never_raises_on_junk() -> None:
     body = json.dumps({"events": [{"name": "X", "date": _iso(0),
                        "status": {"type": {"state": "in"}}, "competitions": [{"competitors": []}]}]}).encode()
     assert individual.parse_pga(body, now_ms=_NOW_MS) == []
+
+
+# ---- UFC fight cards ----
+
+def _fight(state, a, b, *, wclass="Lightweight", winner=None, detail="6/14 - 8 PM"):
+    def comp(name, order, win):
+        return {"order": order, "winner": win, "athlete": {"shortName": name}}
+    return {
+        "type": {"text": wclass},
+        "status": {"type": {"state": state, "shortDetail": detail}},
+        "competitors": [comp(a, 1, winner == a), comp(b, 2, winner == b)],
+    }
+
+
+def _ufc(fights, *, state="pre", date_offset_ms=24 * 60 * 60 * 1000, name="UFC 250"):
+    return json.dumps({
+        "events": [{
+            "name": name,
+            "date": _iso(date_offset_ms),
+            "status": {"type": {"state": state}},
+            "competitions": fights,
+        }],
+    }).encode()
+
+
+def test_ufc_builds_fight_cards_main_event_first() -> None:
+    # ESPN lists prelims→main; the parser reads in reverse so the headline leads.
+    body = _ufc([_fight("pre", "Prelim A", "Prelim B"),
+                 _fight("pre", "Topuria", "Gaethje", wclass="Lightweight")])
+    entries = individual.parse_ufc(body, now_ms=_NOW_MS)
+    assert len(entries) == 2
+    main = entries[0].card
+    assert main.league == "UFC" and main.kind == "fight"
+    assert main.title == "Topuria vs Gaethje"   # order-1 vs order-2
+    assert main.lines == ["Lightweight"]
+    assert main.state == "pre"
+
+
+def test_ufc_post_fight_shows_winner() -> None:
+    body = _ufc([_fight("post", "Topuria", "Gaethje", winner="Topuria", detail="KO/TKO R2")],
+                state="in", date_offset_ms=0)
+    card = individual.parse_ufc(body, now_ms=_NOW_MS)[0].card
+    assert card.title == "Topuria def. Gaethje"
+    assert card.status == "KO/TKO R2"
+    assert card.state == "post"
+
+
+def test_ufc_draw_never_invents_a_winner() -> None:
+    body = _ufc([_fight("post", "A", "B", winner=None)], state="in", date_offset_ms=0)
+    assert individual.parse_ufc(body, now_ms=_NOW_MS)[0].card.title == "A vs B"
+
+
+def test_ufc_caps_to_main_card_and_drops_offseason() -> None:
+    many = [_fight("pre", f"X{i}", f"Y{i}") for i in range(9)]
+    assert len(individual.parse_ufc(_ufc(many), now_ms=_NOW_MS)) == individual.UFC_MAX_FIGHTS
+    # far-future event → omitted
+    assert individual.parse_ufc(_ufc([_fight("pre", "A", "B")],
+                                     date_offset_ms=10 * 24 * 60 * 60 * 1000), now_ms=_NOW_MS) == []
+
+
+def test_ufc_never_raises_on_junk() -> None:
+    assert individual.parse_ufc(b"nope", now_ms=_NOW_MS) == []
+    assert individual.parse_ufc(b'{"events":[]}', now_ms=_NOW_MS) == []

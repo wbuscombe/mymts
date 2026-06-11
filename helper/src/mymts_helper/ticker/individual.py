@@ -149,9 +149,85 @@ def parse_pga(body: bytes, *, now_ms: int | None = None) -> list[TickerEntryDTO]
     return [TickerEntryDTO("PGA", display, DIR_NONE, is_sample=False, card=card)]
 
 
+# How many fights a UFC card surfaces (the headline bouts — a full card has
+# ~12, mostly prelims). ESPN lists prelims→main, so we read in reverse.
+UFC_MAX_FIGHTS = 5
+
+
+def _fighter(competitor: dict) -> str:
+    """Compact fighter label — ESPN `shortName` ('S. Garcia'), else last word
+    of `displayName`. Reuses the athlete-short logic."""
+    return _athlete_short(competitor)
+
+
+def parse_ufc(body: bytes, *, now_ms: int | None = None) -> list[TickerEntryDTO]:
+    """Parse the ESPN mma/ufc scoreboard into `fight` cards — the current
+    event's headline bouts (one card per fight). `[]` if no current event.
+    Never raises.
+    """
+    now = now_ms if now_ms is not None else int(time.time() * 1000)
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    events = data.get("events")
+    if not isinstance(events, list) or not events:
+        return []
+    ev = events[0]
+    if not isinstance(ev, dict):
+        return []
+    if not _is_current_event(_state(ev), _event_start_ms(ev), now):
+        return []
+    comps = ev.get("competitions")
+    if not isinstance(comps, list) or not comps:
+        return []
+
+    out: list[TickerEntryDTO] = []
+    for c in reversed(comps):  # main event is typically last → headline first
+        if not isinstance(c, dict):
+            continue
+        cmps = [x for x in (c.get("competitors") or []) if isinstance(x, dict)]
+        if len(cmps) != 2:
+            continue
+        cmps.sort(key=_competitor_order)
+        a, b = cmps[0], cmps[1]
+        na, nb = _fighter(a), _fighter(b)
+        if not na or not nb:
+            continue
+
+        fstate = _state(c)
+        if fstate == "post":
+            winner = a if a.get("winner") is True else (b if b.get("winner") is True else None)
+            if winner is not None:
+                loser = b if winner is a else a
+                title = f"{_fighter(winner)} def. {_fighter(loser)}"
+            else:
+                title = f"{na} vs {nb}"   # a draw / no-contest — never invent a winner
+        else:
+            title = f"{na} vs {nb}"
+
+        wclass = _str((c.get("type") or {}).get("text") if isinstance(c.get("type"), dict) else "")
+        card = SportCardDTO(
+            league="UFC",
+            kind="fight",
+            title=title[:34],
+            state=fstate if fstate in ("pre", "in", "post") else "pre",
+            status=_status_short(c),
+            lines=[wclass] if wclass else [],
+        )
+        display = f"{title} · {card.status}".strip(" ·")
+        out.append(TickerEntryDTO("UFC", display, DIR_NONE, is_sample=False, card=card))
+        if len(out) >= UFC_MAX_FIGHTS:
+            break
+    return out
+
+
 # Individual-sport leagues the helper fetches, paired with their parser. Each
-# ships one at a time (PGA first); the rest are added as their cards land.
+# ships one at a time; the rest are added as their cards land.
 # (display label, ESPN sport, ESPN league, parser)
 INDIVIDUAL_LEAGUES = [
     ("PGA", "golf", "pga", parse_pga),
+    ("UFC", "mma", "ufc", parse_ufc),
 ]
