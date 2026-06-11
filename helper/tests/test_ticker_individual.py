@@ -154,3 +154,106 @@ def test_ufc_caps_to_main_card_and_drops_offseason() -> None:
 def test_ufc_never_raises_on_junk() -> None:
     assert individual.parse_ufc(b"nope", now_ms=_NOW_MS) == []
     assert individual.parse_ufc(b'{"events":[]}', now_ms=_NOW_MS) == []
+
+
+# ---- Tennis match cards ----
+
+def _ls(*vals):
+    out = []
+    for v in vals:
+        if isinstance(v, tuple):
+            out.append({"value": float(v[0]), "tiebreak": v[1]})
+        else:
+            out.append({"value": float(v)})
+    return out
+
+
+def _match(state, a, b, *, winner=None, a_sets=(), b_sets=(), detail="Final"):
+    def comp(name, sets, win):
+        return {"winner": win, "athlete": {"displayName": name}, "linescores": _ls(*sets)}
+    return {"status": {"type": {"state": state, "shortDetail": detail}},
+            "competitors": [comp(a, a_sets, winner == a), comp(b, b_sets, winner == b)]}
+
+
+def _tennis(matches):
+    return json.dumps({"events": [{"name": "Boss Open", "groupings": [{"competitions": matches}]}]}).encode()
+
+
+def test_tennis_final_shows_winner_and_sets() -> None:
+    body = _tennis([_match("post", "Marc Huesler", "Nikoloz Basilashvili",
+                           winner="Marc Huesler", a_sets=(6, 7), b_sets=(1, 5))])
+    c = individual.parse_tennis(body, now_ms=_NOW_MS)[0].card
+    assert c.league == "Tennis" and c.kind == "match"
+    assert c.title == "Huesler d. Basilashvili"
+    assert c.lines == ["6-1 7-5"]
+    assert c.state == "post"
+
+
+def test_tennis_tiebreak_renders_in_set_score() -> None:
+    body = _tennis([_match("post", "A B", "C D", winner="A B", a_sets=(7, 6), b_sets=((6, 7), 4))])
+    # set1 7-6(7) (loser's tiebreak), set2 6-4
+    assert individual.parse_tennis(body, now_ms=_NOW_MS)[0].card.lines == ["7-6(7) 6-4"]
+
+
+def test_tennis_skips_upcoming_and_caps() -> None:
+    pre = [_match("pre", f"A{i} x", f"B{i} y") for i in range(3)]
+    assert individual.parse_tennis(_tennis(pre), now_ms=_NOW_MS) == []  # draw upcoming = skipped
+    many = [_match("post", f"A{i} x", f"B{i} y", winner=f"A{i} x", a_sets=(6,), b_sets=(4,)) for i in range(9)]
+    assert len(individual.parse_tennis(_tennis(many), now_ms=_NOW_MS)) == individual.TENNIS_MAX_MATCHES
+
+
+def test_tennis_live_first_then_finals() -> None:
+    body = _tennis([
+        _match("post", "Final Winner", "Final Loser", winner="Final Winner", a_sets=(6,), b_sets=(2,)),
+        _match("in", "Carlos Alcaraz", "Jannik Sinner", a_sets=(3,), b_sets=(2,), detail="Set 1"),
+    ])
+    titles = [e.card.title for e in individual.parse_tennis(body, now_ms=_NOW_MS)]
+    assert titles[0] == "Alcaraz vs Sinner"  # in-progress leads
+
+
+def test_tennis_never_raises_on_junk() -> None:
+    assert individual.parse_tennis(b"x", now_ms=_NOW_MS) == []
+    assert individual.parse_tennis(b'{"events":[{"groupings":[]}]}', now_ms=_NOW_MS) == []
+
+
+# ---- F1 race cards ----
+
+def _f1(sessions, *, state="pre", date_offset_ms=24 * 60 * 60 * 1000, short="MSC Cruises Barcelona-Catalunya GP"):
+    return json.dumps({"events": [{
+        "name": short, "shortName": short, "date": _iso(date_offset_ms),
+        "status": {"type": {"state": state}}, "competitions": sessions,
+    }]}).encode()
+
+
+def _session(abbr, state, *, drivers=(), detail=""):
+    comps = [{"order": i + 1, "athlete": {"displayName": f"X {d}"}} for i, d in enumerate(drivers)]
+    return {"type": {"abbreviation": abbr}, "status": {"type": {"state": state, "shortDetail": detail}},
+            "competitors": comps}
+
+
+def test_f1_upcoming_shows_race_start() -> None:
+    body = _f1([_session("FP1", "pre", detail="6/12 - 7:30 AM"),
+                _session("Race", "pre", detail="6/14 - 9:00 AM EDT")])
+    c = individual.parse_f1(body, now_ms=_NOW_MS)[0].card
+    assert c.league == "F1" and c.kind == "race"
+    assert c.title == "Barcelona-Catalunya GP"   # location + GP from the long name
+    assert c.status == "6/14 - 9:00 AM EDT"
+    assert c.state == "pre" and c.lines == []
+
+
+def test_f1_finished_race_shows_podium() -> None:
+    body = _f1([_session("Race", "post", drivers=["Verstappen", "Norris", "Leclerc", "Russell"], detail="Final")],
+               state="in", date_offset_ms=0)
+    c = individual.parse_f1(body, now_ms=_NOW_MS)[0].card
+    assert c.lines == ["1. Verstappen", "2. Norris", "3. Leclerc"]
+    assert c.state == "post"
+
+
+def test_f1_far_future_is_dropped() -> None:
+    body = _f1([_session("Race", "pre", detail="x")], date_offset_ms=10 * 24 * 60 * 60 * 1000)
+    assert individual.parse_f1(body, now_ms=_NOW_MS) == []
+
+
+def test_f1_never_raises_on_junk() -> None:
+    assert individual.parse_f1(b"x", now_ms=_NOW_MS) == []
+    assert individual.parse_f1(b'{"events":[]}', now_ms=_NOW_MS) == []

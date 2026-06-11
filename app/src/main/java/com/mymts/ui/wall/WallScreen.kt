@@ -502,10 +502,10 @@ fun WallScreen(
                 modifier = Modifier.fillMaxSize(),
                 title = "SPORTS LEAGUES",
                 emptyText = "No leagues configured.",
-                // Honest roadmap: the structurally-different sports are staged
-                // (no bespoke cards yet) so they're shown as coming-soon, not
-                // offered as toggles you can't actually use.
-                footerNote = "Coming soon: ${STAGED_LEAGUES.joinToString(" · ")}",
+                // Honest roadmap: any sport still staged behind its bespoke card
+                // shows as coming-soon (none now — all four shipped).
+                footerNote = STAGED_LEAGUES.takeIf { it.isNotEmpty() }
+                    ?.let { "Coming soon: ${it.joinToString(" · ")}" },
             )
         }
         if (pending is MenuState.PendingSelection.SourceFilter) {
@@ -553,16 +553,14 @@ fun WallScreen(
 // different and staged (see docs/findings/19 + BACKLOG). Kept in sync with the
 // helper's sports.DEFAULT_LEAGUES.
 private val CURATED_LEAGUES =
-    listOf("NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL", "PGA", "UFC")
+    listOf("NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL", "PGA", "UFC", "Tennis", "F1")
 
 /**
- * The structurally-different sports — fight cards / leaderboards / set scores /
- * race results — that don't fit the team-vs-team game card. They're STAGED: not
- * offered as toggles (their bespoke cards aren't built), shown as "coming soon"
- * in the picker. When their cards ship (see docs/findings/19 + BACKLOG) they
- * move into [CURATED_LEAGUES] + the helper's `DEFAULT_LEAGUES`.
+ * Sports still staged behind their bespoke cards — shown as "coming soon" in
+ * the picker, not offered as toggles. **Now empty**: UFC/PGA/Tennis/F1 all
+ * shipped (2026-06-11), so every supported sport is a live toggle.
  */
-private val STAGED_LEAGUES = listOf("Tennis", "F1")
+private val STAGED_LEAGUES = emptyList<String>()
 
 private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.label

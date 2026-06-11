@@ -262,10 +262,44 @@ private fun SportsEntryCard(entry: TickerEntry) {
     when (card.kind) {
         "leaderboard" -> LeaderboardCard(card, entry.isSample)
         "fight" -> FightCard(card, entry.isSample)
-        // "match" / "race" land as those sports ship; until then the generic
-        // card renders title + lines + status honestly.
+        "match" -> MatchCard(card, entry.isSample)
+        "race" -> RaceCard(card, entry.isSample)
         else -> SportCardGeneric(card, entry.isSample)
     }
+}
+
+/**
+ * Tennis match card — the players ("A vs B" / "A d. B") + the set scores
+ * (monospace, so '6-4 7-6(3)' aligns) + a weighted status block (Final / live).
+ * One card per match in the Tennis block.
+ */
+@Composable
+private fun MatchCard(card: SportCard, isSample: Boolean) = cardRow {
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    card.lines.forEach { sets ->
+        Text(sets, color = WallColors.LabelMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+    }
+    if (card.status.isNotBlank()) {
+        StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
+    }
+    if (isSample) SampleChip()
+}
+
+/**
+ * F1 race card — the GP name + the podium ("1. Verstappen …") for a run race,
+ * or the race start for an upcoming weekend, + a weighted status block. One
+ * card per race weekend in the F1 block.
+ */
+@Composable
+private fun RaceCard(card: SportCard, isSample: Boolean) = cardRow {
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    card.lines.forEach { pos ->
+        Text(pos, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+    }
+    if (card.status.isNotBlank()) {
+        StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
+    }
+    if (isSample) SampleChip()
 }
 
 /**
