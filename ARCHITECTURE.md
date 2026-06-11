@@ -753,10 +753,10 @@ The ticker previously showed **SAMPLE markets data** behind honest SAMPLE pills 
 The helper's `mymts_helper/ticker/` package owns ticker data via **in-memory snapshots** — ephemeral by design, no DB table, no cross-thread sqlite exposure:
 
 ```
-Stooq CSV          ┐
+Yahoo Finance JSON ┐   (v8 chart, per-symbol, concurrent)
 CoinGecko JSON     ├─▶ MarketsPoller ──▶ in-memory snapshot ──▶ /api/ticker/markets
 ESPN scoreboard    │                     SportsPoller      ──▶ /api/ticker/sports
-(+ SAMPLE entries) ┘
+(SAMPLE on miss)   ┘
 
 /api/ticker/{markets,sports} ─▶ HelperClient (parse, pin schema_version) ─▶ HelperTickerSource
                                                        (rotate modes: 22s markets, 14s sports)
@@ -765,6 +765,13 @@ ESPN scoreboard    │                     SportsPoller      ──▶ /api/tick
 ```
 
 The TV **never** fetches market/sports data directly — same boundary as feed/channels. The helper is the source-of-truth gatekeeper.
+
+#### Markets source — Yahoo Finance (2026-06-11, replacing Stooq)
+
+`MarketsPoller` originally fetched **Stooq** CSV for indices/FX/gold, but Stooq **bot-walls the NAS egress IP** (the prober gets a JS-challenge page, not data) — so those symbols fell back to honest SAMPLE while only CoinGecko crypto was live. The fix is sourced on the **NAS-reachability gate** (the WeatherNation lesson: *Mac-works ≠ NAS-works* — validate from inside the helper container, not the dev machine). **Yahoo Finance's keyless v8 chart endpoint** (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) IS reachable from the NAS egress and covers the whole set — indices, FX, gold, oil (Brent/WTI), and the 10Y yield (`^TNX`) — so the entire markets ticker is now **live**; crypto stays on CoinGecko.
+
+- **Per-symbol isolation (C2):** one HTTP request per symbol, fetched **concurrently** (`asyncio.gather`) — a single symbol failing samples only that symbol, never the whole snapshot; wall time is bounded by the slowest single fetch.
+- **Honesty (C3) preserved:** `parse_yahoo_chart` reads `meta.regularMarketPrice` + `chartPreviousClose` (direction = up/down/flat); a symbol whose fetch fails or parses empty still falls back to an honest SAMPLE placeholder. Real-when-reachable, honest-SAMPLE-only-on-failure — the label logic is unchanged, it just no longer triggers in the normal case. The DTO shape is identical, so the TV needs no change.
 
 ### Why in-memory, not a DB table
 

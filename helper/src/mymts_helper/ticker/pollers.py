@@ -8,8 +8,8 @@ retention sweep, and crucially none of the cross-thread sqlite exposure
 the feed path had: the snapshot is a plain list guarded by the asyncio
 single-thread event loop and read directly by the (sync) endpoint.
 
-Per-source isolation (C2): markets fetches Stooq and CoinGecko
-independently; either failing degrades only its own symbols (they fall
+Per-source isolation (C2): markets fetches each Yahoo symbol and CoinGecko
+independently; any one failing degrades only its own symbol(s) (they fall
 back to honest sample), never the whole snapshot. Sports fetches each
 league independently.
 
@@ -85,33 +85,39 @@ class MarketsPoller:
                 pass
 
     async def poll_once(self) -> None:
-        stooq = await self._fetch_stooq()
+        yahoo = await self._fetch_yahoo()
         coingecko = await self._fetch_coingecko()
-        self._entries = markets_mod.build_snapshot(stooq, coingecko)
-        if stooq or coingecko:
+        self._entries = markets_mod.build_snapshot(yahoo, coingecko)
+        if yahoo or coingecko:
             self.real_as_of = _now_iso()
         log.info(
             "markets_poll_ok",
-            extra={"stooq": len(stooq), "coingecko": len(coingecko)},
+            extra={"yahoo": len(yahoo), "coingecko": len(coingecko)},
         )
 
-    async def _fetch_stooq(self) -> dict[str, tuple[float, str]]:
-        symbols = [s for _, s in (
-            markets_mod.STOOQ_INDICES + markets_mod.STOOQ_FX + markets_mod.STOOQ_GOLD
-        )]
-        try:
-            r = await fetch(
-                markets_mod.stooq_url(symbols),
-                resolver=self.resolver,
-                headers={"Accept": "text/csv, */*"},
-            )
-            if r.status_code >= 400:
-                log.warning("markets_stooq_http", extra={"status": r.status_code})
-                return {}
-            return markets_mod.parse_stooq_csv(r.body)
-        except FetchError as e:
-            log.warning("markets_stooq_fetch_fail", extra={"reason": str(e)[:100]})
-            return {}
+    async def _fetch_yahoo(self) -> dict[str, tuple[float, str]]:
+        """Fetch every Yahoo symbol concurrently (per-symbol isolation: one
+        symbol failing only samples that symbol, never the whole set). Bounded
+        wall time — all run in parallel, so the slowest single fetch caps it."""
+        async def one(sym: str) -> tuple[str, tuple[float, str] | None]:
+            try:
+                r = await fetch(
+                    markets_mod.yahoo_chart_url(sym),
+                    resolver=self.resolver,
+                    headers={"Accept": "application/json"},
+                )
+                if r.status_code >= 400:
+                    return sym, None
+                return sym, markets_mod.parse_yahoo_chart(r.body)
+            except FetchError:
+                return sym, None
+
+        symbols = [s for _, s, _ in markets_mod.YAHOO_QUOTES]
+        results = await asyncio.gather(*(one(s) for s in symbols))
+        out = {sym: val for sym, val in results if val is not None}
+        if len(out) < len(symbols):
+            log.warning("markets_yahoo_partial", extra={"got": len(out), "want": len(symbols)})
+        return out
 
     async def _fetch_coingecko(self) -> dict[str, tuple[float, str]]:
         try:

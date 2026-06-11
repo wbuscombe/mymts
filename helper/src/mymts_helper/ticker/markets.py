@@ -1,18 +1,27 @@
-"""Markets ticker data — keyless quotes from Stooq + CoinGecko.
+"""Markets ticker data — keyless quotes from Yahoo Finance + CoinGecko.
 
-Two keyless public sources cover most of the ticker's symbols:
-  - **Stooq** serves tiny CSV quote snapshots for indices, FX, and gold
-    (`https://stooq.com/q/l/?s=...&f=...&e=csv`).
+Two keyless public sources cover every symbol the ticker shows:
+  - **Yahoo Finance** v8 chart endpoint (`query1.finance.yahoo.com/v8/
+    finance/chart/<symbol>`) serves a small JSON snapshot per symbol — its
+    `meta` carries `regularMarketPrice` + `chartPreviousClose`. One request
+    per symbol (per-symbol isolation: one symbol failing only samples that
+    symbol). Covers indices, FX, gold, oil (Brent/WTI), and the 10Y yield.
   - **CoinGecko** (free, keyless) serves BTC/ETH spot + 24h change.
 
-Symbols with no clean free keyless source (Brent, WTI, 10Y UST) are
-kept as honest **sample** entries — marked `is_sample=True`, never
-faked as live. This is the C3 honesty line applied per symbol: the
-ticker may mix real and sample, but each is labelled truthfully.
+History (2026-06-11): this used to fetch **Stooq** CSV for indices/FX/gold,
+but Stooq bot-walls the NAS egress IP (the prober gets a challenge page, not
+data) so those symbols fell back to honest **sample**. Yahoo's chart endpoint
+IS reachable from the NAS egress (verified from inside the helper container —
+the WeatherNation lesson: the NAS prober is the gate, not the dev machine), so
+the whole markets set now goes live; the previously sample-only commodities/
+rate (Brent, WTI, 10Y UST) are live too.
 
-Parsing is strict and defensive (Trust Bar A1): the CSV is split by
-line/comma with every numeric field guarded by `float()` in a
-try/except; a malformed row is dropped, never trusted. No `eval`, no
+Honesty (Trust Bar C3): each entry carries `is_sample`. A symbol whose source
+returned a value this cycle is real (no pill); a symbol whose source missed
+falls back to an honest **sample** placeholder (pill kept) — never faked live.
+
+Parsing is strict and defensive (Trust Bar A1): every numeric field is guarded;
+malformed/missing fields drop that symbol rather than guessing. No `eval`, no
 dynamic dispatch on upstream content.
 """
 
@@ -20,53 +29,42 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.parse
 
 from . import DIR_DOWN, DIR_FLAT, DIR_UP, TickerEntryDTO
 
 log = logging.getLogger("mymts_helper.ticker.markets")
 
-# Stooq fields: symbol, date, time, open, high, low, close, volume, name.
-STOOQ_FIELDS = "sd2t2ohlcvn"
-
-# Canonical symbol order + how each is sourced. Order mirrors the TV's
-# original sample set so the marquee reads familiarly.
-STOOQ_INDICES = [
-    ("S&P 500", "^spx"),
-    ("DOW", "^dji"),
-    ("NASDAQ", "^ndq"),
-    ("FTSE", "^ftm"),
-    ("DAX", "^dax"),
-    ("Nikkei", "^nkx"),
-    ("Hang Seng", "^hsi"),
-]
-STOOQ_FX = [
-    ("EUR/USD", "eurusd"),
-    ("GBP/USD", "gbpusd"),
-    ("USD/JPY", "usdjpy"),
-]
-STOOQ_GOLD = [
-    ("Gold", "xauusd"),
+# Canonical quote set sourced from Yahoo: (label, Yahoo symbol, format key).
+# Order mirrors the TV's original set so the marquee reads familiarly:
+# indices, FX, gold, oil, the 10Y yield — then crypto (CoinGecko) appended.
+YAHOO_QUOTES: list[tuple[str, str, str]] = [
+    ("S&P 500", "^GSPC", "index"),
+    ("DOW", "^DJI", "index"),
+    ("NASDAQ", "^IXIC", "index"),
+    ("FTSE", "^FTSE", "index"),
+    ("DAX", "^GDAXI", "index"),
+    ("Nikkei", "^N225", "index"),
+    ("Hang Seng", "^HSI", "index"),
+    ("EUR/USD", "EURUSD=X", "fx"),
+    ("GBP/USD", "GBPUSD=X", "fx"),
+    ("USD/JPY", "USDJPY=X", "fx"),
+    ("Gold", "GC=F", "index"),
+    ("Brent", "BZ=F", "price2"),
+    ("WTI", "CL=F", "price2"),
+    ("10Y UST", "^TNX", "rate"),
 ]
 COINGECKO_CRYPTO = [
     ("BTC", "bitcoin"),
     ("ETH", "ethereum"),
 ]
 
-# Symbols with no clean free keyless source — kept honest-sample. Values
-# are static placeholders; `is_sample=True` travels to the TV's SAMPLE pill.
-SAMPLE_ONLY: list[TickerEntryDTO] = [
-    TickerEntryDTO("Brent", "73.42", DIR_FLAT, is_sample=True),
-    TickerEntryDTO("WTI", "69.15", DIR_FLAT, is_sample=True),
-    TickerEntryDTO("10Y UST", "4.41%", DIR_FLAT, is_sample=True),
-]
 
-# Final-snapshot ordering: indices, FX, gold, sample commodities/rates, crypto.
-# (Brent/WTI sit with the other commodities near gold; 10Y at the end.)
-
-
-def stooq_url(symbols: list[str]) -> str:
-    joined = "+".join(symbols)
-    return f"https://stooq.com/q/l/?s={joined}&f={STOOQ_FIELDS}&h&e=csv"
+def yahoo_chart_url(symbol: str) -> str:
+    """Per-symbol Yahoo v8 chart URL. `^GSPC`/`GC=F`/`EURUSD=X` are
+    path-quoted (the `^`, `=` become `%5E`/`%3D` — Yahoo accepts both)."""
+    sym = urllib.parse.quote(symbol)
+    return f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=1d"
 
 
 COINGECKO_URL = (
@@ -75,12 +73,12 @@ COINGECKO_URL = (
 )
 
 
-def _direction(open_v: float | None, close_v: float) -> str:
-    if open_v is None:
+def _direction(prev: float | None, current: float) -> str:
+    if prev is None:
         return DIR_FLAT
-    if close_v > open_v:
+    if current > prev:
         return DIR_UP
-    if close_v < open_v:
+    if current < prev:
         return DIR_DOWN
     return DIR_FLAT
 
@@ -94,49 +92,54 @@ def _fmt_fx(label: str, v: float) -> str:
     return f"{v:,.2f}" if "JPY" in label else f"{v:.4f}"
 
 
+def _fmt_price2(v: float) -> str:
+    # Oil ($/bbl) and similar — two decimals, thousands-grouped.
+    return f"{v:,.2f}"
+
+
+def _fmt_rate(v: float) -> str:
+    # A yield, shown as a percent (^TNX already quotes the percentage value).
+    return f"{v:.2f}%"
+
+
 def _fmt_crypto(v: float) -> str:
     return f"${v:,.0f}" if v >= 100 else f"${v:,.2f}"
 
 
-def parse_stooq_csv(body: bytes) -> dict[str, tuple[float, str]]:
-    """Parse a Stooq CSV quote snapshot → {lowercased symbol: (close, direction)}.
+_FORMATTERS = {
+    "index": lambda label, v: _fmt_index(v),
+    "fx": lambda label, v: _fmt_fx(label, v),
+    "price2": lambda label, v: _fmt_price2(v),
+    "rate": lambda label, v: _fmt_rate(v),
+}
 
-    Strict + defensive: header is required; rows with a non-numeric close
-    are dropped; "N/D" placeholder rows (Stooq's "no data") are dropped.
-    Never raises on malformed content — returns whatever parsed cleanly.
+
+def parse_yahoo_chart(body: bytes) -> tuple[float, str] | None:
+    """Parse ONE Yahoo v8 chart response → (price, direction), or None.
+
+    Strict: the price comes from `meta.regularMarketPrice`; direction from
+    `regularMarketPrice` vs `chartPreviousClose` (falling back to
+    `previousClose`). Any missing/non-numeric price drops the symbol (returns
+    None) rather than guessing. Never raises on malformed/binary content.
     """
-    out: dict[str, tuple[float, str]] = {}
     try:
-        text = body.decode("utf-8", "replace")
-    except Exception:  # noqa: BLE001
-        return out
-    lines = [ln for ln in text.splitlines() if ln.strip()]
-    if len(lines) < 2:
-        return out
-    header = [h.strip().lower() for h in lines[0].split(",")]
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
     try:
-        i_sym = header.index("symbol")
-        i_open = header.index("open")
-        i_close = header.index("close")
-    except ValueError:
-        return out
-    for raw in lines[1:]:
-        cols = raw.split(",")
-        if len(cols) <= max(i_sym, i_open, i_close):
-            continue
-        sym = cols[i_sym].strip().lower()
-        if not sym:
-            continue
-        try:
-            close_v = float(cols[i_close])
-        except (ValueError, IndexError):
-            continue  # "N/D" or junk — drop, do not trust
-        try:
-            open_v: float | None = float(cols[i_open])
-        except (ValueError, IndexError):
-            open_v = None
-        out[sym] = (close_v, _direction(open_v, close_v))
-    return out
+        meta = data["chart"]["result"][0]["meta"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    if not isinstance(meta, dict):
+        return None
+    price = meta.get("regularMarketPrice")
+    if not isinstance(price, (int, float)) or isinstance(price, bool):
+        return None
+    prev = meta.get("chartPreviousClose")
+    if not isinstance(prev, (int, float)) or isinstance(prev, bool):
+        prev = meta.get("previousClose")
+    prev_v = float(prev) if isinstance(prev, (int, float)) and not isinstance(prev, bool) else None
+    return (float(price), _direction(prev_v, float(price)))
 
 
 def parse_coingecko(body: bytes) -> dict[str, tuple[float, str]]:
@@ -168,35 +171,25 @@ def parse_coingecko(body: bytes) -> dict[str, tuple[float, str]]:
 
 
 def build_snapshot(
-    stooq: dict[str, tuple[float, str]],
+    yahoo: dict[str, tuple[float, str]],
     coingecko: dict[str, tuple[float, str]],
 ) -> list[TickerEntryDTO]:
     """Assemble the full canonical markets entry list from parsed sources.
 
-    Each canonical symbol becomes a real entry when its source returned a
-    value this cycle, otherwise an honest sample placeholder (is_sample
-    True). The sample-only symbols (Brent/WTI/10Y) are always sample.
-    The list is always the full set so the ticker shape is stable.
+    `yahoo` is keyed by the Yahoo symbol (e.g. `^GSPC`, `EURUSD=X`). Each
+    canonical symbol becomes a real entry when its source returned a value this
+    cycle, otherwise an honest sample placeholder (`is_sample=True`). The list
+    is always the full set so the ticker shape is stable.
     """
     entries: list[TickerEntryDTO] = []
 
-    def add_stooq(label: str, sym: str, fmt) -> None:
-        hit = stooq.get(sym.lower())
+    for label, sym, fmt_key in YAHOO_QUOTES:
+        hit = yahoo.get(sym)
         if hit is not None:
-            close_v, direction = hit
-            entries.append(TickerEntryDTO(label, fmt(close_v), direction, is_sample=False))
+            price, direction = hit
+            entries.append(TickerEntryDTO(label, _FORMATTERS[fmt_key](label, price), direction, is_sample=False))
         else:
             entries.append(_sample_for(label))
-
-    for label, sym in STOOQ_INDICES:
-        add_stooq(label, sym, _fmt_index)
-    for label, sym in STOOQ_FX:
-        add_stooq(label, sym, lambda v, _l=label: _fmt_fx(_l, v))
-    for label, sym in STOOQ_GOLD:
-        add_stooq(label, sym, _fmt_index)
-
-    # Sample-only commodities + rates sit here, after gold.
-    entries.extend(SAMPLE_ONLY)
 
     for label, coin_id in COINGECKO_CRYPTO:
         hit = coingecko.get(coin_id)
@@ -215,7 +208,8 @@ _SAMPLE_FALLBACK: dict[str, str] = {
     "S&P 500": "5,820.14", "DOW": "44,910.65", "NASDAQ": "19,772.18",
     "FTSE": "8,344.20", "DAX": "19,388.81", "Nikkei": "39,500.37",
     "Hang Seng": "20,997.93", "EUR/USD": "1.0834", "GBP/USD": "1.2671",
-    "USD/JPY": "154.18", "Gold": "2,742.30", "BTC": "67,210", "ETH": "3,452",
+    "USD/JPY": "154.18", "Gold": "2,742.30", "Brent": "73.42", "WTI": "69.15",
+    "10Y UST": "4.41%", "BTC": "67,210", "ETH": "3,452",
 }
 
 
@@ -226,4 +220,4 @@ def _sample_for(label: str) -> TickerEntryDTO:
 def all_sample_snapshot() -> list[TickerEntryDTO]:
     """The full markets list, every entry sample. Used before the first
     successful poll and in phantom mode."""
-    return build_snapshot(stooq={}, coingecko={})
+    return build_snapshot(yahoo={}, coingecko={})

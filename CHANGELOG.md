@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Live market data — Yahoo Finance replaces Stooq sample fallback (2026-06-11)
+
+The markets ticker showed honest **SAMPLE** pills for indices/FX/gold because **Stooq bot-walls the NAS egress IP** (a JS challenge the prober can't pass). Swapped the helper's markets fetch to **Yahoo Finance's keyless v8 chart endpoint** (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`), which **IS reachable from the NAS egress** — verified the WeatherNation way: probed from *inside the helper container* (the prober is the gate, not the dev Mac).
+- **Everything is live now.** Yahoo covers all 14 quotes — the 7 indices, 3 FX pairs, gold — **and** the three that were previously sample-only (Brent, WTI, 10Y UST). Only crypto stays on CoinGecko (already worked). No more SAMPLE tags in the normal case.
+- **Per-symbol isolation (C2):** one request per symbol, fetched concurrently (`asyncio.gather`) — a single symbol failing samples only that symbol, never the whole set; wall time bounded by the slowest fetch.
+- **Honest SAMPLE preserved (C3):** a symbol whose fetch fails/parses empty still falls back to an honest SAMPLE placeholder — real-when-reachable, SAMPLE-only-on-genuine-failure. **Keyless** (no API key), works with the helper's own UA. DTO shape unchanged → the TV app needs no change, it just receives real prices.
+- Tests: `parse_yahoo_chart` (price + direction, `previousClose` fallback, drops missing/non-numeric/bool, never raises on junk), snapshot real-vs-sample mixing, rate/index/FX formatting, URL symbol-quoting. Full helper suite green. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Weather feeds — two national weather channels added (2026-06-11)
 
 Research-first weather-feed pass (national + local). Added two **confirmed public keyless HLS** national weather channels to the helper channel seed: **Fox Weather** and **AccuWeather NOW** — each verified master → variant → media-segment (real `video/MP2T`) AND confirmed **`status=live` by the NAS prober** after deploy. They enter as the `rest` tier (available in the menu picker, not a default slot); the operator selects one into a cell.

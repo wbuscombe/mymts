@@ -38,11 +38,9 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 
 **Reconsider when:** the operator wants one specifically — each is an isolated add (a parse branch in `helper/ticker/sports.py` + a card composable in `TickerStrip.kt`); the structured-game/flip plumbing already exists. Honest until then: these are **omitted**, never forced into the score+clock mold or faked.
 
-## Live market data source reachable from the NAS egress (2026-06-11)
+## ~~Live market data source reachable from the NAS egress~~ — DONE (2026-06-11)
 
-**What:** the ticker's stock **indices / FX / gold** show `sample` because **Stooq bot-walls the NAS egress IP** (returns a JS proof-of-work challenge, not CSV) — see the OPERATIONS markets-sample note. Find a real-time/delayed market source whose API the NAS can actually reach (keyless, or keyed-but-acceptable, honest discipline) and swap the helper-side fetch so indices/FX/gold show **real prices → no `sample` at all**.
-**Why-not-now:** C3 is already satisfied (a real upstream failure shows honestly as `sample`, never faked); the fix is a data-source evaluation + a `helper/ticker/markets.py` fetch swap, not a wall change. **CoinGecko crypto (BTC/ETH) and ESPN sports already work from the NAS** — it's specifically Stooq (stocks/FX/gold) that's walled.
-**Reconsider when:** the operator wants real market prices (they asked for this as a follow-on). Candidate eval (a keyless indices/FX source the NAS IP isn't walled from) + the fetch swap is the work.
+**Resolved.** Swapped the helper's markets fetch from Stooq (NAS-bot-walled) to **Yahoo Finance's keyless v8 chart endpoint**, which IS reachable from the NAS egress (validated from inside the helper container). All 14 quotes live — indices, FX, gold, **and** the former sample-only Brent/WTI/10Y UST; crypto stays on CoinGecko. Keyless, per-symbol isolation, honest SAMPLE fallback retained for genuine per-symbol failures. See `CHANGELOG` + ARCHITECTURE §16 markets-source note. *(Original ask: find a market source the NAS isn't walled from + swap the helper fetch — done.)*
 
 ## Sports-selection menu — full league picker (2026-06-11)
 
@@ -221,7 +219,7 @@ Batch of feedback the operator surfaced after actually using the wall on `.182`.
 **Done.** The ticker now shows REAL data and alternates between a markets mode (Stooq indices/FX/gold + CoinGecko BTC/ETH, all keyless) and a sports mode (ESPN public scoreboard JSON for MLB/NFL/NBA/NHL, keyless), rotating on a calm timer (markets ~22 s, sports ~14 s) via `HelperTickerSource` behind the `TickerSource` interface. Honest labeling held: real entries drop the SAMPLE pill; symbols with no free keyless source (Brent, WTI, 10Y UST) stay sample; an unreachable helper falls back to honest sample (markets) / "scores unavailable" (sports), never frozen-live.
 **Remaining (deferred sub-items):**
 - **Per-team / per-league curation UI** — the chapter ships a sensible default league set (MLB/NFL/NBA/NHL) + the mechanism; a UI for the operator to pick leagues/teams is the follow-on. Until then, the league set is edited in `ticker/sports.py::DEFAULT_LEAGUES`.
-- **Sample-only market symbols** — Brent, WTI, 10Y UST remain honest SAMPLE (no clean free keyless source verified). Revisit if a keyless source surfaces (Stooq may cover oil/rates under symbols worth re-checking).
+- **Sample-only market symbols** — ~~Brent, WTI, 10Y UST remain honest SAMPLE~~ **RESOLVED 2026-06-11:** now live via Yahoo Finance (`BZ=F`/`CL=F`/`^TNX`) along with the rest of the markets set.
 
 ## E. More video channels (channel-supply — recurring thread)
 
@@ -280,10 +278,9 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 - **Optional future feature in the same spirit:** MyMTS could maintain its *own* per-source bias/lean tags in the helper's source list (a home-grown bias layer, not Ground's) — log as a possible future feed enhancement if the operator wants the bias-awareness concept without Ground.
 - **Reconsider when:** Only if Ground News ever ships a real public API / personal-feed RSS export. Until then, the public-RSS-expansion path (F) is the answer.
 
-## Markets ticker — Stooq anti-bot challenge from the NAS egress (surfaced 2026-06-06 redeploy)
+## ~~Markets ticker — Stooq anti-bot challenge from the NAS egress~~ — DONE (2026-06-11)
 
-**What:** After the helper redeploy, the markets ticker shows **BTC/ETH real (CoinGecko) but indices/FX/gold on honest SAMPLE pills** — because, from the NAS's egress IP, **Stooq now returns a JavaScript proof-of-work anti-bot challenge** (HTTP 200, an HTML/JS page) instead of the CSV quote snapshot. The defensive parser finds zero rows and falls back to SAMPLE per the C3 honesty contract (correct, not faked-live). The ticker chapter verified Stooq cleanly from the dev Mac; the NAS IP is being bot-walled — a network-path/data-source issue, not a code or deploy bug.
-**Why-not-now:** Not blocking — the markets ticker degrades honestly (real crypto, SAMPLE indices/FX/gold) and the rest of the helper is fully live. Fixing it is a data-source choice, not a redeploy concern.
+**Resolved** by swapping Stooq → Yahoo Finance v8 chart (NAS-reachable, keyless). The Stooq anti-bot challenge no longer matters — Stooq is no longer used. See the DONE item above + CHANGELOG (2026-06-11 live market data). Kept here for history: the NAS egress IP was bot-walled by Stooq's JS proof-of-work, which is why dev-Mac verification didn't catch it (the *NAS prober is the gate* lesson, also seen with WeatherNation).
 **Reconsider when:** the operator wants real indices/FX/gold on the wall. Options: (a) a different **keyless** indices/FX/commodity source that tolerates the NAS IP (re-survey like the ticker chapter did, with ToS caveats); (b) a free-tier keyed source (crosses the helper-holds-a-secret line — handle per the .env discipline); (c) accept SAMPLE on those symbols. CoinGecko (crypto) is unaffected and stays real.
 
 ## Send-to-phone for richer article reading (QR pair) — closed-door-compatible

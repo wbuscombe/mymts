@@ -4,9 +4,9 @@ The TV's ticker was built (Stage 3) to consume any source behind a
 `TickerSource` interface, with every entry carrying an `is_sample`
 honesty flag. This package is the helper-side half of making that real:
 
-  - `markets` — keyless quotes (Stooq CSV for indices/FX/gold,
-    CoinGecko for BTC/ETH). Symbols with no free keyless source
-    (Brent, WTI, 10Y UST) stay honest **sample** rather than faked.
+  - `markets` — keyless quotes (Yahoo Finance v8 chart for indices/FX/
+    gold/oil/10Y, CoinGecko for BTC/ETH). A symbol whose source is
+    unreachable this cycle stays honest **sample** rather than faked.
   - `sports` — keyless ESPN public scoreboard JSON for MLB/NFL/NBA/NHL.
   - `api`     — `/api/ticker/markets` and `/api/ticker/sports`.
 

@@ -26,8 +26,8 @@ class Config:
     feed_retention_days: int = 14
     channel_probe_interval_seconds: int = 30 * 60
     # Ticker (markets + sports) — added 2026-06-05. Polite intervals on
-    # keyless public sources (Stooq, CoinGecko, ESPN scoreboard): markets
-    # move minute-to-minute; sports scores update on a slower cadence.
+    # keyless public sources (Yahoo Finance, CoinGecko, ESPN scoreboard):
+    # markets move minute-to-minute; sports scores update on a slower cadence.
     markets_poll_interval_seconds: int = 120
     sports_poll_interval_seconds: int = 180
     # Stage 6 / TLS track — added 2026-06-03.
