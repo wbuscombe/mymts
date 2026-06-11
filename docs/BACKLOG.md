@@ -25,6 +25,19 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
+## Sports ticker — leagues staged for bespoke cards (2026-06-10)
+
+The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL) that ESPN's keyless scoreboard exposes in the standard 2-competitor score+clock+status shape. The operator's other four leagues are **structurally different** — they don't fit the score+clock game card and need their own card shapes. Probed live 2026-06-10 (see `docs/findings/19`):
+
+| League | ESPN endpoint | Data shape (what a card needs) | Why-not-now |
+|---|---|---|---|
+| **UFC** | `mma/ufc` | 2 fighters per bout, fight-specific fields: weight class, round, method (KO/Sub/Dec) — a **fight card**, not score+clock | Needs a fight-result card design |
+| **PGA** | `golf/pga` | a tournament = **~147 competitors** (a leaderboard: player, score-to-par, thru) — not a matchup | Needs a leaderboard snippet (top-N + cut line) |
+| **Tennis** | `tennis/atp`, `tennis/wta` | **0 competitors** in the standard field — matches nest sets/games differently | Needs a match-sets parse + card |
+| **F1** | `racing/f1` | a race = **~22 competitors** (drivers); session/standings, not a 2-team game | Needs a race/standings card |
+
+**Reconsider when:** the operator wants one specifically — each is an isolated add (a parse branch in `helper/ticker/sports.py` + a card composable in `TickerStrip.kt`); the structured-game/flip plumbing already exists. Honest until then: these are **omitted**, never forced into the score+clock mold or faked.
+
 ---
 
 ## Stage 1.x — confirmatory 4K-panel soak

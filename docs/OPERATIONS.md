@@ -211,6 +211,13 @@ Redeployed the NAS helper from `main` via `scripts/deploy-helper.sh` (full rsync
 - `/api/feed` → items from all 12 distinct sources flowing as inert plain text; **5 rapid hits all 200, no `sqlite3.ProgrammingError`** (the cross-thread fix `069f783` is live and stable).
 - `/api/ticker/sports` → real ESPN scoreboard data (live games).
 - `/api/channels` → 10 live channels (no regression).
+
+### Sports ticker — BottomLine cards + league-cycling pool (2026-06-10, helper `b12f0be`)
+
+The sports portion of the ticker is now **discrete game cards** with **colour-coded ESPN status blocks** (live=green / final=grey / upcoming=neutral) that **flip** through **league blocks** (markets + news still scroll). Operator-facing config:
+- **The pool = the in-menu "Sports leagues…" filter** (MENU → Settings → Sports leagues…). The 8 supported team leagues (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL) are listed; the ones left **enabled** are the auto-cycling pool. Set it once — the ticker cycles whatever's enabled and has games right now (empty leagues are skipped). Filtering is TV-side; the helper serves the slate.
+- UFC/PGA/tennis/F1 are **staged** (structurally different data — fight card / leaderboard / sets / race); see `docs/findings/19` + BACKLOG. They're omitted, never faked.
+- `/api/ticker/sports` is **additive** (schema v1 unchanged; each sports entry gained a `game` object) — any other client ignoring it is unaffected. The locked panel-fit config (Fit scale 80% / Vertical stretch 110%) is **untouched**.
 - Hardening intact: container non-root (uid 10001), `mymts-net` bridge only, `_secrets` owned 10001:10001 (TLS key readable). **unrelated host container (`pia`) unchanged — Up, on `downloads_default`, never referenced.**
 
 **LAN web client — now enabled.** Set in the deploy `.env`: `WEB_CLIENT_DIR=/app/web`; the repo-root `web/` tree is rsynced to `/srv/docker/mymts-helper/_web/` and bind-mounted read-only at `/app/web`. Browse on the LAN to **`https://<LAN_IP>:8443/app/`**.

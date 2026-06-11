@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Ticker: sports overhaul — BottomLine game cards, ESPN status blocks, league-cycling flip (2026-06-10)
+
+The sports portion of the ticker moved from a run-together `·`-stream to ESPN-BottomLine-style discrete game cards. Decisions confirmed with the operator: **flip = sports only** (markets + news keep scrolling); **pool = the in-menu "Sports leagues" filter** (enabled = the auto-cycling pool). Built + tested + deployed (helper to the NAS, app to `.92`); verified rendering on the panel (a live WNBA card `CON 55 TOR 44 · 1:03 2ND` next to an upcoming `LA @ SEA`).
+
+- **feat(helper): structured `GameDTO`** on sports entries (additive — markets/news omit it, stay byte-identical to schema v1). The sports pool expanded to the **8 team leagues** ESPN's keyless scoreboard exposes in the standard shape (NFL, NCAAF, UFL, NBA, WNBA, NCAAB, MLB, NHL — verified live); **live-first** ordering within each league; empty leagues omitted. UFC/PGA/tennis/F1 are structurally different and **staged** (BACKLOG + finding 19).
+- **feat(app): game cards + strong dividers (goal 1)** — each game a discrete bordered card, not a `·`-stream. Team abbrs + scores (no logos; ESPN dropped them for legibility); a pre-game shows `AWY @ HOM` + time, never a phantom 0–0.
+- **feat(app): ESPN status block (goal 2)** — a weighted, **colour-coded** block clearly separated from the score: **LIVE = bright green**, **FINAL = muted grey**, **UPCOMING = neutral**, formatted `5:42 1ST` / `FINAL` / start time. Final-vs-live reads at a glance; only the actual leader's live score is brightened.
+- **feat(app): league-cycling flip (goal 3 / motion)** — sports HOLDS a league's card-set (~6.5 s) then flips (vertical slide+fade) to the next league, cycling the pool; a league marker heads each block. The sports mode dwell lengthened to ~42 s so it cycles the pool a lap. Markets + news keep the scrolling marquee.
+- **feat(app): pool config** — the existing in-menu "Sports leagues…" filter expanded to all 8 (enabled = pool, set-once).
+- **C3 honesty:** sample game cards still wear the SAMPLE pill; **aged real data now shows a STALE pill** (the envelope `stale` flag was previously dropped — fixed for markets + sports); a sports mode with no games falls back to the honest scrolling line; the hidden-league filter keys on the game's league. No fabricated score/status/game; keyless ESPN endpoints only.
+- Tests: helper `GameDTO`/live-first/additive-wire (188 green); app `SportsTickerTest` (blocking, status classify, ESPN format, flip wrap), `HelperClientTickerParseTest` (game parse, markets-omit, malformed→null), `HelperTickerSourceTest` (isStale, filter-by-game-league). Adversarially reviewed (2 high C3 findings fixed pre-deploy). Focus model unchanged.
+- Same release key. `.182`/`.158` devices untouched. unrelated host services never touched. Locked panel-fit config (Fit scale 80% / Vertical stretch 110%) untouched.
+
 ## Panel-fit: top-left Fit scale + Vertical stretch + Calibration border; fixed settings LEFT/RIGHT handler (2026-06-10)
 
 Hands-on follow-up dialing the wall into `.92`'s panel. The panel renders the wall **larger than its visible area from a top-left origin** (top-left seated correctly, bottom-right overflowing off-screen) — an anchor neither the centred Overscan inset nor the ±64 dp Position offset can fix. Added the geometrically-correct lever plus supporting work; the wall now fits at **Fit scale 80% + Vertical stretch 110%** (operator-dialled).
