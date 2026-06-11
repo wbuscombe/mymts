@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Individual-sports ticker cards — UFC / PGA / Tennis / F1 (2026-06-11)
+
+The four structurally-different sports now have bespoke ticker cards (they don't fit the team-vs-team game card). Research-first (`docs/findings/21`), then built on a shared per-sport payload — **all four shipped**.
+- **Shared architecture (additive, schema v1 preserved):** a new `card` payload — `{league, kind, title, state, status, lines[]}` — rides each individual-sport entry alongside (not replacing) `game`, omitted on the wire when absent. The helper does the sport-specific formatting; `SportsTicker.blocks` groups card entries into their own league block (so each gets the pinned marker + curtain + flip); `TickerStrip` dispatches by `kind` to a bespoke composable.
+- **PGA — `leaderboard`:** tournament + top-3 by rank with score-to-par (`S. Theegala -6`; "E" for even) + round status. Verified live on the panel (RBC Canadian Open).
+- **UFC — `fight`:** one card per bout, headline first (main event reads last on ESPN, so parsed in reverse); `A vs B` / `A def. B` (winner first; a draw never invents one) + weight class + status. Verified on the panel (UFC Freedom 250 — Topuria vs Gaethje first).
+- **Tennis — `match`:** matches read from `event.groupings[].competitions[]` (the top-level is empty — the findings/19 gap); `A d. B` + set scores with tiebreaks (`7-6(7) 6-4`), in-progress first then recent finals, capped. Verified on the panel (Boss Open finals).
+- **F1 — `race`:** a run race's podium (`1. Verstappen …`) or an upcoming weekend's race start (`Barcelona-Catalunya GP · 6/14 9 AM`), clean GP name. Verified on the panel.
+- All four moved from the picker's "Coming soon" note into the **active league toggles** (the staged list is now empty); each cycles in the ticker + is enable/disable-able + couples to the same pool as scores/news. Honest degradation throughout (off-season / no current event → league omitted, never faked).
+- Helper-side validated on live ESPN data; tests: `test_ticker_individual` (20 cases across the 4 parsers) + app card-parse + blocks-with-card. Full suites green. 0 fatals on-box. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Settings menu — grouped into sections + sports picker roadmap (2026-06-11)
 
 The wall settings overlay grew organically across many chapters into one long flat list. Reorganized into labelled **sections** — **Display & Fit**, **Layout & Feed**, **Sports** — while keeping the exact single-level D-pad nav.

@@ -25,7 +25,11 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
-## Sports ticker — leagues staged for bespoke cards (2026-06-10)
+## ~~Sports ticker — leagues staged for bespoke cards~~ — DONE (2026-06-11)
+
+**All four shipped.** UFC (`fight`), PGA (`leaderboard`), Tennis (`match`), F1 (`race`) now have bespoke ticker cards on a shared per-sport `card` payload — built, deployed, and verified on the panel. See `docs/findings/21` (as-built shapes) + CHANGELOG (2026-06-11 individual-sports cards). They're active toggles in the picker now (no longer "Coming soon"). *(The original staging note is kept below for history.)*
+
+### (history) Sports ticker — leagues staged for bespoke cards (2026-06-10)
 
 The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL) that ESPN's keyless scoreboard exposes in the standard 2-competitor score+clock+status shape. The operator's other four leagues are **structurally different** — they don't fit the score+clock game card and need their own card shapes. Probed live 2026-06-10 (see `docs/findings/19`):
 

@@ -1,6 +1,6 @@
 # 21 — Individual-Sports Ticker Cards: Research + Feasibility (UFC / PGA / Tennis / F1)
 
-> **Status: RESEARCH DONE, BUILD CHECKPOINTED (2026-06-11).** Extends findings/19. The 4 structurally-different sports were re-probed live against ESPN's keyless endpoints. All 4 are **data-feasible** (tennis more so than findings/19 thought). The bespoke-card BUILD is a cross-cutting wire-format change (the current ticker `game` payload is strictly team-vs-team) across helper + app × 4 card types — deliberately checkpointed for a session with adequate runway rather than started under-verified. Recommended build order + the per-sport shapes are below.
+> **Status: DONE — ALL 4 SHIPPED (2026-06-11).** Extends findings/19. The 4 structurally-different sports were re-probed live against ESPN's keyless endpoints, all found data-feasible (tennis more so than findings/19 thought — see below), and then **built + deployed + verified on the panel**: PGA `leaderboard`, UFC `fight`, Tennis `match`, F1 `race`. The shared per-sport `card` payload (helper→app, additive to schema v1) + the bespoke per-`kind` composables are in `CHANGELOG` (2026-06-11 individual-sports cards). The per-sport shapes + the architecture sketch below are the as-built record.
 
 ## Why a checkpoint (honest)
 
