@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## Weather feeds — three national weather channels added (2026-06-11)
+## Weather feeds — two national weather channels added (2026-06-11)
 
-Research-first weather-feed pass (national + local). Added three **confirmed public keyless HLS** national weather channels to the helper channel seed: **Fox Weather**, **AccuWeather NOW**, **WeatherNation** — each verified master → variant → media-segment (real `video/MP2T`). They enter as the `rest` tier (available in the menu picker, not a default slot); the operator selects one into a cell and the prober validates it live (play-what-works — never faked-live).
+Research-first weather-feed pass (national + local). Added two **confirmed public keyless HLS** national weather channels to the helper channel seed: **Fox Weather** and **AccuWeather NOW** — each verified master → variant → media-segment (real `video/MP2T`) AND confirmed **`status=live` by the NAS prober** after deploy. They enter as the `rest` tier (available in the menu picker, not a default slot); the operator selects one into a cell.
+- **WeatherNation was probed streamable from the dev Mac but DROPPED** — the NAS helper prober fails its TLS handshake (`SSLV3_ALERT_HANDSHAKE_FAILURE`), so it would sit permanently OFFLINE. Honest play-what-works: a tile that can't validate where it's deployed is worse than none.
 - **No central-Illinois/Midwest LOCAL weather stream was added** — those stations are auth-gated or YouTube-page-only. The only US locals with open weather HLS (Baton Rouge LA, Manchester NH) are out-of-region, so not added as "local." Reported honestly rather than shipping a wrong-region or broken tile.
 - **The Weather Channel proper** is TV-provider-login gated — not addable without stored credentials (posture). **NOAA/NWS** is radar/data, not video.
-- Full landscape (streamable / gated / not-video, with probe evidence) in `docs/findings/20-weather-feed-research.md`. BACKLOG: WeatherSpy (also streamable, niche) and a possible NWS radar *non-video* widget. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+- Full landscape (streamable / gated / not-video, with probe evidence) in `docs/findings/20-weather-feed-research.md`. BACKLOG: WeatherSpy (also streamable, niche), WeatherNation TLS recovery, and a possible NWS radar *non-video* widget. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
 
 ## Ticker: pinned per-page marker (BottomLine curtain) + video label bottom buffer (2026-06-11)
 

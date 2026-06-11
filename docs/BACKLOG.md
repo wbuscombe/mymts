@@ -378,7 +378,7 @@ The data plumbing is being built (real markets + sports ticker, 13 feed sources,
 
 **What:** three follow-ons from the weather-feed research (`docs/findings/20-weather-feed-research.md`):
 1. **The Weather Channel (proper)** and **central-Illinois/Midwest local stations** (WMBD/WEEK/WHOI/WCIA/WAND…) are **login/auth-gated or YouTube-page-only** — no public keyless HLS. Out of scope under the **no-stored-credentials** posture; would need credentials the box must not hold.
-2. **WeatherSpy** (Rakuten) is also confirmed streamable but niche — left out to avoid clutter; trivially addable if the operator wants more weather options.
+2. **WeatherSpy** (Rakuten) is also confirmed streamable but niche — left out to avoid clutter; trivially addable if the operator wants more weather options. **WeatherNation** is streamable from a dev egress but the NAS prober fails its TLS handshake (`SSLV3_ALERT_HANDSHAKE_FAILURE`) — recover via a different WeatherNation CDN endpoint or a prober TLS-compat tweak (httpx/OpenSSL cipher/SNI), then re-add.
 3. **NWS / NOAA radar** is image-loops/data, **not a video stream** — could be a future *non-video* weather widget (radar tile / current-conditions panel), a different component from the HLS video tiles.
 
 **Why-not-now:** (1) violates the keyless/no-credentials Trust Bar; (2) cosmetic — three nationals already cover it; (3) is a new widget type, not a channel — outside the video-tile model shipped today.
