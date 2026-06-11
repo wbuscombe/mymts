@@ -2,6 +2,7 @@ package com.mymts.data.helper
 
 import android.util.Log
 import com.mymts.data.ticker.TickerEntry
+import com.mymts.data.ticker.TickerGame
 import com.mymts.data.ticker.TickerSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -146,6 +147,10 @@ class HelperClient(
                     display = display,
                     direction = parseDirection(o.optString("direction", "flat")),
                     isSample = o.optBoolean("is_sample", true),
+                    // Additive: sports entries carry a structured game; markets/
+                    // news omit it. A malformed game degrades to null → the row
+                    // falls back to the flat display string (never fabricated).
+                    game = o.optJSONObject("game")?.let { parseGame(it) },
                 )
             }
             return TickerSnapshot(
@@ -153,6 +158,26 @@ class HelperClient(
                 asOfIso = json.optStringOrNull("as_of"),
                 stale = json.optBoolean("stale", false),
                 entries = entries,
+            )
+        }
+
+        /**
+         * Parse the optional structured `game` object on a sports ticker entry.
+         * Defensive (A1): missing league/away/home → null, so the entry falls
+         * back to its flat `display` string rather than a half-built card.
+         */
+        internal fun parseGame(o: JSONObject): TickerGame? {
+            val league = o.optStringOrNull("league") ?: return null
+            val away = o.optStringOrNull("away") ?: return null
+            val home = o.optStringOrNull("home") ?: return null
+            return TickerGame(
+                league = league,
+                away = away,
+                awayScore = o.optString("away_score", ""),
+                home = home,
+                homeScore = o.optString("home_score", ""),
+                state = o.optString("state", "pre"),
+                status = o.optString("status", ""),
             )
         }
 

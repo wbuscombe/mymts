@@ -88,4 +88,38 @@ class HelperClientTickerParseTest {
         val snap = HelperClient.parseTicker(JSONObject(noFlag))
         assertTrue("absent is_sample must default to sample, never live", snap.entries[0].isSample)
     }
+
+    // ---- structured game payload (BottomLine cards, 2026-06-10) ----
+
+    @Test fun `parses structured game on a sports entry`() {
+        val sports = """
+          {"schema_version":1,"mode":"sports","entries":[
+            {"symbol":"MLB","display":"NYY 4-3 BOS · Final","direction":"none","is_sample":false,
+             "game":{"league":"MLB","away":"NYY","away_score":"4","home":"BOS","home_score":"3",
+                     "state":"post","status":"Final"}}
+          ]}
+        """.trimIndent()
+        val g = HelperClient.parseTicker(JSONObject(sports)).entries[0].game
+        assertEquals("MLB", g!!.league)
+        assertEquals("NYY", g.away); assertEquals("4", g.awayScore)
+        assertEquals("BOS", g.home); assertEquals("3", g.homeScore)
+        assertEquals("post", g.state); assertEquals("Final", g.status)
+    }
+
+    @Test fun `markets entry has no game (absent on the wire)`() {
+        val snap = HelperClient.parseTicker(JSONObject(marketsResponse))
+        assertNull(snap.entries[0].game)
+    }
+
+    @Test fun `malformed game degrades to null, entry still parses via display`() {
+        val sports = """
+          {"schema_version":1,"mode":"sports","entries":[
+            {"symbol":"MLB","display":"NYY 4-3 BOS","direction":"none","is_sample":false,
+             "game":{"away":"NYY"}}
+          ]}
+        """.trimIndent()
+        val e = HelperClient.parseTicker(JSONObject(sports)).entries[0]
+        assertNull("missing league/home → null game, not a half-card", e.game)
+        assertEquals("NYY 4-3 BOS", e.display)   // falls back to the flat string
+    }
 }

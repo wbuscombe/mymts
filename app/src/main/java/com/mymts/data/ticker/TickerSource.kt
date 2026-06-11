@@ -1,5 +1,6 @@
 package com.mymts.data.ticker
 
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -20,11 +21,24 @@ interface TickerSource {
     /** The entries to scroll. Newer entries replace older ones in place. */
     val state: StateFlow<List<TickerEntry>>
 
+    /**
+     * True when the currently-shown entries are REAL data that has aged past
+     * the helper's freshness threshold (envelope `stale`) — the UI marks it
+     * with a STALE pill so aged scores/quotes are never passed off as live
+     * (C3). Defaults to never-stale for sources that don't age (sample).
+     */
+    val stale: StateFlow<Boolean> get() = NEVER_STALE
+
     /** Begin emitting entries. Idempotent. */
     fun start()
 
     /** Stop emitting; cancel any background work. */
     fun stop()
+
+    companion object {
+        /** Shared constant for sources that never go stale (avoids per-access allocation). */
+        val NEVER_STALE: StateFlow<Boolean> = MutableStateFlow(false)
+    }
 }
 
 /**
@@ -42,6 +56,14 @@ data class TickerEntry(
     val direction: Direction,
     /** True iff this value is placeholder/sample, NOT a live quote. */
     val isSample: Boolean,
+    /**
+     * Structured sports game (BottomLine cards, 2026-06-10) — present only on
+     * sports entries; null for markets/news. When non-null the ticker draws a
+     * real game card (abbrs + scores + a weighted status block) instead of the
+     * flat [display] string. [display] stays as a fallback for any renderer
+     * that doesn't yet understand games.
+     */
+    val game: TickerGame? = null,
 ) {
     /**
      * [NONE] is for non-directional data (sports scores) — the UI draws
@@ -50,3 +72,20 @@ data class TickerEntry(
      */
     enum class Direction { UP, DOWN, FLAT, NONE }
 }
+
+/**
+ * One sports game in the ESPN-BottomLine shape, mirrored from the helper's
+ * `GameDTO`. [state] is the lifecycle token ("pre" | "in" | "post"); [status]
+ * is ESPN's `shortDetail` ("Final", "5:42 - 1st", "7:30 PM ET"). Scores are the
+ * helper's already-cleaned digit strings (blank for a `pre` matchup, so the
+ * card shows the time, not a phantom 0–0). Inert primitives only (A1).
+ */
+data class TickerGame(
+    val league: String,
+    val away: String,
+    val awayScore: String,
+    val home: String,
+    val homeScore: String,
+    val state: String,
+    val status: String,
+)

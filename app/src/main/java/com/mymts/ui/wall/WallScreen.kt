@@ -534,7 +534,14 @@ fun WallScreen(
  * they don't want in the ticker). Kept in sync with the helper's default
  * set; if the helper adds a league, add it here too.
  */
-private val CURATED_LEAGUES = listOf("MLB", "NFL", "NBA", "NHL")
+// The configurable sports pool — the eight team leagues ESPN's keyless
+// scoreboard exposes in the standard shape (2026-06-10). The operator picks
+// which actually cycle via the in-menu "Sports leagues…" filter (enabled =
+// pool); the helper fetches this set. UFC/PGA/tennis/F1 are structurally
+// different and staged (see docs/findings/19 + BACKLOG). Kept in sync with the
+// helper's sports.DEFAULT_LEAGUES.
+private val CURATED_LEAGUES =
+    listOf("NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL")
 
 private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.label

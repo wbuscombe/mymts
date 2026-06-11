@@ -40,13 +40,22 @@ class HelperTickerSource(
     private val client: HelperClient,
     private val pollIntervalMs: Long = 60_000L,
     private val marketsDwellMs: Long = 22_000L,
-    private val sportsDwellMs: Long = 14_000L,
+    // Sports holds longer than the other modes: it now FLIPS through league
+    // card-sets (~6.5 s each), so the window must be long enough to cycle the
+    // pool a lap. Markets/news still scroll on their shorter dwell.
+    private val sportsDwellMs: Long = 42_000L,
     private val newsDwellMs: Long = 18_000L,
     private val sampleFallback: List<TickerEntry> = SampleTickerSource.SAMPLE_ENTRIES,
 ) : TickerSource {
 
     private val _state = MutableStateFlow(sampleFallback)
     override val state: StateFlow<List<TickerEntry>> = _state.asStateFlow()
+
+    // C3: surface envelope `stale` so the strip flags aged real data instead of
+    // showing it as live. True only when the current mode is reachable AND its
+    // snapshot is stale (an unreachable mode falls to honest sample, not stale).
+    private val _stale = MutableStateFlow(false)
+    override val stale: StateFlow<Boolean> = _stale.asStateFlow()
 
     // Latest fetch results per mode (null = not yet fetched). Held so the
     // rotation loop can publish whichever mode is currently due without
@@ -149,6 +158,7 @@ class HelperTickerSource(
             news = newsEntries,
             newsEnabled = newsEnabled,
         )
+        _stale.value = isStale(mode, marketsSnapshot, sportsSnapshot, marketsReachable, sportsReachable)
     }
 
     companion object {
@@ -201,11 +211,34 @@ class HelperTickerSource(
                 else listOf(NEWS_UNAVAILABLE)
         }
 
-        /** Keep entries whose league symbol is NOT in the denylist. */
+        /**
+         * Whether the currently-shown mode is REAL-but-STALE (reachable + its
+         * snapshot aged past the helper's threshold). An unreachable mode shows
+         * honest sample, not stale; NEWS is built from the feed (no separate
+         * stale signal). Pure → unit-tested.
+         */
+        fun isStale(
+            mode: Mode,
+            markets: TickerSnapshot?,
+            sports: TickerSnapshot?,
+            marketsReachable: Boolean,
+            sportsReachable: Boolean,
+        ): Boolean = when (mode) {
+            Mode.MARKETS -> marketsReachable && markets?.stale == true
+            Mode.SPORTS -> sportsReachable && sports?.stale == true
+            Mode.NEWS -> false
+        }
+
+        /**
+         * Keep entries whose league is NOT in the denylist. Matches on the
+         * GAME's league when present (that's the value the card groups + labels
+         * by, via SportsTicker.blocks) and falls back to the entry symbol — so a
+         * hidden league can't leak through a symbol/league divergence.
+         */
         fun filterLeagues(entries: List<TickerEntry>, hiddenLeagues: Set<String>): List<TickerEntry> {
             if (hiddenLeagues.isEmpty()) return entries
             val hiddenLower = hiddenLeagues.map { it.lowercase() }.toSet()
-            return entries.filter { it.symbol.lowercase() !in hiddenLower }
+            return entries.filter { (it.game?.league ?: it.symbol).lowercase() !in hiddenLower }
         }
 
         /**

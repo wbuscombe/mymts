@@ -4,8 +4,10 @@ import com.mymts.data.ticker.HelperTickerSource
 import com.mymts.data.ticker.HelperTickerSource.Mode
 import com.mymts.data.ticker.SampleTickerSource
 import com.mymts.data.ticker.TickerEntry
+import com.mymts.data.ticker.TickerGame
 import com.mymts.data.ticker.TickerSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -109,5 +111,27 @@ class HelperTickerSourceTest {
         // a fabricated sample score wearing a SAMPLE pill.
         assertEquals(false, HelperTickerSource.SPORTS_UNAVAILABLE.isSample)
         assertEquals(TickerEntry.Direction.NONE, HelperTickerSource.SPORTS_UNAVAILABLE.direction)
+    }
+
+    // ---- C3: stale real data is flagged, not shown as live (2026-06-10) ----
+
+    @Test fun `isStale true only when the current mode is reachable AND aged`() {
+        val staleSports = TickerSnapshot("sports", "t", stale = true, entries = listOf(gameRow))
+        assertTrue(HelperTickerSource.isStale(Mode.SPORTS, null, staleSports, false, sportsReachable = true))
+        // unreachable → falls to honest sample, not "stale"
+        assertFalse(HelperTickerSource.isStale(Mode.SPORTS, null, staleSports, false, sportsReachable = false))
+        // a fresh snapshot is not stale
+        assertFalse(HelperTickerSource.isStale(Mode.SPORTS, null, sportsSnap(gameRow), false, true))
+        // news has no separate stale signal
+        assertFalse(HelperTickerSource.isStale(Mode.NEWS, null, staleSports, false, true))
+    }
+
+    @Test fun `filterLeagues matches on game league, not just the entry symbol`() {
+        val e = TickerEntry(
+            "Baseball", "x", TickerEntry.Direction.NONE, false,
+            game = TickerGame("MLB", "A", "1", "B", "2", "in", "1st"),
+        )
+        assertEquals(0, HelperTickerSource.filterLeagues(listOf(e), setOf("MLB")).size)  // hidden by game.league
+        assertEquals(1, HelperTickerSource.filterLeagues(listOf(e), setOf("NHL")).size)  // not hidden → kept
     }
 }
