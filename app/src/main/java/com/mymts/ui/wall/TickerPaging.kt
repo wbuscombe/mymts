@@ -18,21 +18,31 @@ object TickerPaging {
 
     sealed interface Page {
         val key: String
+
+        /**
+         * The text of this page's PINNED left-edge marker (the ESPN-BottomLine
+         * "curtain" bug). Every page has one so the marker is consistent across
+         * markets, sports, and news; cards scroll and vanish at its right edge.
+         */
+        val markerLabel: String
     }
 
     /** All market quotes as one (carded, horizontally-scrolling) page. */
     data class Markets(val quotes: List<TickerEntry>) : Page {
         override val key: String get() = "markets"
+        override val markerLabel: String get() = "MARKETS"
     }
 
     /** One league's game cards as a page (the BottomLine block). */
     data class League(val block: SportsTicker.LeagueBlock) : Page {
         override val key: String get() = "league:${block.label}"
+        override val markerLabel: String get() = block.label
     }
 
     /** News headlines as one (carded, horizontally-scrolling) page. */
     data class News(val items: List<TickerEntry>) : Page {
         override val key: String get() = "news"
+        override val markerLabel: String get() = "NEWS"
     }
 
     /**

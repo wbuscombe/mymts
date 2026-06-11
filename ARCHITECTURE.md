@@ -314,7 +314,8 @@ app/src/main/java/com/mymts/
 │       └── SampleTickerSource.kt  ← every entry isSample=true (clearly-labeled placeholder)
 └── ui/wall/
     ├── WallScreen.kt              ← assembled layout: ticker top / feed left / grid right
-    ├── TickerStrip.kt             ← basicMarquee scroller; per-cell SAMPLE pill
+    ├── TickerStrip.kt             ← paged flip; per-page PINNED marker (BottomLine curtain) over a clipped marquee
+    ├── TickerPaging.kt            ← pure paging: markets/league/news pages, each with a markerLabel
     ├── FeedPane.kt                ← 10-foot UI list; native-text only (no WebView path)
     ├── RelativeTime.kt            ← "now/Nm/Nh/Nd/date" relative-time chip
     ├── VideoGrid.kt               ← grid-agnostic cell grid (cols×rows for 1/2/4/6/9) + section safe-bottom
@@ -332,9 +333,21 @@ app/src/main/java/com/mymts/
 | Feed pane (left, 28% width) | `/api/feed?limit=80` via `FeedRepository` | 60 s poll | Header carries `"feed not updating"` / `"helper unreachable"`; old items don't pretend to be current |
 | Video grid (right, autofit fill) | `/api/channels` via `ChannelsRepository` → `LineupSelector` → `TileSlotResolver` | 30 s poll | Per-tile honest state from `StreamPlayer.state`; dead tile = quiet near-black panel (C2) |
 
+### Ticker: paged flip + pinned marker (BottomLine curtain)
+
+The ticker (`TickerStrip`) flips between **pages** — markets, each sports league, news — built by the pure `TickerPaging.pagesFor`. Each `Page` carries a `markerLabel` (`MARKETS` / the league / `NEWS`).
+
+Within a page, the cards (market quotes / game cards) sit in a `basicMarquee` row that scrolls horizontally when they overflow the panel. The page's marker is **pinned to the left edge** and **drawn on top** of that scroll inside a `clipToBounds` box, so:
+
+- the marker is a full-height **opaque** curtain that **persists** through the scroll (it does not move with the cards);
+- a card scrolling left is occluded by the marker and **vanishes cleanly at the marker's right edge** — the ESPN BottomLine "curtain" — rather than visibly sliding under a translucent block;
+- a leading `Spacer(MARKER_WIDTH)` inside the marquee holds a *static* (non-overflowing) page's first card to the right of the marker; on overflow that reserve scrolls away with the content.
+
+The marker overlays the page Box's true left edge and the STALE flag overlays the **right** edge, so a stale-data pill can never push the curtain inboard. Marker label selection is unit-tested (`TickerPagingTest`); the clip/pin is a layout property verified on-device.
+
 ### Measured area → cells → [video + label] units (grid-agnostic)
 
-The video section lays out structurally so the channel label is always a clean strip **below** the picture, inside the panel's safe area, at any grid size — not a per-tile heuristic.
+The video section lays out structurally so the channel label is always a clean strip **below** the picture, inside the panel's safe area, at any grid size — not a per-tile heuristic. A small `LABEL_BOTTOM_BUFFER` (4 dp, strip height 22 dp) keeps the title off the cell's bottom border; the buffer comes out of the video `weight(1f)`, so it stays inside the safe band.
 
 1. **Section safe area.** `VideoGrid` fills its parent region but reserves a bottom band (`SECTION_SAFE_BOTTOM = 28dp`) so the lowest row's label strip stays inside the panel's *visible* area. That band is the residual overscan clip left by the locked panel-fit (Fit 80% / Stretch 110% / Overscan None / Position 0,0) — the section **reads** that fit to size the safe band; it never changes it.
 2. **Cells.** The safe area is divided into `gridColumnsFor(count) × gridRowsFor(count, columns)` equal cells — 1×1 / 2×1 / 2×2 / 3×2 / 3×3 for the 1 / 2 / 4 / 6 / 9 configurable counts. Each cell takes `weight(1f)` in both axes, so a cell is `safeWidth/columns × safeHeight/rows`.

@@ -59,8 +59,16 @@ internal fun WallTile(
     }
 }
 
-/** Height of the label strip reserved below the video in every cell. */
-private val LABEL_STRIP_HEIGHT = 18.dp
+/**
+ * Label-strip geometry. The strip reserves [LABEL_STRIP_HEIGHT] below the video
+ * in every cell; [LABEL_BOTTOM_BUFFER] is breathing room between the title text
+ * and the cell's bottom border so descenders aren't flush against the edge
+ * (the operator's preference — additive, no placement change, stays below). The
+ * extra dp come out of the video area's `weight(1f)`, so the strip + buffer stay
+ * inside the cell and within the section's overscan-safe band — never re-clipped.
+ */
+internal val LABEL_BOTTOM_BUFFER = 4.dp
+internal val LABEL_STRIP_HEIGHT = 22.dp
 
 @Composable
 private fun EmptyTile() {
@@ -120,7 +128,7 @@ private fun LabelStrip(label: String, color: Color) {
             .fillMaxWidth()
             .height(LABEL_STRIP_HEIGHT)
             .background(WallColors.TileGap)
-            .padding(horizontal = 6.dp),
+            .padding(start = 6.dp, end = 6.dp, bottom = LABEL_BOTTOM_BUFFER),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(

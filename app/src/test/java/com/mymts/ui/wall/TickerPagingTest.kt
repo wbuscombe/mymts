@@ -49,6 +49,31 @@ class TickerPagingTest {
         assertEquals(0, TickerPaging.pagesFor(emptyList()).size)
     }
 
+    @Test fun `each page type exposes its pinned marker label`() {
+        // League → the league label; Markets → MARKETS; News → NEWS. These are
+        // the pinned left-edge "curtain" labels the scroll vanishes behind.
+        val league = TickerPaging.pagesFor(listOf(game("NBA", "A")))[0]
+        assertEquals("NBA", league.markerLabel)
+        val markets = TickerPaging.pagesFor(listOf(market("S&P", TickerEntry.Direction.UP)))[0]
+        assertEquals("MARKETS", markets.markerLabel)
+        val newsPage = TickerPaging.pagesFor(listOf(news("BBC")))[0]
+        assertEquals("NEWS", newsPage.markerLabel)
+    }
+
+    @Test fun `every page produced has a non-blank marker (consistent across all pages)`() {
+        // Whatever pages a poll builds, each must carry a marker so no page
+        // scrolls without a left bug.
+        listOf(
+            listOf(game("MLB", "A"), game("NHL", "B")),
+            listOf(market("BTC", TickerEntry.Direction.DOWN)),
+            listOf(news("CNN")),
+        ).forEach { entries ->
+            TickerPaging.pagesFor(entries).forEach { page ->
+                assertTrue("marker blank for ${page.key}", page.markerLabel.isNotBlank())
+            }
+        }
+    }
+
     @Test fun `nextPage wraps and guards empty`() {
         assertEquals(1, TickerPaging.nextPage(0, 3))
         assertEquals(0, TickerPaging.nextPage(2, 3)) // wrap

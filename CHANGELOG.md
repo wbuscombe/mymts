@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Ticker: pinned per-page marker (BottomLine curtain) + video label bottom buffer (2026-06-11)
+
+Two presentation refinements after the operator reviewed the wall on the panel.
+- **Pinned marker + curtain-clip scroll (ticker):** each ticker page now has a marker **pinned at the left edge** — a full-height **opaque** green curtain labeled per page (`NBA`/`MLB`/… for leagues, `MARKETS`, `NEWS`). It **persists** through the page's horizontal marquee scroll instead of scrolling away with the games. As cards scroll left they **vanish cleanly AT the marker's right edge** (the ESPN BottomLine "curtain"): the marker is drawn on top of a `clipToBounds` scroll area, so a card is occluded at the marker rather than visibly sliding under a translucent block. A leading `Spacer(MARKER_WIDTH)` keeps a static (non-overflowing) page's first card to the right of the marker; on overflow that reserve scrolls away and the cards pass behind the curtain. The per-page marker label is pure + unit-tested (`TickerPaging.Page.markerLabel`). The previous per-league pill (`LeagueMarker`, which scrolled with the games) is gone. The STALE flag now pins to the **right** edge (overlay, near-opaque backing) so it never displaces the left curtain.
+- **Video label bottom buffer:** the below-video title strip gained a few dp of bottom padding (strip 18→22 dp, `LABEL_BOTTOM_BUFFER` = 4 dp) so the title isn't flush against the cell's bottom border. Purely additive — no placement change (still below the video), the extra dp come out of the video `weight(1f)` so it stays inside the cell's overscan-safe band, uniform at every grid size.
+- **Verified on-box (.92):** marker pinned per page (NHL/WNBA/MLB caught on a busy game day); a card slides fully behind the MLB curtain (only the date peeks, no see-through); titles read with breathing room below. 0 fatals. Adversarial review (14 agents) raised 12, confirmed 1 (the STALE-pill displacing the marker when stale) — fixed before commit.
+- Tests: `TickerPagingTest` (markerLabel per page type + every-page-has-a-marker); `WallTileLabelStripTest` (buffer > 0 and strip fits title + buffer). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Video section refactor — measured area → cells → [video + label] units + configurable grid (2026-06-11)
 
 The proper architectural fix for video-tile labels, replacing the prior bolt-on heuristics (overlay-on-video, then the dimension-aware below/above/bubble picker). The video section now **lays out structurally**, so a uniform below-video label that never clips is a property of the layout, not a per-tile guess — at **any** grid size.

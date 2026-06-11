@@ -15,10 +15,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -125,36 +129,46 @@ private fun PagedTicker(
 }
 
 /**
- * One page's content as a horizontally-scrolling row of cards. The marquee
- * only animates when the cards overflow the panel width (a wide league night /
- * the full markets set); a page that fits stays static. A leading STALE pill
- * (fixed, not scrolled) flags aged real data.
+ * One page's content as a horizontally-scrolling row of cards, with the page's
+ * marker **PINNED** at the left edge (ESPN BottomLine "curtain").
+ *
+ * The marker is drawn ON TOP of the scroll row (opaque, full-height) and the
+ * row is clipped to this area, so a card scrolling leftward **vanishes cleanly
+ * AT the marker's right edge** — it never visibly slides underneath. A leading
+ * [Spacer] of the marker's width keeps a *static* (non-overflowing) page's first
+ * card to the right of the marker; on overflow that reserve scrolls away and the
+ * cards pass behind the curtain. The marquee only animates when the cards
+ * overflow the panel width. A leading STALE pill (fixed) flags aged real data.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (stale) StaleChip()
+    // The page area spans the FULL strip width and is clipped. The marker overlays
+    // the TRUE left edge; the STALE flag (when present) overlays the RIGHT edge —
+    // both pinned, on top of the scroll, so a stale pill can never shove the curtain
+    // inboard (the marker must stay pinned at the panel's left edge regardless).
+    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
         val scroll = if (paused) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
         Row(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight().then(scroll),
+            modifier = Modifier.fillMaxSize().then(scroll),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Leading reserve: holds a static page's cards to the right of the
+            // pinned marker; scrolls away (cards pass behind the curtain) on overflow.
+            Spacer(modifier = Modifier.width(MARKER_WIDTH))
             if (paused) PausedChip()
             when (page) {
                 is TickerPaging.Markets -> page.quotes.forEach { MarketCard(it) }
-                is TickerPaging.League -> {
-                    LeagueMarker(page.block.label)
-                    page.block.games.forEach { GameCard(it) }
-                }
+                is TickerPaging.League -> page.block.games.forEach { GameCard(it) }
                 is TickerPaging.News -> page.items.forEach { NewsCard(it) }
             }
         }
+        // The pinned, persistent, opaque curtain — drawn last (on top) so cards
+        // disappear at its right edge rather than showing through it.
+        PageMarker(label = page.markerLabel, modifier = Modifier.align(Alignment.CenterStart))
+        // Staleness flag pinned to the RIGHT edge so it never displaces the marker.
+        if (stale) StaleChip(modifier = Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -304,12 +318,34 @@ private fun StatusBlock(text: String, kind: SportsTicker.StatusKind) {
     }
 }
 
+/** Fixed width of the pinned left-edge marker curtain — sized for the widest
+ *  label ("MARKETS"); a uniform width gives a consistent left bug across pages. */
+private val MARKER_WIDTH = 66.dp
+
+/**
+ * The pinned, persistent left-edge marker — a full-height **opaque** green
+ * curtain labeled per page ("NBA"/"MLB"/… for leagues, "MARKETS", "NEWS").
+ * Drawn on top of the scrolling row so cards vanish cleanly at its right edge
+ * (the BottomLine curtain) instead of visibly sliding underneath. Full height
+ * so it covers a card's whole height; fixed width for a consistent left bug.
+ */
 @Composable
-private fun LeagueMarker(label: String) {
+private fun PageMarker(label: String, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(WallColors.BadgeLive).padding(horizontal = 7.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxHeight()
+            .width(MARKER_WIDTH)
+            .background(WallColors.BadgeLive),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text = label, color = Color(0xFF000000), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+        Text(
+            text = label,
+            color = Color(0xFF000000),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            maxLines = 1,
+        )
     }
 }
 
@@ -323,11 +359,13 @@ private fun SampleChip() {
     }
 }
 
-/** C3: aged real data is flagged, never shown as live. */
+/** C3: aged real data is flagged, never shown as live. Pinned to the strip's
+ *  right edge (an overlay), with a near-opaque backing so scrolling cards behind
+ *  it don't bleed through and hurt legibility. */
 @Composable
-private fun StaleChip() {
+private fun StaleChip(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = modifier.clip(RoundedCornerShape(2.dp)).background(Color(0xE6050505)).padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         Text(text = "STALE", color = WallColors.BadgeStale, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold)
     }
