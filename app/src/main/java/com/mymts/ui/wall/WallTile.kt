@@ -117,6 +117,17 @@ private fun VideoSurface(player: ExoPlayer?, state: StreamPlayer.State) {
     }
 }
 
+/**
+ * Bottom safe-area reserved inside each tile for its name label
+ * (panel-fit, 2026-06-11). The bottom-row tiles' bottom edge sits at the
+ * fitted wall's bottom, where a panel's overscan crops a sliver — a label
+ * flush at the edge (the old 6.dp) fell off on `.92`. Lifting it clear of
+ * that band keeps all four tiles' labels visible WITHIN the fitted output,
+ * without touching the global fit (Fit scale / Vertical stretch). Applied to
+ * every tile so the labels sit consistently in the lower third.
+ */
+private val TILE_LABEL_BOTTOM_SAFE = 28.dp
+
 @Composable
 private fun ChannelLabel(label: String, state: StreamPlayer.State) {
     val color = when (state) {
@@ -126,7 +137,7 @@ private fun ChannelLabel(label: String, state: StreamPlayer.State) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(6.dp),
+            .padding(start = 6.dp, top = 6.dp, end = 6.dp, bottom = TILE_LABEL_BOTTOM_SAFE),
         contentAlignment = Alignment.BottomStart,
     ) {
         Box(
@@ -180,7 +191,9 @@ private fun DeadTile(label: String) {
             .background(WallColors.DeadTile),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = TILE_LABEL_BOTTOM_SAFE),
             verticalArrangement = Arrangement.Bottom,
         ) {
             Text(text = label, color = WallColors.LabelGhost, fontSize = 11.sp)

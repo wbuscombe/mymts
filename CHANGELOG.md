@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Video grid: fix clipped bottom-row tile labels on the fitted panel (2026-06-11)
+
+On `.92`'s fitted panel (Fit scale 80% / Vertical stretch 110%) the top tiles showed their name labels but the **bottom row did not** — the label sat flush at the tile's bottom edge (`6.dp`), which for the bottom row is the fitted wall's bottom, where the panel's overscan crops a sliver. Reserved a **bottom safe-area** inside every tile (`TILE_LABEL_BOTTOM_SAFE = 28.dp`, applied to `ChannelLabel` + the dead-tile label) so the label lifts into the visible area — a fix to the **video panel's internal label layout**, NOT the global fit (which stays Fit scale 80% / Vertical stretch 110% / Overscan None / Position 0,0). Verified on-box via screencap: all four tiles' labels now render inside the visible region. Deployed to `.92` (push + `pm install -r`, `lastUpdateTime` 19:29). Same release key.
+
 ## Ticker: sports overhaul — BottomLine game cards, ESPN status blocks, league-cycling flip (2026-06-10)
 
 The sports portion of the ticker moved from a run-together `·`-stream to ESPN-BottomLine-style discrete game cards. Decisions confirmed with the operator: **flip = sports only** (markets + news keep scrolling); **pool = the in-menu "Sports leagues" filter** (enabled = the auto-cycling pool). Built + tested + deployed (helper to the NAS, app to `.92`); verified rendering on the panel (a live WNBA card `CON 55 TOR 44 · 1:03 2ND` next to an upcoming `LA @ SEA`).
