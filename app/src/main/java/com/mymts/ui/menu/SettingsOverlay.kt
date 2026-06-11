@@ -13,16 +13,20 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +44,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mymts.data.settings.FIT_SCALE_STEP_PCT
@@ -48,20 +53,26 @@ import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.WallSettings
 
 /**
- * Wall settings overlay — UX & Config chapter (2026-06-04).
+ * Wall settings overlay — UX & Config chapter (2026-06-04), reorganized into
+ * labelled SECTIONS (2026-06-11).
  *
- * Centered popup with three rows: feed width, feed font, feed side.
- * The operator focuses a row, presses LEFT/RIGHT to cycle the row's
- * preset values, and the wall updates live (each cycle commits +
- * persists via [com.mymts.data.lineup.LineupStore]). SELECT also
- * cycles forward (a friendly second gesture). UP/DOWN moves between
- * rows via Compose's standard focus traversal. BACK dismisses the
- * overlay — the side menu stays open underneath so the operator can
- * navigate to another setting later without reopening MENU.
+ * The settings grew organically across many chapters into a long flat list;
+ * they're now grouped under section headers — **Display & Fit**, **Layout &
+ * Feed**, **Sports** — while keeping the exact single-level D-pad nav (the
+ * headers are non-focusable, so UP/DOWN focus traversal skips them and every
+ * row stays reachable — no two-level nav, no focus traps). The card
+ * **vertical-scrolls** and follows focus, so the longer grouped list never
+ * clips on the panel. The operator focuses a row, presses LEFT/RIGHT (or
+ * SELECT) to cycle/adjust, and the wall updates live (each commit persists via
+ * [com.mymts.data.lineup.LineupStore]). BACK dismisses — the side menu stays
+ * open underneath.
  *
- * No new fetch surface (A1 unchanged): all three controls write only
- * to the existing on-device SharedPreferences blob; no network,
- * no helper call, no HTML render, no markup parsing.
+ * This is a presentation/organization change ONLY: every setting is preserved
+ * at its current persisted value (the locked panel-fit especially — Fit scale /
+ * Vertical stretch / Overscan / Position are regrouped, never reset).
+ *
+ * No new fetch surface (A1 unchanged): all controls write only to the existing
+ * on-device SharedPreferences blob; no network, no helper call, no markup.
  */
 @Composable
 fun SettingsOverlay(
@@ -84,18 +95,22 @@ fun SettingsOverlay(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(MenuColors.Scrim),
         contentAlignment = Alignment.Center,
     ) {
+        // Cap the card to the visible area so the grouped (taller) list scrolls
+        // rather than clipping off the panel's top/bottom.
+        val maxCardHeight = maxHeight - 24.dp
         AnimatedVisibility(
             visible = true,
             enter = scaleIn(tween(160), initialScale = 0.92f) + fadeIn(tween(160)),
             exit = scaleOut(tween(120), targetScale = 0.92f) + fadeOut(tween(120)),
         ) {
             SettingsCard(
+                maxCardHeight = maxCardHeight,
                 settings = settings,
                 onCycleFeedWidth = onCycleFeedWidth,
                 onCycleFeedFontScale = onCycleFeedFontScale,
@@ -120,6 +135,7 @@ fun SettingsOverlay(
 
 @Composable
 private fun SettingsCard(
+    maxCardHeight: Dp,
     settings: WallSettings,
     onCycleFeedWidth: () -> Unit,
     onCycleFeedFontScale: () -> Unit,
@@ -144,16 +160,20 @@ private fun SettingsCard(
     Column(
         modifier = Modifier
             .widthIn(min = 420.dp)
+            .heightIn(max = maxCardHeight)
             .clip(RoundedCornerShape(8.dp))
             .background(MenuColors.PanelBackground)
-            .padding(horizontal = 24.dp, vertical = 20.dp)
             .onPreviewKeyEvent { event ->
                 // Card-level BACK so the operator can dismiss from
                 // any focused row without having to navigate first.
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
                     onCancel(); true
                 } else false
-            },
+            }
+            // Scrolls when the grouped list is taller than the panel; the
+            // focused row auto-scrolls into view (Compose bring-into-view).
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
@@ -163,23 +183,17 @@ private fun SettingsCard(
             letterSpacing = 3.sp,
             fontWeight = FontWeight.SemiBold,
         )
-        Spacer(modifier = Modifier.height(4.dp))
 
-        // Panel-fit controls first — the operator lands here. "Display
-        // size" scales the WHOLE wall; "Overscan inset" pulls content in
-        // from the panel edges so nothing clips.
+        // ── Display & Fit ────────────────────────────────────────────────
+        // The panel-tuning levers. VALUES are the operator's locked fit
+        // (Fit 80% / Stretch 110% / Overscan None / Position 0,0) — grouped
+        // here, never reset. The operator lands on "Display size".
+        SectionHeader("Display & Fit")
         SettingRow(
             title = "Display size",
             valueLabel = settings.uiScale.displayName,
             onCycle = onCycleUiScale,
             modifier = Modifier.focusRequester(firstRowFocusRequester),
-        )
-        // Video grid — how many channel cells the wall shows (1/2/4/6/9). Each
-        // cell is a [video + label] unit; the layout is grid-agnostic.
-        SettingRow(
-            title = "Video grid",
-            valueLabel = settings.gridSize.displayName,
-            onCycle = onCycleGridSize,
         )
         // Fit scale — shrink the whole wall toward the TOP-LEFT corner so a
         // panel that overflows the bottom/right edges pulls back into view
@@ -191,8 +205,7 @@ private fun SettingsCard(
             onRight = { onNudgeFitScale(FIT_SCALE_STEP_PCT) },
         )
         // Vertical stretch — height-only grow (top-left anchored) to close a
-        // residual bottom band after Fit scale has seated the sides. RIGHT =
-        // taller, LEFT = back toward 1:1. Default 100% (no stretch).
+        // residual bottom band after Fit scale has seated the sides.
         AdjustRow(
             title = "Vertical stretch  ‹ less · more ›",
             valueLabel = "${settings.fitStretchYPct}%",
@@ -204,9 +217,7 @@ private fun SettingsCard(
             valueLabel = settings.overscan.displayName,
             onCycle = onCycleOverscan,
         )
-        // Position offset — recenter a panel that overscans off-center (this
-        // panel has no hardware menu). LEFT/RIGHT nudge live by ±8 dp; watch
-        // the wall move and dial it in by eye.
+        // Position offset — recenter a panel that overscans off-center.
         AdjustRow(
             title = "Position X  ‹ left · right ›",
             valueLabel = formatOffset(settings.offsetXDp),
@@ -219,13 +230,22 @@ private fun SettingsCard(
             onLeft = { onNudgeOffsetY(-OFFSET_STEP_DP) },
             onRight = { onNudgeOffsetY(OFFSET_STEP_DP) },
         )
-        // Calibration border — draws a bright outline + labelled corners at the
-        // wall edge so the operator can SEE which edges the panel is cropping.
-        // Turn on, dial inset/offset until all four corners show, turn off.
+        // Calibration border — draws a bright outline + labelled corners so the
+        // operator can SEE which edges the panel crops while dialing the fit.
         SettingRow(
             title = "Calibration border",
             valueLabel = if (settings.calibrationBorder) "On" else "Off",
             onCycle = onToggleCalibration,
+        )
+
+        // ── Layout & Feed ────────────────────────────────────────────────
+        SectionHeader("Layout & Feed")
+        // Video grid — how many channel cells the wall shows (1/2/4/6/9). Each
+        // cell is a [video + label] unit; the layout is grid-agnostic.
+        SettingRow(
+            title = "Video grid",
+            valueLabel = settings.gridSize.displayName,
+            onCycle = onCycleGridSize,
         )
         SettingRow(
             title = "Feed width",
@@ -255,17 +275,22 @@ private fun SettingsCard(
             valueLabel = if (hiddenCount == 0) "all shown" else "$hiddenCount hidden",
             onCycle = onOpenSourceFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
         )
-        // Curation pass: ticker news (default off) + sports-league toggle.
-        SettingRow(
-            title = "Ticker news",
-            valueLabel = if (settings.tickerNewsEnabled) "On" else "Off",
-            onCycle = onToggleTickerNews,
-        )
+
+        // ── Sports ───────────────────────────────────────────────────────
+        // The sports-league pool (the picker) + the ticker-news toggle. The
+        // league picker drives the SAME pool as the ticker scores and the
+        // sports-news in the feed.
+        SectionHeader("Sports")
         val hiddenLeagues = settings.hiddenLeagues.size
         SettingRow(
             title = "Sports leagues…",
             valueLabel = if (hiddenLeagues == 0) "all shown" else "$hiddenLeagues hidden",
             onCycle = onOpenLeagueFilter,
+        )
+        SettingRow(
+            title = "Ticker news",
+            valueLabel = if (settings.tickerNewsEnabled) "On" else "Off",
+            onCycle = onToggleTickerNews,
         )
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -276,6 +301,24 @@ private fun SettingsCard(
             letterSpacing = 1.sp,
         )
     }
+}
+
+/**
+ * A non-focusable section divider. UP/DOWN focus traversal skips it (it's
+ * plain Text), so grouping adds zero nav complexity — every setting row stays
+ * reachable with the same single-level D-pad nav.
+ */
+@Composable
+private fun SectionHeader(title: String) {
+    Spacer(modifier = Modifier.height(6.dp))
+    Text(
+        text = title.uppercase(),
+        color = MenuColors.FocusAccent,
+        fontSize = 10.sp,
+        letterSpacing = 2.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+    )
 }
 
 @Composable

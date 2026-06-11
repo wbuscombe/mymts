@@ -42,11 +42,10 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 
 **Resolved.** Swapped the helper's markets fetch from Stooq (NAS-bot-walled) to **Yahoo Finance's keyless v8 chart endpoint**, which IS reachable from the NAS egress (validated from inside the helper container). All 14 quotes live — indices, FX, gold, **and** the former sample-only Brent/WTI/10Y UST; crypto stays on CoinGecko. Keyless, per-symbol isolation, honest SAMPLE fallback retained for genuine per-symbol failures. See `CHANGELOG` + ARCHITECTURE §16 markets-source note. *(Original ask: find a market source the NAS isn't walled from + swap the helper fetch — done.)*
 
-## Sports-selection menu — full league picker (2026-06-11)
+## ~~Sports-selection menu — full league picker~~ + menu overhaul — DONE (2026-06-11)
 
-**What:** a proper in-menu league picker — list the leagues ESPN provides, the operator's current **8 as the default-enabled set**, populate the selectable pool from what ESPN supports. The existing "Sports leagues…" denylist filter is the seed; this is its fuller UI (include/exclude + ideally order). When UFC/PGA/tennis/F1 ship, they join this menu.
-**Why-not-now:** the operator wants it **bundled with a future menu-interface overhaul** (improve the broader menu at the same time), not a one-off.
-**Reconsider when:** the menu-interface overhaul is scheduled — build the league picker as part of it.
+**Done.** The settings menu was grouped into sections (Display & Fit / Layout & Feed / Sports) with focus-following scroll, and the league picker (the 8 leagues, all default-on, driving the same pool as scores + sports-news) now lives in the Sports section with the staged sports shown as "Coming soon: UFC · PGA · Tennis · F1". See CHANGELOG + ARCHITECTURE §settings-overlay.
+**Remaining refinements (not blocking):** (1) drive the offered league list from the helper (a `/api/ticker/leagues`-style endpoint) instead of the hand-synced app-side `CURATED_LEAGUES` ↔ helper `DEFAULT_LEAGUES` pair — removes drift, "ideally ESPN-driven"; (2) reorder leagues in the picker. (3) The staged UFC/PGA/tennis/F1 move from "coming soon" into the toggle list when their bespoke cards ship.
 
 ## Hardware-aware optimal grid configs (2026-06-11)
 

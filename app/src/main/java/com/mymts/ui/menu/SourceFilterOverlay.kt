@@ -68,6 +68,7 @@ fun SourceFilterOverlay(
     modifier: Modifier = Modifier,
     title: String = "FEED SOURCES",
     emptyText: String = "No sources yet — waiting for the feed to load.",
+    footerNote: String? = null,
 ) {
     Box(
         modifier = modifier.fillMaxSize().background(MenuColors.Scrim),
@@ -78,7 +79,7 @@ fun SourceFilterOverlay(
             enter = scaleIn(tween(160), initialScale = 0.92f) + fadeIn(tween(160)),
             exit = scaleOut(tween(120), targetScale = 0.92f) + fadeOut(tween(120)),
         ) {
-            Card(sources, hiddenSources, onToggle, onCancel, title, emptyText)
+            Card(sources, hiddenSources, onToggle, onCancel, title, emptyText, footerNote)
         }
     }
 }
@@ -91,6 +92,7 @@ private fun Card(
     onCancel: () -> Unit,
     title: String,
     emptyText: String,
+    footerNote: String? = null,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
     LaunchedEffect(sources) { if (sources.isNotEmpty()) firstRowFocusRequester.requestFocus() }
@@ -137,6 +139,15 @@ private fun Card(
                     )
                 }
             }
+        }
+
+        if (footerNote != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = footerNote,
+                color = MenuColors.RowLabelMuted,
+                fontSize = 11.sp,
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))

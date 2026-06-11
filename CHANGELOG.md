@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Settings menu — grouped into sections + sports picker roadmap (2026-06-11)
+
+The wall settings overlay grew organically across many chapters into one long flat list. Reorganized into labelled **sections** — **Display & Fit**, **Layout & Feed**, **Sports** — while keeping the exact single-level D-pad nav.
+- **Sections, not a flat list:** non-focusable section headers group the rows; UP/DOWN focus traversal skips the headers, so every setting stays reachable with the same nav — no two-level menus, no focus traps. The card now **vertical-scrolls and follows focus** (height-capped to the panel), so the longer grouped list never clips. *(Especially relevant now that the grid can be 6/9 — the side menu has more channel slots above Settings.)*
+- **Presentation only — values preserved.** Every setting keeps its current persisted value; the **locked panel-fit is untouched** (verified on-box: Fit 80% / Stretch 110% / Overscan None / Position 0,0 / Calibration Off, all intact after the regroup).
+- **Sports picker:** the existing league filter (8 leagues: NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL, all default-on, driving the SAME pool as ticker scores + sports-news) now lives in the **Sports** section and shows the structurally-different sports as **"Coming soon: UFC · PGA · Tennis · F1"** — honest roadmap, not offered as toggles whose cards aren't built yet (they join when Prompt-3 ships their bespoke cards).
+- Verified on-box (.92) via uiautomator: all three section headers render, every row reachable, locked fit intact, the coming-soon note shows. 0 fatals. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit VALUES untouched.
+
 ## Live market data — Yahoo Finance replaces Stooq sample fallback (2026-06-11)
 
 The markets ticker showed honest **SAMPLE** pills for indices/FX/gold because **Stooq bot-walls the NAS egress IP** (a JS challenge the prober can't pass). Swapped the helper's markets fetch to **Yahoo Finance's keyless v8 chart endpoint** (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`), which **IS reachable from the NAS egress** — verified the WeatherNation way: probed from *inside the helper container* (the prober is the gate, not the dev Mac).
