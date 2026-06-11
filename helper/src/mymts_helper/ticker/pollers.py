@@ -28,6 +28,7 @@ import time
 
 from ..fetcher import FetchError, Resolver, default_resolver, fetch
 from . import TickerEntryDTO
+from . import individual as individual_mod
 from . import markets as markets_mod
 from . import sports as sports_mod
 
@@ -196,6 +197,13 @@ class SportsPoller:
             if entries is not None:
                 any_ok = True
                 collected.extend(entries)
+        # Individual sports (PGA/UFC/…) — each league has its own parser, but
+        # the same fetch + honest-degradation contract (None = fetch failed).
+        for label, sport, league, parser in individual_mod.INDIVIDUAL_LEAGUES:
+            entries = await self._fetch_individual(label, sport, league, parser)
+            if entries is not None:
+                any_ok = True
+                collected.extend(entries)
         if any_ok:
             self.real_as_of = _now_iso()
             # A truthful "nothing on" when every league fetched but had no games.
@@ -221,4 +229,25 @@ class SportsPoller:
             return sports_mod.parse_scoreboard(r.body, league_label=label)
         except FetchError as e:
             log.warning("sports_fetch_fail", extra={"league": league, "reason": str(e)[:100]})
+            return None
+
+    async def _fetch_individual(
+        self, label: str, sport: str, league: str, parser
+    ) -> list[TickerEntryDTO] | None:
+        """Fetch one individual-sport scoreboard and run its bespoke parser
+        (PGA leaderboard / UFC fights / …). None on fetch/HTTP failure (so the
+        caller distinguishes 'nothing on' from 'no fetch'); the parser returns
+        [] when the event isn't current."""
+        try:
+            r = await fetch(
+                individual_mod.scoreboard_url(sport, league),
+                resolver=self.resolver,
+                headers={"Accept": "application/json"},
+            )
+            if r.status_code >= 400:
+                log.warning("sports_indiv_http", extra={"league": league, "status": r.status_code})
+                return None
+            return parser(r.body)
+        except FetchError as e:
+            log.warning("sports_indiv_fetch_fail", extra={"league": league, "reason": str(e)[:100]})
             return None

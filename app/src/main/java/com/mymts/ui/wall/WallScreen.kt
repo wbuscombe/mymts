@@ -553,7 +553,7 @@ fun WallScreen(
 // different and staged (see docs/findings/19 + BACKLOG). Kept in sync with the
 // helper's sports.DEFAULT_LEAGUES.
 private val CURATED_LEAGUES =
-    listOf("NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL")
+    listOf("NFL", "NCAAF", "UFL", "NBA", "WNBA", "NCAAB", "MLB", "NHL", "PGA")
 
 /**
  * The structurally-different sports — fight cards / leaderboards / set scores /
@@ -562,7 +562,7 @@ private val CURATED_LEAGUES =
  * in the picker. When their cards ship (see docs/findings/19 + BACKLOG) they
  * move into [CURATED_LEAGUES] + the helper's `DEFAULT_LEAGUES`.
  */
-private val STAGED_LEAGUES = listOf("UFC", "PGA", "Tennis", "F1")
+private val STAGED_LEAGUES = listOf("UFC", "Tennis", "F1")
 
 private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.label

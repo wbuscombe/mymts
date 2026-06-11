@@ -1,5 +1,6 @@
 package com.mymts.ui.wall
 
+import com.mymts.data.ticker.SportCard
 import com.mymts.data.ticker.TickerEntry
 import com.mymts.data.ticker.TickerGame
 import org.junit.Assert.assertEquals
@@ -55,6 +56,20 @@ class SportsTickerTest {
         )
         val b = SportsTicker.blocks(entries)
         assertEquals(1, b.size); assertEquals("MLB", b[0].label)
+    }
+
+    @Test fun `blocks groups individual-sport card entries by their league too`() {
+        // A card entry (PGA leaderboard) has no game but names its league via
+        // the card — it must form its own block (so it gets the pinned marker).
+        val pga = TickerEntry(
+            symbol = "PGA", display = "RBC · Theegala -6", direction = TickerEntry.Direction.NONE, isSample = false,
+            card = SportCard("PGA", "leaderboard", "RBC Canadian Open", "in", "R1", listOf("Theegala -6")),
+        )
+        val b = SportsTicker.blocks(listOf(game("MLB", "A"), pga))
+        assertEquals(2, b.size)
+        assertEquals("MLB", b[0].label)
+        assertEquals("PGA", b[1].label)
+        assertEquals("RBC Canadian Open", b[1].games[0].card!!.title)
     }
 
     @Test fun `empty or all-non-game yields no blocks (caller shows fallback)`() {

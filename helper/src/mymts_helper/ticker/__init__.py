@@ -63,13 +63,44 @@ class GameDTO:
 
 
 @dataclass(frozen=True)
+class SportCardDTO:
+    """Structured card for the **individual** sports that don't fit the
+    team-vs-team `GameDTO` (2026-06-11): UFC fight cards, PGA leaderboards,
+    tennis match-sets, F1 race weekends. One DTO per CARD — per fight/match
+    for UFC/tennis, per tournament/race for PGA/F1.
+
+    The helper does the sport-specific formatting; the TV renders a bespoke
+    composable per `kind` from these inert primitives:
+      - `league`  — the page marker ("PGA"/"UFC"/"Tennis"/"F1").
+      - `kind`    — "leaderboard" | "fight" | "match" | "race" (the dispatch).
+      - `title`   — the headline (tournament / event / matchup / GP name).
+      - `state`   — ESPN lifecycle token ("pre"|"in"|"post") → status colour.
+      - `status`  — the short status block ("R1 · In Progress" / "KO R2" / "Sun 8 AM").
+      - `lines`   — the content rows (leaderboard players / set scores / podium).
+    Additive: only individual-sport entries carry a `card`; everything else
+    leaves it None.
+    """
+
+    league: str
+    kind: str
+    title: str
+    state: str
+    status: str
+    lines: list[str]
+
+    def to_json(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TickerEntryDTO:
     """One ticker cell, wire-shaped for the `/api/ticker/*` envelope.
 
     `symbol` is the short label ("S&P 500", "BTC", "MLB"); `display` is
     the preformatted value the TV draws verbatim; `direction` is one of
     the DIR_* tokens; `is_sample` is the honesty flag. `game` carries the
-    structured card payload for sports (None for markets/news).
+    structured team-game card; `card` carries the individual-sport card.
+    Both are None for markets/news (and mutually exclusive in practice).
     """
 
     symbol: str
@@ -77,11 +108,14 @@ class TickerEntryDTO:
     direction: str
     is_sample: bool
     game: GameDTO | None = None
+    card: SportCardDTO | None = None
 
     def to_json(self) -> dict[str, object]:
         d = asdict(self)
-        # Additive on the wire: omit `game` entirely for markets/news so their
-        # entries stay byte-identical to schema v1 (the TV pins the contract).
+        # Additive on the wire: omit `game`/`card` entirely when absent so
+        # markets/news entries stay byte-identical to schema v1 (TV pins it).
         if d.get("game") is None:
             d.pop("game", None)
+        if d.get("card") is None:
+            d.pop("card", None)
         return d

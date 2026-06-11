@@ -2,6 +2,7 @@ package com.mymts.data.helper
 
 import android.util.Log
 import com.mymts.data.ticker.TickerEntry
+import com.mymts.data.ticker.SportCard
 import com.mymts.data.ticker.TickerGame
 import com.mymts.data.ticker.TickerSnapshot
 import kotlinx.coroutines.Dispatchers
@@ -151,6 +152,9 @@ class HelperClient(
                     // news omit it. A malformed game degrades to null → the row
                     // falls back to the flat display string (never fabricated).
                     game = o.optJSONObject("game")?.let { parseGame(it) },
+                    // Additive: individual sports (PGA/UFC/…) carry a structured
+                    // card. Malformed → null → falls back to the display string.
+                    card = o.optJSONObject("card")?.let { parseCard(it) },
                 )
             }
             return TickerSnapshot(
@@ -178,6 +182,32 @@ class HelperClient(
                 homeScore = o.optString("home_score", ""),
                 state = o.optString("state", "pre"),
                 status = o.optString("status", ""),
+            )
+        }
+
+        /**
+         * Parse the optional structured `card` object on an individual-sport
+         * entry (leaderboard/fight/match/race). Defensive (A1): missing
+         * league/kind/title → null, so the entry falls back to its flat
+         * `display` string rather than a half-built card. `lines` blanks are
+         * dropped so a malformed row can't render an empty line.
+         */
+        internal fun parseCard(o: JSONObject): SportCard? {
+            val league = o.optStringOrNull("league") ?: return null
+            val kind = o.optStringOrNull("kind") ?: return null
+            val title = o.optStringOrNull("title") ?: return null
+            val linesArr = o.optJSONArray("lines")
+            val lines = if (linesArr == null) emptyList() else
+                (0 until linesArr.length()).mapNotNull { i ->
+                    linesArr.optString(i, "").trim().ifEmpty { null }
+                }
+            return SportCard(
+                league = league,
+                kind = kind,
+                title = title,
+                state = o.optString("state", "pre"),
+                status = o.optString("status", ""),
+                lines = lines,
             )
         }
 

@@ -122,4 +122,41 @@ class HelperClientTickerParseTest {
         assertNull("missing league/home → null game, not a half-card", e.game)
         assertEquals("NYY 4-3 BOS", e.display)   // falls back to the flat string
     }
+
+    // ---- structured individual-sport card payload (PGA/UFC/…, 2026-06-11) ----
+
+    @Test fun `parses structured card on an individual-sport entry`() {
+        val sports = """
+          {"schema_version":1,"mode":"sports","entries":[
+            {"symbol":"PGA","display":"RBC Canadian Open · Theegala -6","direction":"none","is_sample":false,
+             "card":{"league":"PGA","kind":"leaderboard","title":"RBC Canadian Open","state":"in",
+                     "status":"In Progress","lines":["S. Theegala -6","R. McIlroy -5","","Scheffler E"]}}
+          ]}
+        """.trimIndent()
+        val c = HelperClient.parseTicker(JSONObject(sports)).entries[0].card
+        assertEquals("PGA", c!!.league)
+        assertEquals("leaderboard", c.kind)
+        assertEquals("RBC Canadian Open", c.title)
+        assertEquals("in", c.state)
+        assertEquals("In Progress", c.status)
+        // blank lines are dropped so a malformed row can't render an empty row
+        assertEquals(listOf("S. Theegala -6", "R. McIlroy -5", "Scheffler E"), c.lines)
+    }
+
+    @Test fun `markets entry has no card (absent on the wire)`() {
+        val snap = HelperClient.parseTicker(JSONObject(marketsResponse))
+        assertNull(snap.entries[0].card)
+    }
+
+    @Test fun `malformed card degrades to null, entry still parses via display`() {
+        val sports = """
+          {"schema_version":1,"mode":"sports","entries":[
+            {"symbol":"PGA","display":"RBC Canadian Open","direction":"none","is_sample":false,
+             "card":{"league":"PGA","lines":["x"]}}
+          ]}
+        """.trimIndent()
+        val e = HelperClient.parseTicker(JSONObject(sports)).entries[0]
+        assertNull("missing kind/title → null card, not a half-card", e.card)
+        assertEquals("RBC Canadian Open", e.display)
+    }
 }

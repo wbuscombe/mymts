@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.data.ticker.SportCard
 import com.mymts.data.ticker.TickerEntry
 import com.mymts.data.ticker.TickerGame
 import com.mymts.data.ticker.TickerSource
@@ -160,7 +161,7 @@ private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean) {
             if (paused) PausedChip()
             when (page) {
                 is TickerPaging.Markets -> page.quotes.forEach { MarketCard(it) }
-                is TickerPaging.League -> page.block.games.forEach { GameCard(it) }
+                is TickerPaging.League -> page.block.games.forEach { SportsEntryCard(it) }
                 is TickerPaging.News -> page.items.forEach { NewsCard(it) }
             }
         }
@@ -244,6 +245,70 @@ private fun NewsCard(entry: TickerEntry) = cardRow {
     )
     Text(text = entry.display, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
     if (entry.isSample) SampleChip()
+}
+
+/**
+ * Render one sports entry's card — a team [game] draws the BottomLine
+ * [GameCard]; an individual-sport [card] (PGA/UFC/…) dispatches by kind to its
+ * bespoke composable. An entry with neither draws its flat display fallback.
+ */
+@Composable
+private fun SportsEntryCard(entry: TickerEntry) {
+    val card = entry.card
+    if (card == null) {
+        GameCard(entry)
+        return
+    }
+    when (card.kind) {
+        "leaderboard" -> LeaderboardCard(card, entry.isSample)
+        // "fight" / "match" / "race" land as those sports ship; until then the
+        // generic card renders title + lines + status honestly.
+        else -> SportCardGeneric(card, entry.isSample)
+    }
+}
+
+/**
+ * PGA leaderboard snippet — tournament name + the top players (score-to-par)
+ * + a weighted round/status block. The same bordered-card visual language as a
+ * game card; the marker/curtain + flip are unchanged (it's one card in the PGA
+ * league block).
+ */
+@Composable
+private fun LeaderboardCard(card: SportCard, isSample: Boolean) = cardRow {
+    Text(
+        text = card.title,
+        color = WallColors.LabelPrimary,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+    )
+    card.lines.forEach { line ->
+        Text(
+            text = line,
+            color = WallColors.LabelMuted,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+        )
+    }
+    if (card.status.isNotBlank()) {
+        StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
+    }
+    if (isSample) SampleChip()
+}
+
+/** Generic individual-sport card (title + content lines + status) — the
+ *  fallback render until a kind gets its own bespoke composable. */
+@Composable
+private fun SportCardGeneric(card: SportCard, isSample: Boolean) = cardRow {
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    card.lines.forEach { line ->
+        Text(line, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+    }
+    if (card.status.isNotBlank()) {
+        StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
+    }
+    if (isSample) SampleChip()
 }
 
 /**

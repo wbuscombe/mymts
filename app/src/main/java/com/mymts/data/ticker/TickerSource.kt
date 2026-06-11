@@ -64,6 +64,13 @@ data class TickerEntry(
      * that doesn't yet understand games.
      */
     val game: TickerGame? = null,
+    /**
+     * Structured card for the **individual** sports (PGA/UFC/tennis/F1,
+     * 2026-06-11) that don't fit the team-vs-team [game] shape — a
+     * leaderboard / fight / match / race. Present only on those entries;
+     * null otherwise. [display] stays the fallback string.
+     */
+    val card: SportCard? = null,
 ) {
     /**
      * [NONE] is for non-directional data (sports scores) — the UI draws
@@ -72,6 +79,23 @@ data class TickerEntry(
      */
     enum class Direction { UP, DOWN, FLAT, NONE }
 }
+
+/**
+ * One individual-sport card, mirrored from the helper's `SportCardDTO`.
+ * [kind] is the dispatch ("leaderboard" | "fight" | "match" | "race");
+ * [title] the headline (tournament/event/matchup/GP); [state] the ESPN
+ * lifecycle token ("pre"|"in"|"post") for status colour; [status] the short
+ * status block; [lines] the content rows (leaderboard players / set scores /
+ * podium). Inert primitives only (A1).
+ */
+data class SportCard(
+    val league: String,
+    val kind: String,
+    val title: String,
+    val state: String,
+    val status: String,
+    val lines: List<String>,
+)
 
 /**
  * One sports game in the ESPN-BottomLine shape, mirrored from the helper's

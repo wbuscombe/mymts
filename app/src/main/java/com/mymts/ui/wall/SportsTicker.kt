@@ -34,12 +34,14 @@ object SportsTicker {
     fun blocks(entries: List<TickerEntry>): List<LeagueBlock> {
         val out = ArrayList<LeagueBlock>()
         for (e in entries) {
-            val g = e.game ?: continue
+            // A sports entry carries EITHER a team [game] or an individual-sport
+            // [card]; both name their league. Markets/news (neither) are skipped.
+            val league = e.game?.league ?: e.card?.league ?: continue
             val last = out.lastOrNull()
-            if (last != null && last.label == g.league) {
+            if (last != null && last.label == league) {
                 out[out.lastIndex] = last.copy(games = last.games + e)
             } else {
-                out.add(LeagueBlock(g.league, listOf(e)))
+                out.add(LeagueBlock(league, listOf(e)))
             }
         }
         return out
