@@ -50,5 +50,37 @@
   {
     "url": "https://reason.com/latest/feed/",
     "label": "Reason"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/nfl/news",
+    "label": "NFL"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/ncf/news",
+    "label": "NCAAF"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/ufl/news",
+    "label": "UFL"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/nba/news",
+    "label": "NBA"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/wnba/news",
+    "label": "WNBA"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/ncb/news",
+    "label": "NCAAB"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/mlb/news",
+    "label": "MLB"
+  },
+  {
+    "url": "https://www.espn.com/espn/rss/nhl/news",
+    "label": "NHL"
   }
 ]

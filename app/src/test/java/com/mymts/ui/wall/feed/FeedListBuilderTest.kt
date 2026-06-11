@@ -151,10 +151,10 @@ class FeedListBuilderTest {
             item(2, "Reason", "r"),
             item(3, "", "blank"),
         )
-        val kept = FeedListBuilder.applyFilters(items, setOf("reason"), FeedRecency.All, NOW)
+        val kept = FeedListBuilder.applyFilters(items, setOf("reason"), emptySet(), FeedRecency.All, NOW)
         assertEquals(listOf("b", "blank"), kept.map { it.title })
         // Hiding the Unknown bucket drops blank-source items.
-        val noBlank = FeedListBuilder.applyFilters(items, setOf("Unknown source"), FeedRecency.All, NOW)
+        val noBlank = FeedListBuilder.applyFilters(items, setOf("Unknown source"), emptySet(), FeedRecency.All, NOW)
         assertEquals(listOf("b", "r"), noBlank.map { it.title })
     }
 
@@ -165,10 +165,33 @@ class FeedListBuilderTest {
             item(3, "BBC", "no-ts"),  // no timestamp
         )
         // All → everything (no-ts kept).
-        assertEquals(3, FeedListBuilder.applyFilters(items, emptySet(), FeedRecency.All, NOW).size)
+        assertEquals(3, FeedListBuilder.applyFilters(items, emptySet(), emptySet(), FeedRecency.All, NOW).size)
         // Last hour → only "recent" (old dropped, no-ts dropped — not provably recent).
-        val hour = FeedListBuilder.applyFilters(items, emptySet(), FeedRecency.Hour, NOW)
+        val hour = FeedListBuilder.applyFilters(items, emptySet(), emptySet(), FeedRecency.Hour, NOW)
         assertEquals(listOf("recent"), hour.map { it.title })
+    }
+
+    // ============== sports news (gated by the Sports-leagues pool) ==============
+
+    @Test fun `sports-news source is dropped when its league is hidden`() {
+        val items = listOf(
+            item(1, "BBC", "world"),
+            item(2, "NFL", "nfl story"),
+            item(3, "MLB", "mlb story"),
+        )
+        // Hide NFL in the Sports-leagues pool → its news drops; MLB + general stay.
+        val kept = FeedListBuilder.applyFilters(items, emptySet(), setOf("NFL"), FeedRecency.All, NOW)
+        assertEquals(listOf("world", "mlb story"), kept.map { it.title })
+    }
+
+    @Test fun `sports news is capped so it does not flood the river`() {
+        // 20 NFL items + 2 general; sports caps to 14, general uncapped.
+        val nfl = (1..20).map { item(it.toLong(), "NFL", "nfl-$it", publishedAtMinutesAgo = it.toLong()) }
+        val general = listOf(item(100, "BBC", "b1"), item(101, "Reason", "r1"))
+        val kept = FeedListBuilder.applyFilters(nfl + general, emptySet(), emptySet(), FeedRecency.All, NOW)
+        val sportsKept = kept.count { it.source == "NFL" }
+        assertEquals(14, sportsKept)
+        assertEquals(2, kept.count { it.source != "NFL" })   // general not capped
     }
 
     // ============== distinctSources ==============

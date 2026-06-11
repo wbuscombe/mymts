@@ -356,6 +356,7 @@ fun WallScreen(
                     onItemCountChanged = { feedItemCount = it },
                     fontScale = wallSettings.feedFontScale.multiplier,
                     hiddenSources = wallSettings.hiddenSources,
+                    hiddenLeagues = wallSettings.hiddenLeagues,
                     feedRecency = wallSettings.feedRecency,
                 )
             }

@@ -43,18 +43,31 @@ object FeedListBuilder {
     fun applyFilters(
         items: List<FeedItem>,
         hiddenSources: Set<String>,
+        hiddenLeagues: Set<String>,
         recency: FeedRecency,
         now: Long,
     ): List<FeedItem> {
         val hiddenLower = hiddenSources.map { it.lowercase() }.toSet()
+        val hiddenLeagueLower = hiddenLeagues.map { it.lowercase() }.toSet()
         val maxAge = recency.maxAgeMs
-        return items.filter { item ->
+        val kept = items.filter { item ->
             val sourceKey = item.source.ifBlank { UNATTRIBUTED_KEY }.lowercase()
             if (sourceKey in hiddenLower) return@filter false
+            // Sports-news items (source IS a league) are gated by the SAME pool
+            // as the ticker scores — the Sports-leagues filter. Disable a league
+            // and both its scores and its news disappear, consistently.
+            if (sourceKey in SPORTS_LEAGUES && sourceKey in hiddenLeagueLower) return@filter false
             if (maxAge == null) return@filter true
             val ts = item.itemTimestampMs() ?: return@filter false  // no timestamp → not provably recent
             (now - ts) <= maxAge
         }
+        // Blend, don't dominate: cap sports-news to the newest [MAX_SPORTS_NEWS]
+        // so a busy sports day can't flood the river. General news is uncapped;
+        // [build] then interleaves both chronologically.
+        val (sports, general) = kept.partition { it.source.lowercase() in SPORTS_LEAGUES }
+        if (sports.size <= MAX_SPORTS_NEWS) return kept
+        val cappedSports = sports.sortedByDescending { it.itemTimestampIso() ?: "" }.take(MAX_SPORTS_NEWS)
+        return general + cappedSports
     }
 
     /**
@@ -102,6 +115,18 @@ object FeedListBuilder {
         if (item.id >= 0) item.id else "idx:$index:${item.source}|${item.title}"
 
     private const val UNATTRIBUTED_KEY = "Unknown source"
+
+    /**
+     * The sports leagues whose ESPN-news feed items are gated by the
+     * Sports-leagues pool (lowercased; kept in sync with the helper's
+     * `feeds/seed.json` ESPN-news source labels + `WallScreen.CURATED_LEAGUES`).
+     * A feed item whose source matches one of these is a sports-news item.
+     */
+    private val SPORTS_LEAGUES: Set<String> =
+        setOf("nfl", "ncaaf", "ufl", "nba", "wnba", "ncaab", "mlb", "nhl")
+
+    /** Cap on sports-news items so a busy day blends, not floods (tunable). */
+    private const val MAX_SPORTS_NEWS = 14
 }
 
 /**

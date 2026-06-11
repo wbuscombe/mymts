@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Feed: sports news mixed into the agnostic river, gated by the Sports-leagues pool (2026-06-11)
+
+Sports-news headlines now appear inline in the existing agnostic newest-first feed, sourced + interleaved by time, **filtered to the operator's enabled leagues** — the SAME Sports-leagues pool that drives the ticker scores, so enabling/disabling a league moves its scores AND its news together.
+- **Helper:** added the 8 ESPN keyless **RSS** news feeds (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL — verified live) to `feeds/seed.json` with the league name as the source label. The existing RSS poller fetches/parses/stores them — no new fetch path; they flow into `/api/feed` interleaved.
+- **App:** `FeedListBuilder.applyFilters` gained a `hiddenLeagues` arg — a feed item whose source is a league is dropped when that league is hidden in the Sports-leagues filter (tied to the same pool as the scores). **Blend, don't dominate:** sports-news is capped to the newest `MAX_SPORTS_NEWS` (14) so a busy day can't flood the river; general news is uncapped; `build` interleaves both chronologically. Source label rides each row (A1 — inert plain text, no web reading).
+- C3: sports news is real ESPN RSS, source-labelled like every item; a stale/unavailable league source degrades like any feed source (honest, never faked). Keyless — no new secret.
+- Tests: `FeedListBuilderTest` (league-pool drop, sports cap). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Ticker: whole-ticker paged flip — market quotes carded, scroll-within-page (2026-06-11)
 
 The operator, after the sports flip, asked for the WHOLE ticker to work that way. Now every mode is a flip **page** with one consistent motion: the market quotes are a carded page, each sports league is a page, news is a page — and the strip flips between them all (markets → league blocks → back) with the same hold-then-flip; markets flips IN exactly like a league block. Built + deployed to `.92`, verified on-box (markets cards + a live NBA card across the rotation).
