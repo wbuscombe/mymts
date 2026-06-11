@@ -373,3 +373,13 @@ The data plumbing is being built (real markets + sports ticker, 13 feed sources,
 # **Why-not-now:** which Vision principle defers it
 # **Reconsider when:** the condition that would make it worth doing
 ```
+
+## Weather: gated nationals + central-IL local + NWS radar widget (2026-06-11)
+
+**What:** three follow-ons from the weather-feed research (`docs/findings/20-weather-feed-research.md`):
+1. **The Weather Channel (proper)** and **central-Illinois/Midwest local stations** (WMBD/WEEK/WHOI/WCIA/WAND…) are **login/auth-gated or YouTube-page-only** — no public keyless HLS. Out of scope under the **no-stored-credentials** posture; would need credentials the box must not hold.
+2. **WeatherSpy** (Rakuten) is also confirmed streamable but niche — left out to avoid clutter; trivially addable if the operator wants more weather options.
+3. **NWS / NOAA radar** is image-loops/data, **not a video stream** — could be a future *non-video* weather widget (radar tile / current-conditions panel), a different component from the HLS video tiles.
+
+**Why-not-now:** (1) violates the keyless/no-credentials Trust Bar; (2) cosmetic — three nationals already cover it; (3) is a new widget type, not a channel — outside the video-tile model shipped today.
+**Reconsider when:** (1) only if a station ever exposes a public keyless HLS (re-probe periodically); (2) on operator request; (3) when a non-video weather widget is scoped (pairs with the menu/widget overhaul) — the NWS public radar/forecast APIs are keyless and would fit a data widget, just not a video tile.
