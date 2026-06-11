@@ -3,8 +3,11 @@ package com.mymts.ui.wall
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -17,6 +20,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.ExoPlayer
@@ -51,12 +55,13 @@ import com.mymts.ui.components.StreamSurface
 internal fun WallTile(
     bound: BoundTile,
     modifier: Modifier = Modifier,
+    isBottomRow: Boolean = false,
 ) {
     Box(modifier = modifier.background(WallColors.TileGap)) {
         when (val slot = bound.slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
             is TileSlotResolver.Slot.Offline -> OfflineTile(channel = slot.channel)
-            is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player)
+            is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player, isBottomRow)
         }
     }
 }
@@ -83,22 +88,90 @@ private fun OfflineTile(channel: Channel) {
 }
 
 @Composable
-private fun PlayingTile(slot: TileSlotResolver.Slot.Playing, player: StreamPlayer?) {
-    val state by (player?.state?.collectAsState()
-        ?: return DeadTile(slot.channel.label))
-
+private fun PlayingTile(
+    slot: TileSlotResolver.Slot.Playing,
+    player: StreamPlayer?,
+    isBottomRow: Boolean = false,
+) {
+    val p = player ?: return DeadTile(slot.channel.label)
+    val state by p.state.collectAsState()
+    val videoAspect by p.videoAspect.collectAsState()
     val isDead = state == StreamPlayer.State.DEAD || state == StreamPlayer.State.OFFLINE
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isDead) WallColors.DeadTile else Color.Black),
     ) {
         if (!isDead) {
-            VideoSurface(player = player?.getPlayer(), state = state)
+            VideoSurface(player = p.getPlayer(), state = state)
         }
-        ChannelLabel(label = slot.channel.label, state = state)
+        // Label placed using the video's REAL rendered size: below the picture
+        // (on the letterbox) when there's room that clears the panel overscan,
+        // else above it, else a tinted overlay. A dead tile has no video → null
+        // aspect → the tinted overlay at the bottom safe-area.
+        TileLabelOverlay(
+            label = slot.channel.label,
+            state = state,
+            cellW = maxWidth,
+            cellH = maxHeight,
+            videoAspect = if (isDead) null else videoAspect,
+            isBottomRow = isBottomRow,
+        )
         StateBadge(state = state)
+    }
+}
+
+/** Label cell height estimate + the overscan margin a below-label must clear. */
+private val TILE_LABEL_SLOT = 18.dp
+private val TILE_LABEL_CLIP_SAFE = 22.dp
+
+@Composable
+private fun BoxScope.TileLabelOverlay(
+    label: String,
+    state: StreamPlayer.State,
+    cellW: Dp,
+    cellH: Dp,
+    videoAspect: Float?,
+    isBottomRow: Boolean,
+) {
+    val color = when (state) {
+        StreamPlayer.State.DEAD, StreamPlayer.State.OFFLINE -> WallColors.LabelGhost
+        else -> WallColors.LabelPrimary
+    }
+    val asp = videoAspect
+    val videoH = if (asp != null && asp > 0f) TileLabel.renderedVideoHeight(cellW.value, cellH.value, asp) else 0f
+    // Only the bottom row needs to clear the overscan band before choosing
+    // "below"; other rows have headroom, so a tiny margin lets them prefer the
+    // below-the-picture look the operator wants.
+    val clipSafe = if (isBottomRow) TILE_LABEL_CLIP_SAFE.value else 4f
+    when (TileLabel.placement(cellW.value, cellH.value, asp, TILE_LABEL_SLOT.value, clipSafe)) {
+        // Just below the picture, on the black letterbox — the original look.
+        TileLabel.Placement.BELOW -> Box(
+            modifier = Modifier.align(Alignment.TopStart).offset(x = 6.dp, y = (TileLabel.videoBottom(cellH.value, videoH) + 2f).dp),
+        ) { LabelChip(label, color, tinted = false) }
+        // Tight at the bottom (near the clip) → the matching top letterbox.
+        TileLabel.Placement.ABOVE -> Box(
+            modifier = Modifier.align(Alignment.TopStart)
+                .offset(x = 6.dp, y = (TileLabel.videoTop(cellH.value, videoH) - TILE_LABEL_SLOT.value).coerceAtLeast(2f).dp),
+        ) { LabelChip(label, color, tinted = false) }
+        // No usable letterbox (pillarbox / unknown) → tinted bubble, lifted into
+        // the safe area so the bottom row doesn't re-clip.
+        TileLabel.Placement.OVERLAY -> Box(
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = TILE_LABEL_BOTTOM_SAFE),
+        ) { LabelChip(label, color, tinted = true) }
+    }
+}
+
+@Composable
+private fun LabelChip(label: String, color: Color, tinted: Boolean) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(2.dp))
+            .then(if (tinted) Modifier.background(Color(0x99000000)) else Modifier)
+            .padding(horizontal = if (tinted) 6.dp else 0.dp, vertical = if (tinted) 2.dp else 0.dp),
+    ) {
+        Text(text = label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Medium)
     }
 }
 

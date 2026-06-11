@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -175,19 +176,46 @@ private fun cardRow(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** A market quote as a bordered card — the same cell language as a game card. */
+/**
+ * A market quote as a bordered card — the same cell language as a game card.
+ * The value/symbol lead; the not-live (sample) state is shown HONESTLY but
+ * subtly (C3): a sample card is **dimmed** (muted symbol + ghost value, the
+ * 10-ft cue that it isn't a live quote) with a small lowercase "sample" tag
+ * consolidated into the cell — not the old bulky boxed pill. A LIVE quote (e.g.
+ * BTC/ETH from CoinGecko, which the NAS can reach) renders clean + bright, so
+ * live-vs-sample reads at a glance.
+ */
 @Composable
 private fun MarketCard(entry: TickerEntry) = cardRow {
-    Text(entry.symbol, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    Text(entry.display, color = WallColors.LabelMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+    val sample = entry.isSample
+    Text(
+        entry.symbol,
+        color = if (sample) WallColors.LabelMuted else WallColors.LabelPrimary,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        entry.display,
+        color = if (sample) WallColors.LabelGhost else WallColors.LabelMuted,
+        fontSize = 12.sp,
+        fontFamily = FontFamily.Monospace,
+    )
     val (arrow, color) = when (entry.direction) {
         TickerEntry.Direction.UP -> "▲" to WallColors.BadgeLive
         TickerEntry.Direction.DOWN -> "▼" to Color(0xFFEF5350)
         TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
         TickerEntry.Direction.NONE -> null to WallColors.LabelMuted
     }
-    if (arrow != null) Text(arrow, color = color, fontSize = 11.sp)
-    if (entry.isSample) SampleChip()
+    if (arrow != null) Text(arrow, color = if (sample) color.copy(alpha = 0.5f) else color, fontSize = 11.sp)
+    if (sample) {
+        Text(
+            text = "sample",
+            color = WallColors.LabelGhost,
+            fontSize = 7.sp,
+            fontStyle = FontStyle.Italic,
+            letterSpacing = 0.5.sp,
+        )
+    }
 }
 
 /** A news headline as a bordered card — source accent + headline. */

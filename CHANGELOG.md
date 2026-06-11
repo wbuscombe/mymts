@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Markets SAMPLE restyle + dimension-aware video tile labels (2026-06-11)
+
+Two polish items after the operator used the new ticker/feed/video.
+- **Markets card — consolidated SAMPLE (Part A):** the bulky separate boxed "SAMPLE" pill is gone. A not-live quote now renders as a **dimmed cell** (muted symbol + ghost value — the 10-ft "not a live price" cue) with a small lowercase italic "sample" tag in the cell; the value stays prominent. A LIVE quote (e.g. BTC/ETH from CoinGecko, which the NAS reaches) renders clean + bright, so live-vs-sample reads at a glance. **C3 intact** — the not-live state is still perceptible, just not noisy. (The stock indices/FX show sample because Stooq bot-walls the NAS egress — logged in BACKLOG.)
+- **Video tile labels — below the video, dimension-aware (Part B):** the label moved off the over-video overlay back to the operator's original look — **below the rendered video**, on the black letterbox. `StreamPlayer` now exposes the real `videoAspect` (from ExoPlayer `onVideoSizeChanged`); `TileLabel.placement` (pure, tested) picks **below → above → tinted-overlay** from the cell + video dimensions. The **bottom row** (whose lower edge sits in the overscan-clipped band) falls back to **above** the video when below would clip; other rows get **below**. A pillarboxed/unknown tile gets a tinted bubble lifted into the safe area. The locked panel-fit config is untouched (this is per-tile internal layout). Verified on-box (top-row label below the picture, bottom-row above).
+- **BACKLOG:** (1) a live market source the NAS egress can reach (Stooq is bot-walled — CoinGecko/ESPN already work); (2) a full sports-selection league-picker menu, bundled with a future menu-interface overhaul.
+- Tests: `TileLabelTest` (below/above/overlay selection). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit (Fit 80% / Stretch 110%) untouched.
+
 ## Feed: sports news mixed into the agnostic river, gated by the Sports-leagues pool (2026-06-11)
 
 Sports-news headlines now appear inline in the existing agnostic newest-first feed, sourced + interleaved by time, **filtered to the operator's enabled leagues** — the SAME Sports-leagues pool that drives the ticker scores, so enabling/disabling a league moves its scores AND its news together.

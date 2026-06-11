@@ -38,6 +38,18 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 
 **Reconsider when:** the operator wants one specifically — each is an isolated add (a parse branch in `helper/ticker/sports.py` + a card composable in `TickerStrip.kt`); the structured-game/flip plumbing already exists. Honest until then: these are **omitted**, never forced into the score+clock mold or faked.
 
+## Live market data source reachable from the NAS egress (2026-06-11)
+
+**What:** the ticker's stock **indices / FX / gold** show `sample` because **Stooq bot-walls the NAS egress IP** (returns a JS proof-of-work challenge, not CSV) — see the OPERATIONS markets-sample note. Find a real-time/delayed market source whose API the NAS can actually reach (keyless, or keyed-but-acceptable, honest discipline) and swap the helper-side fetch so indices/FX/gold show **real prices → no `sample` at all**.
+**Why-not-now:** C3 is already satisfied (a real upstream failure shows honestly as `sample`, never faked); the fix is a data-source evaluation + a `helper/ticker/markets.py` fetch swap, not a wall change. **CoinGecko crypto (BTC/ETH) and ESPN sports already work from the NAS** — it's specifically Stooq (stocks/FX/gold) that's walled.
+**Reconsider when:** the operator wants real market prices (they asked for this as a follow-on). Candidate eval (a keyless indices/FX source the NAS IP isn't walled from) + the fetch swap is the work.
+
+## Sports-selection menu — full league picker (2026-06-11)
+
+**What:** a proper in-menu league picker — list the leagues ESPN provides, the operator's current **8 as the default-enabled set**, populate the selectable pool from what ESPN supports. The existing "Sports leagues…" denylist filter is the seed; this is its fuller UI (include/exclude + ideally order). When UFC/PGA/tennis/F1 ship, they join this menu.
+**Why-not-now:** the operator wants it **bundled with a future menu-interface overhaul** (improve the broader menu at the same time), not a one-off.
+**Reconsider when:** the menu-interface overhaul is scheduled — build the league picker as part of it.
+
 ---
 
 ## Stage 1.x — confirmatory 4K-panel soak

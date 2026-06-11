@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -104,6 +105,17 @@ class StreamPlayer(
     private val _hasSoftCaptionTrack = MutableStateFlow(false)
     val hasSoftCaptionTrack: StateFlow<Boolean> = _hasSoftCaptionTrack.asStateFlow()
 
+    /**
+     * The rendered video's aspect ratio (width/height, PAR-corrected), or null
+     * until the first decoded frame reports a size. The wall reads this to lay
+     * the channel label in the letterbox BELOW the actual rendered video (its
+     * original aesthetic) using real dimensions — a 16:9 stream in a taller cell
+     * leaves a black bar below the picture where the label sits, in the visible
+     * area rather than the overscan-clipped tile edge.
+     */
+    private val _videoAspect = MutableStateFlow<Float?>(null)
+    val videoAspect: StateFlow<Float?> = _videoAspect.asStateFlow()
+
     /** Cumulative dropped frames since initialize(). Read by the soak harness. */
     @Volatile var droppedFrames: Int = 0
         private set
@@ -196,6 +208,15 @@ class StreamPlayer(
                 // for streams without a text track.
                 val hasText = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
                 _hasSoftCaptionTrack.value = hasText
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                val w = videoSize.width
+                val h = videoSize.height
+                if (w > 0 && h > 0) {
+                    val par = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
+                    _videoAspect.value = (w * par) / h
+                }
             }
         }
         listener = pl

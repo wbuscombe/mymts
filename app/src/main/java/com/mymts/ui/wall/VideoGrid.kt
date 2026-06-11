@@ -198,6 +198,13 @@ private fun AutofitGrid(
                             ) {
                                 WallTile(
                                     bound = tile,
+                                    // The bottom row's lower edge sits at the
+                                    // fitted wall's bottom (the overscan-clipped
+                                    // band) — its label can't go below the video
+                                    // safely, so it falls back to above. Other
+                                    // rows have headroom → label sits below the
+                                    // picture (the operator's preferred look).
+                                    isBottomRow = r == rows - 1,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
