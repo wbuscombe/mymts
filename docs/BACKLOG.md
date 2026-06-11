@@ -36,7 +36,7 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 | **Tennis** | `tennis/atp`, `tennis/wta` | **0 competitors** in the standard field — matches nest sets/games differently | Needs a match-sets parse + card |
 | **F1** | `racing/f1` | a race = **~22 competitors** (drivers); session/standings, not a 2-team game | Needs a race/standings card |
 
-**Reconsider when:** the operator wants one specifically — each is an isolated add (a parse branch in `helper/ticker/sports.py` + a card composable in `TickerStrip.kt`); the structured-game/flip plumbing already exists. Honest until then: these are **omitted**, never forced into the score+clock mold or faked.
+**Re-probed live 2026-06-11 — all 4 are data-feasible (see `docs/findings/21`).** Updated shapes: UFC `competitions[]` = the fights (2 athletes + winner + status); PGA `competitions[0].competitors` = the 147-player leaderboard (score-to-par + `order`); **tennis matches DO exist** — nested under `event.groupings[].competitions[].linescores` (per-set scores), contrary to the 2026-06-10 read; F1 `competitions[]` = the 5 sessions (results populate once a session runs). **Recommended build order: PGA (live-verifiable now) → UFC → Tennis → F1.** The build is a cross-cutting change (a new per-sport `card` payload helper→app + classification into its own page + one composable per kind), deliberately **checkpointed for a session with adequate runway** rather than started under-verified (the prompt's own rule). Honest until then: **omitted / "Coming soon" in the picker**, never forced into the score+clock mold or faked.
 
 ## ~~Live market data source reachable from the NAS egress~~ — DONE (2026-06-11)
 
