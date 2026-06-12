@@ -110,6 +110,15 @@ rsync -az --delete \
 echo "==> rendering compose.yml on the helper host"
 ssh "$HOST" "cp '$REMOTE_PATH/_src/deploy/docker-compose.nas.yml' '$REMOTE_PATH/compose.yml'"
 
+echo "==> snapshotting current helper for rollback (DEPLOY-3)"
+# Record the currently-running build_sha and tag its image as last-good, so a
+# failed deploy can revert (the rebuild reuses the same BUILD_VERSION tag and
+# would otherwise overwrite the prior good image in place with nothing to roll
+# back to). Scoped to mymts-helper:* only — never touches other containers and
+# never the named data volume (mymts-helper-data).
+PREV_SHA="$(ssh "$HOST" "docker exec mymts-helper curl -fsSk https://127.0.0.1:8443/health 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get(\"build_sha\",\"\"))' 2>/dev/null" || true)"
+ssh "$HOST" "img=\$(docker inspect --format '{{.Image}}' mymts-helper 2>/dev/null || true); if [[ -n \"\$img\" ]]; then docker tag \"\$img\" mymts-helper:last-good && echo '    tagged mymts-helper:last-good (prev build_sha=$PREV_SHA)'; else echo '    (no running helper to snapshot — first deploy?)'; fi"
+
 echo "==> writing/refreshing .env (build identity + defaults)"
 ssh "$HOST" "cat > '$REMOTE_PATH/.env'" <<EOF
 BUILD_SHA=$BUILD_SHA
@@ -131,7 +140,7 @@ echo "==> waiting for /health to report the new SHA"
 # endpoint with -k (loopback, self-fetch — cert verification is moot;
 # we only want liveness + the SHA). Previously this hit :8091 and would
 # report a false failure on an otherwise-good deploy.
-ssh "$HOST" "bash -s" <<EOF
+if ssh "$HOST" "bash -s" <<EOF
 for i in \$(seq 1 30); do
     SHA=\$(docker exec mymts-helper curl -fsSk https://127.0.0.1:8443/health 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build_sha","?"))' 2>/dev/null || echo "")
     if [[ "\$SHA" == "$BUILD_SHA" ]]; then
@@ -143,5 +152,25 @@ done
 echo "    /health never reported build_sha=$BUILD_SHA (last saw: \$SHA)" >&2
 exit 1
 EOF
-
-echo "==> done"
+then
+    echo "==> done"
+else
+    echo "==> DEPLOY VERIFY FAILED — attempting rollback to last-good (DEPLOY-3)" >&2
+    # Auto-revert: restore the last-good image under the deploy tag, restore its
+    # build_sha in .env, bring it up, and confirm it serves. The data volume is
+    # never touched; only mymts-helper:* tags are moved. If anything is
+    # uncertain, the manual recovery command is always printed.
+    rolled_back=0
+    if [[ -n "$PREV_SHA" ]] && ssh "$HOST" "docker image inspect mymts-helper:last-good >/dev/null 2>&1"; then
+        if ssh "$HOST" "docker tag mymts-helper:last-good mymts-helper:$BUILD_VERSION && sed -i.bak 's/^BUILD_SHA=.*/BUILD_SHA=$PREV_SHA/' '$REMOTE_PATH/.env' && cd '$REMOTE_PATH' && docker compose -f compose.yml --env-file .env up -d && for i in \$(seq 1 20); do docker exec mymts-helper curl -fsSk https://127.0.0.1:8443/health >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then
+            echo "==> ROLLED BACK to last-good (build_sha=$PREV_SHA); helper is serving again." >&2
+            rolled_back=1
+        fi
+    fi
+    if [[ "$rolled_back" != "1" ]]; then
+        echo "!! Auto-rollback could not confirm a healthy helper. MANUAL RECOVERY:" >&2
+        echo "   ssh $HOST 'docker tag mymts-helper:last-good mymts-helper:$BUILD_VERSION && cd $REMOTE_PATH && docker compose -f compose.yml --env-file .env up -d'" >&2
+        echo "   (or: git checkout a known-good helper sha and re-run scripts/deploy-helper.sh)" >&2
+    fi
+    exit 1
+fi
