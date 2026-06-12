@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Remediation: adb deploy invariant + CI + poller/settings tests (2026-06-12)
+
+Campaign 2b — the code + CI + tests remediation from the 2026-06 adversarial review, conforming to `AGENTS.md`.
+
+- **DEPLOY-2 (P1):** all deploy scripts now implement the adb invariant via a shared `scripts/lib-adb.sh` — `adb push` → on-device byte-size verify == local APK (retry on mismatch) → `pm install -r` → verify `lastUpdateTime` advanced; never a streamed `adb install`; reconnect-not-`kill-server` on a wedge. The rollback uses the same verified path (the rollback-of-rollback) and retains the known-good APK. New `scripts/test_adb_invariant.sh` proves the gate (truncation rejected without installing, retry recovers, stale-install caught) — 8/8 green.
+- **DEPLOY-1:** `deploy-app.sh` build runs `:app:clean` first (no more stale-APK trap).
+- **DEPLOY-3:** `deploy-helper.sh` snapshots the running image as `last-good` before `up -d` and auto-reverts on a failed `/health` verify (scoped to `mymts-helper:*` only; the data volume is never touched; always prints manual recovery).
+- **CI (DEPLOY-4 — highest-leverage):** `.github/workflows/ci.yml`, secret-free GitHub Actions running helper `pytest`, the new poller tests, the `schema_version` consistency check (ARCH-1), the adb gate test, a phantom demo-boot smoke, and the app JVM unit tests. First run green. The 2a "planned" CI notes were flipped to truthful.
+- **API-3:** 15 direct poller orchestration tests (realistic upstream shapes + failure-injection, not mocked-green).
+- **ARCH-3:** a WallSettings round-trip test (all 18 fields incl. the locked panel-fit) — protects the panel-fit from a silent reset on update.
+- **DATA-1:** non-finite (NaN/Inf) market prices are rejected (no fake-live `nan` cell). **DEPLOY-6:** the `soak.sh $INTERVAL` typo is fixed.
+- **Deferred honestly to backlog:** API-2 (bozo-success masking in `/health`), per-source 429 cooldown, channels `mapNotNull`, `events[0]`→iterate, and the ~51 pre-existing ruff violations (CI ruff is advisory until cleared).
+
+The live `.92` deploy verification of the rewritten scripts is the operator's to run (no device access in this pass) — see the report.
+
 ## Governance layer: AGENTS.md + doc-honesty reconcile (2026-06-12)
 
 Made the repo self-governing and reconciled docs to reality (campaign 2a — docs/governance only, no code behaviour change, no deploy). Follows the 2026-06 adversarial review.

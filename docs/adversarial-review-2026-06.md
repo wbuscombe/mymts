@@ -13,6 +13,26 @@
 
 ---
 
+## Remediation log (updated 2026-06-12 — campaigns 2a/2b)
+
+Proof-of-closure per the playbook. Status: **FIXED** (proving artifact landed) · **PARTIAL** · **DEFERRED** (on backlog, honestly).
+
+| ID | Status | Proving artifact |
+|---|---|---|
+| DEPLOY-2 (P1) | **FIXED** | `scripts/lib-adb.sh` (`adb_install_verified`: push + byte-verify + retry + `pm install` + `lastUpdateTime`) used by all deploy scripts incl. the rollback; `scripts/test_adb_invariant.sh` (8/8 green) proves truncation→reject. *Live `.92` verify pending — operator-run.* |
+| DEPLOY-1 | **FIXED** | `deploy-app.sh build_release` runs `:app:clean`. |
+| DEPLOY-3 | **FIXED** (untested-without-NAS) | `deploy-helper.sh` tags `mymts-helper:last-good` before `up -d` + auto-reverts on failed `/health`; volume untouched. Operator validates on next deploy. |
+| DEPLOY-4 / ONB-3 | **FIXED** | `.github/workflows/ci.yml` (pytest + poller tests + schema check + adb gate + phantom smoke + app JVM tests), first run green. CI claims flipped truthful. |
+| API-3 | **FIXED** | `helper/tests/test_ticker_pollers.py` + `test_feeds_poller.py` (15 cases, failure-injection, realistic shapes). |
+| ARCH-3 | **FIXED** | `app/.../WallSettingsRoundTripTest.kt` (all 18 fields incl. locked panel-fit round-trip). |
+| ARCH-1 | **PARTIAL** | CI `scripts/check_schema_consistency.py` asserts helper==app `schema_version`; the web client's own guard + banner is still on backlog. |
+| DATA-1 | **FIXED** | `markets.py` `math.isfinite` guard (price/prev/usd) + `test_ticker_markets.py` non-finite cases. |
+| DEPLOY-6 (soak `$INTERVAL`) | **FIXED** | `soak.sh` uses `$MEMINFO_INTERVAL`. (Dockerfile baked-healthcheck port still on backlog.) |
+| ONB-1/2/4/5/6, audience-aware docs | **FIXED** (campaign 2a) | doc-honesty reconcile + `AGENTS.md`. |
+| API-1, API-2, API-4, API-5, API-6, DATA-2, DEPLOY-5, DEPLOY-6 (Dockerfile), ARCH-2/4/5 | **DEFERRED** | On backlog (§5). API-2 behaviour is pinned by a poller test but not yet fixed. The ~51 pre-existing ruff violations are advisory in CI until cleared. |
+
+---
+
 ## 1. Executive Summary
 
 **The honest-degradation discipline is genuinely well-held end-to-end** — every failure mode examined degrades *honestly to the viewer* (SAMPLE/STALE pills, play-what-works, never frozen-fake-live). That is the protected invariant and it is real, threaded through helper → app → web. **No P0 exists.** Per the severity cap (P0 = wall-broken or a real secret/topology leak), nothing qualifies: the secret/topology surface is clean at the git-tracking level, and the wall never silently shows wrong data to the couch.
