@@ -21,7 +21,7 @@ from mymts_helper.fetcher import FetchError, _is_private_address, fetch
         ("172.16.0.1", True),
         ("172.31.255.254", True),
         ("192.168.0.1", True),
-        ("<LAN_IP>", True),
+        ("192.168.1.182", True),
         # IPv4 loopback / link-local / unspecified
         ("127.0.0.1", True),
         ("169.254.1.1", True),
@@ -83,7 +83,7 @@ async def test_rejects_when_resolver_returns_private_ipv4() -> None:
     with pytest.raises(FetchError, match="private_address_blocked"):
         await fetch(
             "https://example.test/feed",
-            resolver=await _fake_resolver_factory(["<LAN_IP>"]),
+            resolver=await _fake_resolver_factory(["192.168.1.182"]),
         )
 
 

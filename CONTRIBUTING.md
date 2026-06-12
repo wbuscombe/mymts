@@ -46,7 +46,7 @@ When in doubt, the foundation docs win.
 - **Never** commit secrets, tokens, credentials, API keys, or absolute paths beyond the project root.
 - `.env.example` template lives in the repo; the real `.env` does not.
 - Never echo or print a secret to stdout — write it directly to the file or pass by env var reference.
-- Never touch the unrelated host container on the NAS for any reason.
+- Never reach into unrelated services sharing the helper's host; keep the helper isolated on its own network.
 - See `SECURITY-PRACTICES.md` for the full list.
 
 ## Documentation

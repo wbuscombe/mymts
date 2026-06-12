@@ -67,7 +67,7 @@
 | `app/build.gradle.kts:53` | helper-URL **default** `http://<LAN_IP>:8091` | default → `http://localhost:8091`; operator's real URL via gitignored `local.properties` (`MYMTS_HELPER_BASE_URL`) — behavior-preserving once set; **also enables the localhost demo** |
 | `scripts/deploy-*.sh`, `probe-tile-count.sh`, `soak.sh` | box/NAS IPs (`.92`/`.3`), `<HOST>` ssh alias | env-var-overridable with placeholder defaults + a gitignored `scripts/.deploy-env` for the operator's real values |
 | `helper/deploy/docker-compose.nas.yml`, `deploy-helper.sh` | `/srv/...` NAS paths | parameterize via env with placeholder defaults |
-| `helper/tests/test_fetcher.py`, `test_log_redaction.py` | `<LAN_IP>` as a **private-IP fixture** (testing SSRF block / log redaction) | low-priority: swap to a generic `192.168.1.x` fixture (the IP is incidental to the test) |
+| `helper/tests/test_fetcher.py`, `test_log_redaction.py` | `<LAN_IP>` as a **private-IP fixture** (testing SSRF block / log redaction) | low-priority: swap to a generic `<LAN_IP>` fixture (the IP is incidental to the test) |
 | `ONN-BOXES.md`, `docs/OPERATIONS.md` (31), `ARCHITECTURE.md` (5), `CHANGELOG.md` (12), `docs/findings/runs/*/meta.json` | real IPs in operator runbooks/history | operator runbooks → placeholder the live values (real values to a gitignored local note); **deferred-heavy** — these are RFC1918 private IPs (not externally exploitable), so this is topology-hygiene, not a security exposure |
 
 Note: `<LAN_IP>` are RFC1918 **private** addresses — useless to anyone outside the operator's LAN. Scrubbing them is the operator's topology-privacy preference, not a security gate. Prioritized below the secret gate + the demo/onboarding enablers.

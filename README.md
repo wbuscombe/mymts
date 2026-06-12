@@ -87,7 +87,7 @@ Conventional commits (`feat/fix/docs/chore/test/security`), semver with tagged r
 
 ## Hard constraints
 
-- **Never touch the unrelated host container** on the NAS. Standing rule.
+- **Never touch unrelated services on the helper's host.** The helper runs isolated, on its own network, and never reaches into anything else sharing its host. Standing rule.
 - **No browser engine in the content path.** Feed content is native text; video is the native player.
 - **No third-party telemetry.** Nothing about what the operator watches leaves operator infrastructure.
 

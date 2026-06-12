@@ -27,7 +27,7 @@ def test_api_key_header_redacted() -> None:
 
 
 def test_internal_ipv4_redacted() -> None:
-    for ip in ("10.0.0.1", "<LAN_IP>", "172.20.10.5", "127.0.0.1", "169.254.1.1"):
+    for ip in ("10.0.0.1", "192.168.1.3", "172.20.10.5", "127.0.0.1", "169.254.1.1"):
         assert ip not in redact(f"connecting to {ip}:443"), ip
 
 

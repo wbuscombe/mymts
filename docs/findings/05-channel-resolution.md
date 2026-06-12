@@ -77,4 +77,4 @@ NASA TV was previously marked `status=live` (master passed) but never actually p
 - **unrelated host services: never touched.**
 - **WyzeGrid** untouched (helper-side track, no `.182` involvement).
 - Helper tests green: 132 passed (122 prior + 10 new `test_channels_prober`).
-- Helper redeployed to `<USER>@<HOST>:/srv/docker/mymts-helper/`; non-root, `read_only: true`, `cap_drop: ALL`, dedicated bridge network — never the unrelated host container.
+- Helper redeployed to `<USER>@<HOST>:/srv/docker/mymts-helper/`; non-root, `read_only: true`, `cap_drop: ALL`, dedicated bridge network — never any unrelated container on the host.

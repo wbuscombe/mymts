@@ -91,7 +91,7 @@ CNBC has **no free public HLS endpoint** as of 2026-06-04. The channel is paywal
 
 - **unrelated host services: never touched.**
 - **WyzeGrid** untouched on `.182` — the deploy was a `force-stop` + `install -r` + `am start`; WyzeGrid foreground service stays alive.
-- **Helper redeployed** to `<USER>@<HOST>` per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge network — never the unrelated host container).
+- **Helper redeployed** to `<USER>@<HOST>` per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge network — never any unrelated container on the host).
 - Helper tests green: **136** unchanged.
 - App test count: **~80+** (5 new — 4 `LineupStoreIntSetCodecTest` + 5 `LineupSelectorPreferredOrderTest`).
 - TLS baseline from the prior commit (`b8240b7`) intact — the new app build still defaults to HTTPS 8443 with cert-pin trust.

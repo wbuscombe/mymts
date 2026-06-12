@@ -25,7 +25,7 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 - Structured JSON to stdout (helper). Captured by Docker `json-file` driver with rotation.
 
 ### Network
-- The unrelated host container on the NAS is **never** touched. Standing rule.
+- Unrelated services sharing the helper's host are **never** touched; the helper stays isolated on its own network. Standing rule.
 - The helper has bounded egress; it cannot reach anything on the operator's internal network beyond what its two jobs require.
 - Inbound: the TV app talks only to the helper; the helper does not expose itself to the public internet.
 

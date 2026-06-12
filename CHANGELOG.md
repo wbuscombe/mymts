@@ -16,7 +16,7 @@ Six operator changes from using the wall (built A–F; E checkpointed).
 - **D — manual video reconnect:** `StreamPlayer.reconnect()` (fresh player + manifest, resets recovery state) exposed two ways — a **"Reconnect"** row in the per-tile controls, and a **"Refresh all video"** row in settings — driven from `WallScreen` via a nonce → `VideoGrid`/`StreamPlayerManager`. Honest play-what-works on the result. Verified on-panel (the rows render).
 - **F — channel picker sectioned by category:** the channel list picker groups channels under **Sports / US News / Global News / Business / Weather / General** headers (`ChannelCategory` taxonomy), live-first within each, honest live/offline tags, opens on the slot's current channel, scroll-follows-focus. Verified on-panel (SPORTS/US NEWS/GLOBAL NEWS sections with the right channels).
 - **E — news-feed genre/source two-level toggles: CHECKPOINTED** for a fresh session (the bigger taxonomy — a genre→source tree with check-box toggles, reconciled with the sports-leagues pool). Not started; the shared category naming from F is the foundation.
-- Tests per part (lineup order, PGA top-10/position, ticker-speed clamp, `ChannelCategory`/`channelToFocus`). Full suites green. 0 fatals on `.92`. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+- Tests per part (lineup order, PGA top-10/position, ticker-speed clamp, `ChannelCategory`/`channelToFocus`). Full suites green. 0 fatals on `.92`.
 
 ## Menu focus fixes + Rows×Cols grid + channel list picker (2026-06-11)
 
@@ -25,7 +25,7 @@ Four issues from the operator using the new menu — two focus bugs (the core) +
 - **Fix — menu scroll doesn't follow the cursor:** navigating down, the focused row slid into the overscan-clipped bottom. The default `.focusable()` bring-into-view scrolled flush to the edge; now each row uses an explicit `BringIntoViewRequester` fired on focus, so the cursor stays visible. **Verified on-box** — scrolling to the last row keeps it on-screen (y within 0–720).
 - **Feat — independent Rows × Columns grid:** the single "Video grid" preset (1/2/4/6/9) is replaced by two selectors — **Grid rows (1–3)** and **Grid columns (1–3)** — so 2×2, 2×3, 1×3, 3×2 … up to 3×3. `WallSettings.gridRows`/`gridCols` (default 2×2, clamped, persisted); `VideoGrid` takes explicit `columns`; the focus model's column nav matches. Cell count = rows × cols; per-slot channel overrides survive an R×C change. *(Migration: the old `gridSize` pref is dropped — the grid resets to 2×2; re-set R×C if you'd changed it.)*
 - **Feat — channel selection is a scrollable LIST:** the 1-at-a-time left/right cycler is replaced by a `LazyColumn` picker — D-pad UP/DOWN through every channel, SELECT to assign, BACK to cancel. Opens focused on the slot's current channel, scrolls to follow the cursor (same fix as above), LIVE/OFFLINE section headers + per-row `live`/`offline` tags (honest status, C3).
-- Tests: `WallSettings`/`LineupStore` grid-dims (default 2×2, clamp, persist), `ChannelPickerListTest` (initial index). Full suite green. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit VALUES untouched (Fit 80% / Stretch 110% / Overscan None / Pos 0,0).
+- Tests: `WallSettings`/`LineupStore` grid-dims (default 2×2, clamp, persist), `ChannelPickerListTest` (initial index). Full suite green.
 
 ## Individual-sports ticker cards — UFC / PGA / Tennis / F1 (2026-06-11)
 
@@ -36,7 +36,7 @@ The four structurally-different sports now have bespoke ticker cards (they don't
 - **Tennis — `match`:** matches read from `event.groupings[].competitions[]` (the top-level is empty — the findings/19 gap); `A d. B` + set scores with tiebreaks (`7-6(7) 6-4`), in-progress first then recent finals, capped. Verified on the panel (Boss Open finals).
 - **F1 — `race`:** a run race's podium (`1. Verstappen …`) or an upcoming weekend's race start (`Barcelona-Catalunya GP · 6/14 9 AM`), clean GP name. Verified on the panel.
 - All four moved from the picker's "Coming soon" note into the **active league toggles** (the staged list is now empty); each cycles in the ticker + is enable/disable-able + couples to the same pool as scores/news. Honest degradation throughout (off-season / no current event → league omitted, never faked).
-- Helper-side validated on live ESPN data; tests: `test_ticker_individual` (20 cases across the 4 parsers) + app card-parse + blocks-with-card. Full suites green. 0 fatals on-box. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+- Helper-side validated on live ESPN data; tests: `test_ticker_individual` (20 cases across the 4 parsers) + app card-parse + blocks-with-card. Full suites green. 0 fatals on-box.
 
 ## Settings menu — grouped into sections + sports picker roadmap (2026-06-11)
 
@@ -44,7 +44,7 @@ The wall settings overlay grew organically across many chapters into one long fl
 - **Sections, not a flat list:** non-focusable section headers group the rows; UP/DOWN focus traversal skips the headers, so every setting stays reachable with the same nav — no two-level menus, no focus traps. The card now **vertical-scrolls and follows focus** (height-capped to the panel), so the longer grouped list never clips. *(Especially relevant now that the grid can be 6/9 — the side menu has more channel slots above Settings.)*
 - **Presentation only — values preserved.** Every setting keeps its current persisted value; the **locked panel-fit is untouched** (verified on-box: Fit 80% / Stretch 110% / Overscan None / Position 0,0 / Calibration Off, all intact after the regroup).
 - **Sports picker:** the existing league filter (8 leagues: NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL, all default-on, driving the SAME pool as ticker scores + sports-news) now lives in the **Sports** section and shows the structurally-different sports as **"Coming soon: UFC · PGA · Tennis · F1"** — honest roadmap, not offered as toggles whose cards aren't built yet (they join when Prompt-3 ships their bespoke cards).
-- Verified on-box (.92) via uiautomator: all three section headers render, every row reachable, locked fit intact, the coming-soon note shows. 0 fatals. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit VALUES untouched.
+- Verified on-box (.92) via uiautomator: all three section headers render, every row reachable, locked fit intact, the coming-soon note shows. 0 fatals.
 
 ## Live market data — Yahoo Finance replaces Stooq sample fallback (2026-06-11)
 
@@ -52,24 +52,21 @@ The markets ticker showed honest **SAMPLE** pills for indices/FX/gold because **
 - **Everything is live now.** Yahoo covers all 14 quotes — the 7 indices, 3 FX pairs, gold — **and** the three that were previously sample-only (Brent, WTI, 10Y UST). Only crypto stays on CoinGecko (already worked). No more SAMPLE tags in the normal case.
 - **Per-symbol isolation (C2):** one request per symbol, fetched concurrently (`asyncio.gather`) — a single symbol failing samples only that symbol, never the whole set; wall time bounded by the slowest fetch.
 - **Honest SAMPLE preserved (C3):** a symbol whose fetch fails/parses empty still falls back to an honest SAMPLE placeholder — real-when-reachable, SAMPLE-only-on-genuine-failure. **Keyless** (no API key), works with the helper's own UA. DTO shape unchanged → the TV app needs no change, it just receives real prices.
-- Tests: `parse_yahoo_chart` (price + direction, `previousClose` fallback, drops missing/non-numeric/bool, never raises on junk), snapshot real-vs-sample mixing, rate/index/FX formatting, URL symbol-quoting. Full helper suite green. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
-
+- Tests: `parse_yahoo_chart` (price + direction, `previousClose` fallback, drops missing/non-numeric/bool, never raises on junk), snapshot real-vs-sample mixing, rate/index/FX formatting, URL symbol-quoting. Full helper suite green.
 ## Weather feeds — two national weather channels added (2026-06-11)
 
 Research-first weather-feed pass (national + local). Added two **confirmed public keyless HLS** national weather channels to the helper channel seed: **Fox Weather** and **AccuWeather NOW** — each verified master → variant → media-segment (real `video/MP2T`) AND confirmed **`status=live` by the NAS prober** after deploy. They enter as the `rest` tier (available in the menu picker, not a default slot); the operator selects one into a cell.
 - **WeatherNation was probed streamable from the dev Mac but DROPPED** — the NAS helper prober fails its TLS handshake (`SSLV3_ALERT_HANDSHAKE_FAILURE`), so it would sit permanently OFFLINE. Honest play-what-works: a tile that can't validate where it's deployed is worse than none.
 - **No central-Illinois/Midwest LOCAL weather stream was added** — those stations are auth-gated or YouTube-page-only. The only US locals with open weather HLS (Baton Rouge LA, Manchester NH) are out-of-region, so not added as "local." Reported honestly rather than shipping a wrong-region or broken tile.
 - **The Weather Channel proper** is TV-provider-login gated — not addable without stored credentials (posture). **NOAA/NWS** is radar/data, not video.
-- Full landscape (streamable / gated / not-video, with probe evidence) in `docs/findings/20-weather-feed-research.md`. BACKLOG: WeatherSpy (also streamable, niche), WeatherNation TLS recovery, and a possible NWS radar *non-video* widget. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
-
+- Full landscape (streamable / gated / not-video, with probe evidence) in `docs/findings/20-weather-feed-research.md`. BACKLOG: WeatherSpy (also streamable, niche), WeatherNation TLS recovery, and a possible NWS radar *non-video* widget.
 ## Ticker: pinned per-page marker (BottomLine curtain) + video label bottom buffer (2026-06-11)
 
 Two presentation refinements after the operator reviewed the wall on the panel.
 - **Pinned marker + curtain-clip scroll (ticker):** each ticker page now has a marker **pinned at the left edge** — a full-height **opaque** green curtain labeled per page (`NBA`/`MLB`/… for leagues, `MARKETS`, `NEWS`). It **persists** through the page's horizontal marquee scroll instead of scrolling away with the games. As cards scroll left they **vanish cleanly AT the marker's right edge** (the ESPN BottomLine "curtain"): the marker is drawn on top of a `clipToBounds` scroll area, so a card is occluded at the marker rather than visibly sliding under a translucent block. A leading `Spacer(MARKER_WIDTH)` keeps a static (non-overflowing) page's first card to the right of the marker; on overflow that reserve scrolls away and the cards pass behind the curtain. The per-page marker label is pure + unit-tested (`TickerPaging.Page.markerLabel`). The previous per-league pill (`LeagueMarker`, which scrolled with the games) is gone. The STALE flag now pins to the **right** edge (overlay, near-opaque backing) so it never displaces the left curtain.
 - **Video label bottom buffer:** the below-video title strip gained a few dp of bottom padding (strip 18→22 dp, `LABEL_BOTTOM_BUFFER` = 4 dp) so the title isn't flush against the cell's bottom border. Purely additive — no placement change (still below the video), the extra dp come out of the video `weight(1f)` so it stays inside the cell's overscan-safe band, uniform at every grid size.
 - **Verified on-box (.92):** marker pinned per page (NHL/WNBA/MLB caught on a busy game day); a card slides fully behind the MLB curtain (only the date peeks, no see-through); titles read with breathing room below. 0 fatals. Adversarial review (14 agents) raised 12, confirmed 1 (the STALE-pill displacing the marker when stale) — fixed before commit.
-- Tests: `TickerPagingTest` (markerLabel per page type + every-page-has-a-marker); `WallTileLabelStripTest` (buffer > 0 and strip fits title + buffer). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
-
+- Tests: `TickerPagingTest` (markerLabel per page type + every-page-has-a-marker); `WallTileLabelStripTest` (buffer > 0 and strip fits title + buffer).
 ## Video section refactor — measured area → cells → [video + label] units + configurable grid (2026-06-11)
 
 The proper architectural fix for video-tile labels, replacing the prior bolt-on heuristics (overlay-on-video, then the dimension-aware below/above/bubble picker). The video section now **lays out structurally**, so a uniform below-video label that never clips is a property of the layout, not a per-tile guess — at **any** grid size.
@@ -79,7 +76,7 @@ The proper architectural fix for video-tile labels, replacing the prior bolt-on 
 - **Configurable grid count:** new **"Video grid"** setting (`WallSettings.GridSize`: 1 / 2 / 4 / 6 / 9, **default 4 · 2×2**) in the Settings menu, persisted via `LineupStore` (SharedPreferences, ordinal + fallback-to-Four). `WallScreen` drives the grid, slot resolver, and focus model off `gridSize.cells`. Channel choices reconcile across grid changes: explicit per-slot `overrides` are keyed by slot index and preserved; the default fill is a **stable prefix** (`LineupSelector` preferred→fallback→rest) so 4 → 6 → 4 returns the same lineup (only live-availability churn moves it, by design).
 - **Verified on-box (.92):** at the default 2×2 all four labels sit **below** their videos, uniform, nothing clipped; cycled the menu setting to 6 (3×2 — six cells, every label below) and back to 4. 0 fatals.
 - **BACKLOG:** hardware-aware optimal grid configs — offer only grids sensible for the panel's real dimensions/resolution (the measured-area infra here is the foundation).
-- Tests: `VideoGridLayoutTest` (cols×rows for 1/2/4/6/9 + `gridRowsFor` guards); `WallSettingsTest` + `LineupStoreWallSettingsResolveTest` extended for `GridSize` (default Four, ordinal round-trip, all-absent resolve). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched (read-only).
+- Tests: `VideoGridLayoutTest` (cols×rows for 1/2/4/6/9 + `gridRowsFor` guards); `WallSettingsTest` + `LineupStoreWallSettingsResolveTest` extended for `GridSize` (default Four, ordinal round-trip, all-absent resolve).
 
 ## Markets SAMPLE restyle + dimension-aware video tile labels (2026-06-11)
 
@@ -87,7 +84,7 @@ Two polish items after the operator used the new ticker/feed/video.
 - **Markets card — consolidated SAMPLE (Part A):** the bulky separate boxed "SAMPLE" pill is gone. A not-live quote now renders as a **dimmed cell** (muted symbol + ghost value — the 10-ft "not a live price" cue) with a small lowercase italic "sample" tag in the cell; the value stays prominent. A LIVE quote (e.g. BTC/ETH from CoinGecko, which the NAS reaches) renders clean + bright, so live-vs-sample reads at a glance. **C3 intact** — the not-live state is still perceptible, just not noisy. (The stock indices/FX show sample because Stooq bot-walls the NAS egress — logged in BACKLOG.)
 - **Video tile labels — below the video, dimension-aware (Part B):** the label moved off the over-video overlay back to the operator's original look — **below the rendered video**, on the black letterbox. `StreamPlayer` now exposes the real `videoAspect` (from ExoPlayer `onVideoSizeChanged`); `TileLabel.placement` (pure, tested) picks **below → above → tinted-overlay** from the cell + video dimensions. The **bottom row** (whose lower edge sits in the overscan-clipped band) falls back to **above** the video when below would clip; other rows get **below**. A pillarboxed/unknown tile gets a tinted bubble lifted into the safe area. The locked panel-fit config is untouched (this is per-tile internal layout). Verified on-box (top-row label below the picture, bottom-row above).
 - **BACKLOG:** (1) a live market source the NAS egress can reach (Stooq is bot-walled — CoinGecko/ESPN already work); (2) a full sports-selection league-picker menu, bundled with a future menu-interface overhaul.
-- Tests: `TileLabelTest` (below/above/overlay selection). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit (Fit 80% / Stretch 110%) untouched.
+- Tests: `TileLabelTest` (below/above/overlay selection).
 
 ## Feed: sports news mixed into the agnostic river, gated by the Sports-leagues pool (2026-06-11)
 
@@ -95,8 +92,7 @@ Sports-news headlines now appear inline in the existing agnostic newest-first fe
 - **Helper:** added the 8 ESPN keyless **RSS** news feeds (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL — verified live) to `feeds/seed.json` with the league name as the source label. The existing RSS poller fetches/parses/stores them — no new fetch path; they flow into `/api/feed` interleaved.
 - **App:** `FeedListBuilder.applyFilters` gained a `hiddenLeagues` arg — a feed item whose source is a league is dropped when that league is hidden in the Sports-leagues filter (tied to the same pool as the scores). **Blend, don't dominate:** sports-news is capped to the newest `MAX_SPORTS_NEWS` (14) so a busy day can't flood the river; general news is uncapped; `build` interleaves both chronologically. Source label rides each row (A1 — inert plain text, no web reading).
 - C3: sports news is real ESPN RSS, source-labelled like every item; a stale/unavailable league source degrades like any feed source (honest, never faked). Keyless — no new secret.
-- Tests: `FeedListBuilderTest` (league-pool drop, sports cap). Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
-
+- Tests: `FeedListBuilderTest` (league-pool drop, sports cap).
 ## Ticker: whole-ticker paged flip — market quotes carded, scroll-within-page (2026-06-11)
 
 The operator, after the sports flip, asked for the WHOLE ticker to work that way. Now every mode is a flip **page** with one consistent motion: the market quotes are a carded page, each sports league is a page, news is a page — and the strip flips between them all (markets → league blocks → back) with the same hold-then-flip; markets flips IN exactly like a league block. Built + deployed to `.92`, verified on-box (markets cards + a live NBA card across the rotation).
@@ -104,11 +100,10 @@ The operator, after the sports flip, asked for the WHOLE ticker to work that way
 - **feat(ticker): market quotes are bordered cards** — the same cell language as the game cards (symbol + value + arrow + SAMPLE pill). News headlines carded too (source accent + headline). Consistent visual language across the strip.
 - **feat(ticker): scroll-within-an-overflowing-page** — each page is a `basicMarquee` row that scrolls only when its cards exceed the panel width (a wide markets set / a busy league night); a page that fits stays static. Flip BETWEEN pages, scroll WITHIN one.
 - **feat(ticker): consistent flip** — one `AnimatedContent` (keyed on the page key) drives every transition, including the markets↔sports mode rotation, so markets flips in like a league block.
-- **C3 intact:** SAMPLE pills on sample market/game cards; the STALE pill (leading, not scrolled) on aged real data; an empty/honest mode falls back to its line. Tests: `TickerPagingTest` (pages per mode, keys, wrap); existing `SportsTicker`/parse/source suites unchanged. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
-
+- **C3 intact:** SAMPLE pills on sample market/game cards; the STALE pill (leading, not scrolled) on aged real data; an empty/honest mode falls back to its line. Tests: `TickerPagingTest` (pages per mode, keys, wrap); existing `SportsTicker`/parse/source suites unchanged.
 ## Video grid: fix clipped bottom-row tile labels on the fitted panel (2026-06-11)
 
-On `.92`'s fitted panel (Fit scale 80% / Vertical stretch 110%) the top tiles showed their name labels but the **bottom row did not** — the label sat flush at the tile's bottom edge (`6.dp`), which for the bottom row is the fitted wall's bottom, where the panel's overscan crops a sliver. Reserved a **bottom safe-area** inside every tile (`TILE_LABEL_BOTTOM_SAFE = 28.dp`, applied to `ChannelLabel` + the dead-tile label) so the label lifts into the visible area — a fix to the **video panel's internal label layout**, NOT the global fit (which stays Fit scale 80% / Vertical stretch 110% / Overscan None / Position 0,0). Verified on-box via screencap: all four tiles' labels now render inside the visible region. Deployed to `.92` (push + `pm install -r`, `lastUpdateTime` 19:29). Same release key.
+On `.92`'s fitted panel (Fit scale 80% / Vertical stretch 110%) the top tiles showed their name labels but the **bottom row did not** — the label sat flush at the tile's bottom edge (`6.dp`), which for the bottom row is the fitted wall's bottom, where the panel's overscan crops a sliver. Reserved a **bottom safe-area** inside every tile (`TILE_LABEL_BOTTOM_SAFE = 28.dp`, applied to `ChannelLabel` + the dead-tile label) so the label lifts into the visible area — a fix to the **video panel's internal label layout**, NOT the global fit (which stays Fit scale 80% / Vertical stretch 110% / Overscan None / Position 0,0). Verified on-box via screencap: all four tiles' labels now render inside the visible region. Deployed to `.92` (push + `pm install -r`, `lastUpdateTime` 19:29).
 
 ## Ticker: sports overhaul — BottomLine game cards, ESPN status blocks, league-cycling flip (2026-06-10)
 
@@ -121,7 +116,6 @@ The sports portion of the ticker moved from a run-together `·`-stream to ESPN-B
 - **feat(app): pool config** — the existing in-menu "Sports leagues…" filter expanded to all 8 (enabled = pool, set-once).
 - **C3 honesty:** sample game cards still wear the SAMPLE pill; **aged real data now shows a STALE pill** (the envelope `stale` flag was previously dropped — fixed for markets + sports); a sports mode with no games falls back to the honest scrolling line; the hidden-league filter keys on the game's league. No fabricated score/status/game; keyless ESPN endpoints only.
 - Tests: helper `GameDTO`/live-first/additive-wire (188 green); app `SportsTickerTest` (blocking, status classify, ESPN format, flip wrap), `HelperClientTickerParseTest` (game parse, markets-omit, malformed→null), `HelperTickerSourceTest` (isStale, filter-by-game-league). Adversarially reviewed (2 high C3 findings fixed pre-deploy). Focus model unchanged.
-- Same release key. `.182`/`.158` devices untouched. unrelated host services never touched. Locked panel-fit config (Fit scale 80% / Vertical stretch 110%) untouched.
 
 ## Panel-fit: top-left Fit scale + Vertical stretch + Calibration border; fixed settings LEFT/RIGHT handler (2026-06-10)
 
@@ -134,7 +128,6 @@ Hands-on follow-up dialing the wall into `.92`'s panel. The panel renders the wa
 - **feat(settings): extended Overscan inset** to None/3/5/7/10/13/16/20% (was capped at 7%); `cycleOverscan` reaches the new presets.
 - Tests: `WallSettingsTest` + `LineupStoreWallSettingsResolveTest` cover the new fields (defaults, clamp-on-read, per-key wiring, the Overscan ladder length). Focus model **49** unchanged — the fit scale is a render transform, not a focus change. Deployed to `.92` via `adb push` + `pm install -r` (streamed `adb install` deadlocks on this box's flaky Wi-Fi transport — push the APK, install the local file, verify `lastUpdateTime` advances).
 - **Hardware finding:** the box output is geometrically perfect (full 1280×720, `scale=1.0`, no software overscan) — the crop is the **panel**. A 480p-EDID SD panel earlier read as the cause was a red herring; with it removed the real panel simply overscans the HD frame from a top-left origin, fixed by Fit scale. Android TV floors output at 720p (won't emit the panel's native 480p) and exposes no root/sysfs overscan lever on this build, so compensation stays **app-side**.
-- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched.
 
 ## Panel-fit: added Position-offset (X/Y) lever to recenter an off-center overscan panel (2026-06-09)
 
@@ -143,7 +136,6 @@ The shipped Display size + Overscan inset are symmetric/centered — they fix "t
 - `WallSettings.offsetXDp` / `offsetYDp` (Int dp, default 0,0; clamped ±64 dp, 8 dp step). Applied in `WallScreen` as `Modifier.offset` on the inset Box — **outside** the `LocalDensity` scale override, so it's a true physical nudge that shifts layout + hit-testing together (D-pad focus still lands on shifted content) and behaves predictably at any Display-size setting.
 - D-pad-adjustable, **live**: new **"Position X"** / **"Position Y"** rows (an `AdjustRow` — LEFT decrements, RIGHT increments, SELECT nudges right), grouped with Display size + Overscan inset so the fit controls lead the Settings card. Persisted per keypress in `LineupStore` (clamped on nudge **and** on read, so a corrupt value can't shove the wall off-screen).
 - Focus model unchanged (the offset is a layout translation, not a focus change — 49 focus tests pass). App **255** unit tests (+offset clamp/defaults/constants + resolver clamp-on-read). Deployed to `.92` (health-gate PASS, 125 `TILE_READY`, 0 dead).
-- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched.
 
 ## Panel fit (overscan inset + global UI scale) + native feed → agnostic with source-per-headline (2026-06-07)
 
@@ -163,9 +155,6 @@ Two hands-on issues from running the wall on the new box's 720p panel.
 
 ### Tests / deploy
 - App **245** unit tests (FeedListBuilderTest rewritten for the agnostic interleave; WallSettingsTest +panel-fit presets; focus model 49 unchanged). Deployed to `.92` (health-gate PASS, 127 `TILE_READY`, 0 dead). Operator confirms the visual fit + feed on the panel; tune Display size / Overscan inset to the panel if needed.
-
-### Standing rules
-- Same release key (not regenerated/reprinted). `.182`/`.158` untouched. unrelated host services never touched. No secrets/absolute-paths.
 
 ## MyMTS provisioned onto its permanent box + fresh release key + deploy-script fix (2026-06-07)
 
@@ -199,7 +188,7 @@ Second hands-on pass on the LAN web client. Plus an honest diagnosis course-corr
 - Helper **181** (+6: classifier + browser_playable round-trip). Web **17** (+6). App **246** (+5 TickerGrouping); debug APK builds.
 
 ### Security / standing rules
-- CSP no less locked than before (no `worker-src`/CDN added; frame-src/object-src/script-src/base-uri/form-action all still locked). hls.js vendored+pinned. A1 held (video ≠ web reading). LAN-only / same-origin / credential-free / no-proxy. `.182`/WyzeGrid untouched. unrelated host services never touched. No secrets/absolute-paths.
+- CSP no less locked than before (no `worker-src`/CDN added; frame-src/object-src/script-src/base-uri/form-action all still locked). hls.js vendored+pinned. A1 held (video ≠ web reading). LAN-only / same-origin / credential-free / no-proxy.
 
 ### Operator action
 - Helper redeploy required (migration 002 + classifier are helper-side): `scripts/deploy-helper.sh`; the web rework is static (same deploy rsyncs `web/`). Re-verify `/api/channels` exposes `browser_playable`.
@@ -233,7 +222,7 @@ Hands-on feedback: the web client looked like a foreign dashboard, the ticker di
 - Remote (non-LAN) web client; team-level sports curation; news-in-web-ticker; deeper web↔TV settings parity (needs per-client helper state / cross-platform-profiles fork). Stooq indices source still open.
 
 ### Standing rules
-- A1 held (video ≠ reading); `.182`/WyzeGrid untouched; unrelated host services never touched; no secrets/absolute-paths; hls.js pinned + vendored.
+- A1 held (video ≠ reading); hls.js pinned + vendored.
 
 ## Curation & preferences — sports curation + ticker news + source toggles (2026-06-06)
 
@@ -257,7 +246,7 @@ The "tune what I see" controls in the settings menu. Some choices are FEEL-TEST 
 - Team-level sports curation; true breaking-news/urgency detection (needs a real signal, not faked); dedicated ticker-news source subset.
 
 ### Tests + standing rules
-App suite **241** green (+8). A1 reverified (operates on already-fetched plain text; no new fetch/web/markup; no faked data). Focus model unchanged (modal overlays). unrelated host services never touched; `.182`/WyzeGrid untouched.
+App suite **241** green (+8). A1 reverified (operates on already-fetched plain text; no new fetch/web/markup; no faked data). Focus model unchanged (modal overlays).
 
 ## Feed filtering — by source + recency (2026-06-06)
 
@@ -285,7 +274,7 @@ The feed gains operator-controlled filtering (the filtering half of feedback ite
 App suite **233** green (+9). `./gradlew :app:testDebugUnitTest`.
 
 ### Standing rules
-- A1 held (filters operate on already-fetched plain text; no new surface). unrelated host services never touched; `.182`/WyzeGrid untouched.
+- A1 held (filters operate on already-fetched plain text; no new surface).
 
 ## LAN web client — separate, credential-free, origin-isolated (2026-06-06)
 
@@ -309,10 +298,7 @@ LAN-only (helper's bare LAN IP, off `*.<DOMAIN>`, not tunneled, not behind Cloud
 - In-browser HLS video grid (`hls.js`) — LAN follow-on; the live grid is on the TV wall.
 
 ### Operator action
-To serve the LAN client, set `WEB_CLIENT_DIR=/app/web` in the helper `.env` and redeploy (pull → rebuild → restart); browse to `https://<LAN_IP>:8443/app/` on the LAN (click through the self-signed-cert warning once). If left unset, the helper is unchanged. Standing rules: helper non-root / read_only / cap_drop ALL / dedicated bridge — **never the unrelated host container**.
-
-### Standing rules
-- unrelated host services never touched; `.182`/WyzeGrid untouched; no secrets/absolute-paths committed.
+To serve the LAN client, set `WEB_CLIENT_DIR=/app/web` in the helper `.env` and redeploy (pull → rebuild → restart); browse to `https://<LAN_IP>:8443/app/` on the LAN (click through the self-signed-cert warning once). If left unset, the helper is unchanged. Standing rules: helper non-root / read_only / cap_drop ALL / dedicated bridge — **never any unrelated container on the host**.
 
 ## Pre-migration hygiene pass (2026-06-06)
 
@@ -334,7 +320,7 @@ Tidy-the-slate pass before the afternoon migration to the dedicated MyMTS box. N
 - Section numbering verified: ARCHITECTURE §1–§18 and THREAT-MODEL headings have no duplicates or gaps.
 
 ### Verified
-- App suite **224** green; helper suite **164** green. Signed-install path + kiosk scaffolding intact. `.182` + WyzeGrid untouched. unrelated host services never touched.
+- App suite **224** green; helper suite **164** green. Signed-install path + kiosk scaffolding intact.
 
 ## Kiosk / foreground / boot scaffolding + provisioning readiness (2026-06-06)
 
@@ -359,7 +345,7 @@ The dedicated MyMTS Onn box arrives this afternoon. This chapter builds the kios
 Foreground hold over hours on the new box; boot-receiver via a real reboot; low-memory survival; full runbook end-to-end; the accumulated nav + feed + config + ticker feel-test (now on the MyMTS box, not borrowed `.182`); helper redeploy (prerequisite). Unverified-until-migration.
 
 ### Safety
-Opt-in gating keeps the same signed APK inert on `.182` (no foreground service, no boot autostart unless kiosk is provisioned-on) — adversarially verified (not refuted, 12 evidence citations). No coexistence/reclaim logic (Model A). `.182` + WyzeGrid untouched. unrelated host services never touched. No new secret (the kiosk flag is a boolean; the release keystore stays the only secret, never committed).
+Opt-in gating keeps the same signed APK inert on `.182` (no foreground service, no boot autostart unless kiosk is provisioned-on) — adversarially verified (not refuted, 12 evidence citations). No coexistence/reclaim logic (Model A). No new secret (the kiosk flag is a boolean; the release keystore stays the only secret, never committed).
 
 ### Tests
 App suite green (224 tests) incl. the 7 new kiosk policy tests; APK builds; manifest merges clean.
@@ -395,13 +381,13 @@ Real shown real (pill dropped); sample/unsupported kept sample (pill); stale rea
 Two independent verifiers (not refuted): (1) the ticker never presents sample/stale data as live-real in any path; (2) the new sources go through the SSRF-safe fetcher unchanged, add no secret, and the parsers are strict/fail-closed. Full record: `docs/THREAT-MODEL.md §"Ticker real data — markets + sports external sources"`.
 
 ### Operator action
-Helper redeploy required to serve the new endpoints: pull → rebuild → restart → verify `/health` 200 and `/api/ticker/markets` + `/api/ticker/sports` return valid envelopes. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container**.
+Helper redeploy required to serve the new endpoints: pull → rebuild → restart → verify `/health` 200 and `/api/ticker/markets` + `/api/ticker/sports` return valid envelopes. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never any unrelated container on the host**.
 
 ### Deferred
 - Per-team/league curation UI (default leagues + mechanism shipped). Sample-only symbols (Brent/WTI/10Y). BACKLOG items D + G marked DONE.
 
 ### Standing rules
-- **unrelated host services: never touched.** A1: every external response treated as hostile — same SSRF-safe fetcher, strict parse, fail-closed, bounded. No secrets / absolute paths committed or logged.
+- A1: every external response treated as hostile — same SSRF-safe fetcher, strict parse, fail-closed, bounded.
 
 ## Feed sources — expanded to 13 reputable balanced RSS sources + SQLite cross-thread fix (2026-06-05)
 
@@ -434,12 +420,11 @@ Helper suite: **140 passed** (was 136). The new regression tests confirm `/api/f
 - AP / Reuters — reconsider if either ships a clean public RSS feed.
 
 ### Operator action
-Helper redeploy required to pick up the new sources: pull → rebuild → restart → verify `/health` returns 200 and `feeds.sources_count` reads **13**. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container**.
+Helper redeploy required to pick up the new sources: pull → rebuild → restart → verify `/health` returns 200 and `feeds.sources_count` reads **13**. Deploy profile unchanged: **non-root, read_only, cap_drop ALL, dedicated bridge — never any unrelated container on the host**.
 
 ### Standing rules
-- **unrelated host services: never touched.** Helper runs on its own bridge network.
+- Helper runs on its own bridge network.
 - A1: every source treated as hostile, parsed defensively, served as inert plain text — same parser path, more sources.
-- No secrets / absolute paths committed or logged.
 
 ## UX & Config — configurable feed width / font / side, settings overlay in menu (2026-06-04)
 
@@ -477,9 +462,7 @@ Settings persistence uses SharedPreferences integer ordinals only — **no secre
 - **Feel-test STAGED** for the operator's next at-the-box session — folded into the existing nav-feel-test checklist in `docs/OPERATIONS.md`. Adds Width/Font/Side cycling steps + D-pad navigation checks in the feed-right orientation.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
-- No secrets / absolute paths in source.
 
 ## Feed restructure — sectioned by source + per-source honest staleness (2026-06-04)
 
@@ -518,9 +501,7 @@ The feed-restructure introduces **no** new web-fetch, **no** new WebView, **no**
 - **Feel-test STAGED** for the operator's next at-the-box session — folded into the existing nav-feel-test in `docs/OPERATIONS.md`. The sectioned layout and per-source freshness chips work; the skim-ability and muscle-memory delta on the real Onn remote is the operator's call at the box.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
-- No secrets / absolute paths in source.
 
 ## Whole-wall D-pad navigation — global focus model + per-zone actions (2026-06-04)
 
@@ -564,9 +545,7 @@ The feed-expand path was independently verified to introduce **no** web-fetch su
 - **Feel-test STAGED** for the operator's next at-the-box session — see `docs/OPERATIONS.md §"Navigation chapter feel-test on the remote"`. The focus model logic works; the spatial feel on the real Onn remote is the operator's call at the box (WyzeGrid's 80-min foreground reclaim on `.182` defines the window).
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - Helper: non-root, read_only, cap_drop ALL, dedicated bridge — unchanged.
-- No secrets/absolute-paths in source.
 
 ## At-the-box finale Step 4 — `.182` restored to WyzeGrid + kiosk deferred (2026-06-04)
 
@@ -588,7 +567,6 @@ The away-from-box + safe-on-`.182` roadmap is now complete. The kiosk / foregrou
   2. **Helper feeds API — SQLite cross-thread bug** (latent since the TLS dual-listener; surfaces as occasional HTTP 500 on `/api/feed`). Noted with the small-fix path: thread-local connection or aiosqlite; also revisit collapsing the dual-uvicorn-instance architecture now that HTTP is gone.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - **WyzeGrid foreground + `WatchdogService` healthy on `.182`** at session end — verified by `dumpsys activity activities` + `dumpsys activity services`.
 - App tests green; helper tests green: 136. No code changes in this commit (docs + BACKLOG only).
 - **The at-the-box session is now complete.** Remaining work waits for the new MyMTS hardware.
@@ -600,7 +578,7 @@ The Stage 6 signed-update + auto-rollback path was operationally verified on rea
 ### Sequence on `.182`
 
 1. **Baseline established.** `./scripts/deploy-app.sh --archive-dir $HOME/.mymts/release`. Build → archive `mymts-0.0.0+5576551-20260604T230502Z.apk` → install → launch → health-gate **PASS** (`117 EV=TILE_READY events, 0 dead`) → promoted to known-good.
-2. **Deliberately-failing build pushed.** `gradle.properties` temporarily flipped to `MYMTS_HELPER_BASE_URL=https://192.168.99.99:9999` (unreachable). Force-clean rebuild (gradle's incremental build had been masking the URL change — see gotcha below) + deploy.
+2. **Deliberately-failing build pushed.** `gradle.properties` temporarily flipped to `MYMTS_HELPER_BASE_URL=https://<LAN_IP>:9999` (unreachable). Force-clean rebuild (gradle's incremental build had been masking the URL change — see gotcha below) + deploy.
 3. **Auto-rollback fired.** Health gate returned `FAIL_NOT_READY` (`0 EV=TILE_READY events; need ≥ 2`) after the 90 s capture window. Script automatically reinstalled the known-good APK and relaunched.
 4. **Wall came back up.** 4 distinct slots LIVE within 60 s: `bloomberg-tv`, `cbs-sports-hq`, `bbc-news`, `cnn`. `known-good` pointer unchanged. Failed APK retained in `$MYMTS_ARCHIVE_DIR/archive/` for diagnosis.
 5. **Manual rollback exercised.** `./scripts/deploy-app.sh --manual-rollback` reinstalled the known-good in ~6 seconds; wall up; `known-good` pointer unchanged.
@@ -615,7 +593,7 @@ The Stage 6 signed-update + auto-rollback path was operationally verified on rea
 - `docs/OPERATIONS.md` — "live device test STAGED" flipped to "**verified on `.182` on 2026-06-04**" with the exact sequence above + a gotcha about `:app:clean` being required before any `gradle.properties` change.
 
 ### Gotcha — gradle incremental builds can mask config changes
-When `gradle.properties` is edited (e.g. to point at a different `MYMTS_HELPER_BASE_URL`), gradle may report `:app:assembleRelease` as up-to-date and reuse the prior APK. The generated `BuildConfig.java` correctly reflects the new value, but the assembled APK doesn't. Discovered during the rollback test: an APK that was supposed to be "the failing build pointed at 192.168.99.99" had quietly been re-archived as the prior good build. Always force `:app:clean` before changing config-driven `buildConfigField` values. Runbook addition recorded in `docs/OPERATIONS.md`.
+When `gradle.properties` is edited (e.g. to point at a different `MYMTS_HELPER_BASE_URL`), gradle may report `:app:assembleRelease` as up-to-date and reuse the prior APK. The generated `BuildConfig.java` correctly reflects the new value, but the assembled APK doesn't. Discovered during the rollback test: an APK that was supposed to be "the failing build pointed at <LAN_IP>" had quietly been re-archived as the prior good build. Always force `:app:clean` before changing config-driven `buildConfigField` values. Runbook addition recorded in `docs/OPERATIONS.md`.
 
 ## At-the-box finale Step 2 — TLS cutover complete (2026-06-04)
 
@@ -648,10 +626,9 @@ Helper redeployed (full `docker compose up -d --build --force-recreate`):
 - `docs/OPERATIONS.md` — the dual-port migration table flipped from "staged" to **COMPLETE 2026-06-04**.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - **WyzeGrid** still as-found on `.182` — install was `am force-stop` + `install -r` + `am start`; `WatchdogService` foreground stayed alive through the whole cutover. WyzeGrid is the camera box's intended foreground owner and is restored to foreground at session-end Step 4.
 - App tests green; helper tests green: 136. No behavior change in either test surface from this commit (compose + xml config + comment edits only).
-- Helper redeployed via the standing standard — non-root, read_only, cap_drop ALL, dedicated bridge network — **never the unrelated host container**.
+- Helper redeployed via the standing standard — non-root, read_only, cap_drop ALL, dedicated bridge network — **never any unrelated container on the host**.
 
 ## Tile controls + captions OFF by default + lineup swap (2026-06-04)
 
@@ -748,10 +725,9 @@ slot-3 = cnn             (PREFERRED #5)
 - `docs/BACKLOG.md` — video-crop + CNBC entries.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - **WyzeGrid** as-found on `.182` — install was force-stop + install -r + am start; WyzeGrid foreground service stays alive.
 - App tests green: ~80+ (now includes 10 new for this push). Helper tests green: 136.
-- Helper redeployed per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge — never the unrelated host container).
+- Helper redeployed per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge — never any unrelated container on the host).
 
 ## Stage 6 — TLS to the helper, baseline (2026-06-03)
 
@@ -820,11 +796,11 @@ First helper restart crash-looped with `PermissionError: [Errno 13]` on the key 
 - `ARCHITECTURE.md` §12 — TLS mechanism + trust model + cert-rotation contract.
 
 ### Standing rules
-- **unrelated host services: never touched** — helper continues to run on its own bridge network (`mymts-net`), never the VPN container's.
+- Helper continues to run on its own bridge network (`mymts-net`), never the VPN container's.
 - **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy.
 - Helper tests green: **136** (132 prior + 4 new).
 - App tests green (unchanged count — only resource + config changes on the app side).
-- Helper redeployed to `<USER>@<HOST>` per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge network, **never the unrelated host container**).
+- Helper redeployed to `<USER>@<HOST>` per the standing standard (non-root, read_only, cap_drop ALL, dedicated bridge network, **never any unrelated container on the host**).
 
 ## Channel-resolution investigation (helper-side) — 8 channels live, up from 2 (2026-06-03)
 
@@ -882,10 +858,9 @@ The operator's preferred lineup (CBS Sports HQ → BBC News → CNN → LiveNOW 
 - `docs/THREAT-MODEL.md` — T-H5 unchanged in spirit; the prober's "live" definition is now tighter and matches the player.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - **WyzeGrid** untouched (helper-side; no `.182` involvement).
 - Helper tests: 132 green (122 prior + 10 new).
-- Helper redeployed to `<USER>@<HOST>:/srv/docker/mymts-helper/`; non-root, read_only, cap_drop ALL, dedicated bridge network — **never the unrelated host container**.
+- Helper redeployed to `<USER>@<HOST>:/srv/docker/mymts-helper/`; non-root, read_only, cap_drop ALL, dedicated bridge network — **never any unrelated container on the host**.
 
 ## Stage 6 — signed-install update path + rollback (2026-06-03)
 
@@ -937,7 +912,6 @@ Reads the `known-good` pointer (which never names a failed APK because promotion
 - `docs/THREAT-MODEL.md` — T-A2 populated covering signed installs / never-bricks / always-a-way-back / no-silent-bad-bundle-cascade. Residual risks: keystore loss and the window-bounded health gate.
 
 ### Standing rules
-- **unrelated host services: never touched.**
 - **WyzeGrid** as-found on `.182` (no device install in this commit).
 - App tests: ~50+ prior cases still green. Decision logic tests: 15 new cases.
 - Helper untouched in this track.
@@ -984,7 +958,6 @@ Evidence: `docs/findings/runs/stage-5-checkpoint-2-20260603-1755/` (picker scree
 - **`docs/findings/04-stage-5-menu.md`** — new finding doc covering the interaction model, the mark-and-allow decision, the telemetry proof, the persistence format.
 
 ### Standing rules held
-- **unrelated host services: never touched.**
 - **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy. No disable.
 - Helper untouched (UI-only commit).
 - App test count ~50+ cases.
@@ -1032,7 +1005,6 @@ The pre-existing `BoundTileTest` (4 cases) guards the honesty rule but did **not
 **Corollary: after any change to the video-pipeline wiring, telemetry (`EV=TILE_READY`, `EV=DECODER`, state-machine transitions) is the verification standard — not visual inspection.** This stage's first verification was visual ("the wall looks right") and the regression slipped past. The operator's directive to verify with telemetry (no display needed) is what surfaced it.
 
 ### Standing rules held
-- **unrelated host services untouched.**
 - **WyzeGrid** as-found on `.182`, foreground + `WatchdogService` healthy.
 - App tests green: `StreamPlayerManagerReadinessTest` (4) + `VideoGridBindingTest` (3) added; total app unit-test count ~36+.
 - Helper untouched (the bug was TV-only).
@@ -1063,7 +1035,6 @@ Evidence: `docs/findings/runs/stage-3-followup-20260603-1235/wall-followup-c2-pa
 
 ### Standing rules held
 
-- **unrelated host services untouched.**
 - **WyzeGrid** as-found on `.182`.
 - App tests green: 4 `BoundTileTest` + 3 `LineupSelectorDenyTest` added on top of prior suite. Helper tests green (122).
 
@@ -1125,7 +1096,6 @@ After the polish-pass redeploy seeded all 16 channels and the helper's prober ra
 - Polish (2026-06-03 11:09): `[cbs-sports-hq, nasa-tv, dw-news-en, redbull-tv]` lineup; NASA TV's master-OK/variant-FAIL settled DEAD per the 3-strike ladder, C2 panel rendered; screencap at `docs/findings/runs/stage-3-polish-20260603-1109/`.
 
 ### Standing rules held
-- **unrelated host services: never touched** for any reason across the stage.
 - **WyzeGrid:** re-enabled on `.182` at the end of every device run. No soak windows opened during Stage 3.
 - App test suites green: `TileSlotResolverTest`, `HelperClientParseTest`, `HelperClientFeedParseTest`, `RelativeTimeTest`, `SampleTickerSourceTest`, `LineupSelectorTest` + Stage 1/2 carry-over.
 - Helper test suites green: `test_feeds_seeder` (7) + prior 115 = 122.
@@ -1198,7 +1168,7 @@ Per the Stage 2 prompt's `A → B → C` sequencing override (recorded in `docs/
 
 ### Standards held
 - All 115 helper tests green. ruff clean.
-- Conventional commits, secrets only via `.env`, no absolute paths committed, the unrelated host container untouched.
+- Conventional commits, secrets only via `.env`.
 
 ### Stage 2 progress
 - **Part A — helper: DONE** (this entry).
@@ -1239,8 +1209,6 @@ Full details + on-device evidence in `docs/findings/02-player-state-machine.md`.
 ### Standards held
 - All app unit tests green (17 LivenessTracker + 5 SoakFixtures + 4 StreamSpec).
 - WyzeGrid was disabled on `.182` for the integration runs and **re-enabled afterward** per the documented recipe.
-- unrelated host services untouched.
-- No secrets / absolute paths in history.
 
 ### Stage 2 progress
 - **Part A — helper: DONE.**
@@ -1279,7 +1247,6 @@ Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Esc
 - 17 LivenessTracker tests + 9 prior app tests still green.
 - Helper 115 tests green.
 - WyzeGrid is disabled on `.182` for the long soak window; re-enable command documented and queued for closeout.
-- unrelated host services untouched.
 
 ### Stage 2 status (this section — interim; final state in the closeout section below)
 - ✅ Part A — helper.
@@ -1318,7 +1285,6 @@ Full details in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 Part C — Esc
 
 ### Standing rules held
 - WyzeGrid re-enabled on `.182` at end of session (foreground, watchdog service running). Verified.
-- unrelated host services untouched.
 - App + helper test suites green.
 
 ### Run-artifact hygiene at closeout

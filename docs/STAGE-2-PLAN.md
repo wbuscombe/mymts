@@ -20,7 +20,7 @@ This is what the helper exists to do. Per `04-TECHNICAL-APPROACH.md` and `02-TRU
 - Live-stream-address resolution in isolation, behind strict egress, fail-closed.
 - `/health` schema_version stays pinned; freshness fields per upstream added now.
 - Helper-side persistence (sqlite WAL is fine) for resolved-URL cache + dedupe.
-- Stage 2 deploy onto the NAS using the operator's standard layout (compose, non-root, pinned image by digest, no docker.sock, never the unrelated host container).
+- Stage 2 deploy onto the NAS using the operator's standard layout (compose, non-root, pinned image by digest, no docker.sock, never any unrelated container on the host).
 
 **Why this also unblocks the capacity measurement** (the Stage 1 gate): the soak's fixture pool is currently a hand-rolled list of test streams (mostly VOD-as-live) because there is no source of real, sustained live URLs. Once the helper resolves real channels, the soak runs against real load, not VOD that falls off the live window after 5 minutes.
 

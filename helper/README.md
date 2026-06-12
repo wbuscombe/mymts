@@ -42,5 +42,5 @@ Set `PHANTOM_MODE=1`. Stage 1 has nothing real to mock, so phantom mode currentl
 
 - Hold the operator's lineup/presets/sources. Those live on-device in the TV app.
 - Expose any public HTTP surface. It is internal-to-the-NAS.
-- Touch the unrelated host container. Standing rule.
+- Touch any unrelated container on the host. Standing rule.
 - Log secrets, internal IPs, or absolute paths beyond `/app`.

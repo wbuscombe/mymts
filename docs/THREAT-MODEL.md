@@ -58,7 +58,7 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 **T-H4. Helper compromise → blast radius on the NAS.**
 *Likelihood:* low (small attack surface).
 *Impact:* potential pivot to other NAS containers / NAS host.
-*Mitigation:* container is non-root (uid 10001), `read_only: true` rootfs, all capabilities dropped, `no-new-privileges`, explicit `cpus`/`mem_limit`, tmpfs `/tmp`. Container is on its own bridge network (`mymts-net`); does NOT join the unrelated host container's network or any other container's network. No `docker.sock` mount. Secrets injected at runtime via `.env` (never baked into image). State is in a named Docker volume — losing the container doesn't lose the data, and the operator inspects/backs up via documented commands.
+*Mitigation:* container is non-root (uid 10001), `read_only: true` rootfs, all capabilities dropped, `no-new-privileges`, explicit `cpus`/`mem_limit`, tmpfs `/tmp`. Container is on its own bridge network (`mymts-net`); does NOT join any unrelated container on the host's network or any other container's network. No `docker.sock` mount. Secrets injected at runtime via `.env` (never baked into image). State is in a named Docker volume — losing the container doesn't lose the data, and the operator inspects/backs up via documented commands.
 *Residual risk:* container escape via kernel/runtime CVE — addressed by Stage 6 monthly image digest refresh + kernel-patching cadence.
 *Traces to:* **A2**, **A4**, **A7**, **A9**.
 
