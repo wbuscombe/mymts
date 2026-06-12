@@ -26,7 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -57,21 +57,20 @@ import com.mymts.data.helper.Channel
 import kotlinx.coroutines.launch
 
 /**
- * The channel picker — a **scrollable LIST** (2026-06-11, replacing the old
- * 1-at-a-time left/right cycler). The operator D-pads **UP/DOWN** through every
- * channel and presses **SELECT** to assign one to the slot; **BACK** cancels.
+ * The channel picker — a **scrollable LIST grouped by category** (2026-06-11):
+ * Sports / US News / Global News / Business / Weather / General (the
+ * [ChannelCategory] taxonomy). The operator D-pads **UP/DOWN** through the
+ * sections, **SELECT** assigns a channel to the slot, **BACK** cancels.
  *
- * Focus discipline (same fixes as the menu chapter): the list **scrolls to keep
- * the focused row visible** (explicit bring-into-view, so the cursor never
- * slides into the overscan-clipped edge), it opens **focused on the slot's
- * current channel**, and closing returns focus cleanly to the controls/menu
- * underneath (the parent re-homes focus on dismiss).
+ * Focus discipline (the menu chapter's fixes): the list **scrolls to keep the
+ * focused row visible** (explicit bring-into-view, no sliding into the
+ * overscan-clipped edge), opens **focused on the slot's current channel**, and
+ * closing returns focus cleanly to the controls/menu underneath.
  *
- * Honest live/offline marking (Trust Bar C3): the list is sorted live-first
- * (by the call site) and each row carries its real status — a `LIVE` / `OFFLINE`
- * section header + a per-row `live`/`offline` tag — so the operator picks an
- * informed channel. Assigning an offline channel is allowed (mark-and-allow;
- * the wall renders the honest C2 panel for it).
+ * Honest status (Trust Bar C3): within each category, channels are sorted
+ * live-first (by the call site) and each row carries its real `live`/`offline`
+ * tag. Assigning an offline channel is allowed (the wall renders the honest C2
+ * panel for it).
  */
 @Composable
 fun ChannelPickerOverlay(
@@ -84,14 +83,14 @@ fun ChannelPickerOverlay(
 ) {
     if (channels.isEmpty()) return  // nothing to choose — caller decides what to do.
 
-    val initialIndex = remember(channels, currentSelection) {
-        initialChannelIndex(channels, currentSelection)
+    val focusSlug = remember(channels, currentSelection) {
+        channelToFocus(channels, currentSelection)
     }
-    // Open scrolled so the current channel is visible (with a little lead-in
-    // above it where possible), and focus it.
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = (initialIndex - 1).coerceAtLeast(0),
-    )
+    // Group into category sections in taxonomy order (live-first preserved).
+    val sections = remember(channels) {
+        ChannelCategory.sectioned(channels) { it.slug }
+    }
+    val listState = rememberLazyListState()
 
     BoxWithConstraints(
         modifier = modifier
@@ -107,8 +106,8 @@ fun ChannelPickerOverlay(
         ) {
             PickerListCard(
                 slotIndex = slotIndex,
-                channels = channels,
-                initialIndex = initialIndex,
+                sections = sections,
+                focusSlug = focusSlug,
                 listState = listState,
                 maxCardHeight = maxCardHeight,
                 onAssign = onAssign,
@@ -118,18 +117,27 @@ fun ChannelPickerOverlay(
     }
 }
 
+/**
+ * The slug the picker opens focused on: the slot's current channel if it's still
+ * in the list, otherwise the first channel (or null when the list is empty).
+ * Pure — unit-tested.
+ */
+internal fun channelToFocus(channels: List<Channel>, currentSelection: String?): String? {
+    if (channels.isEmpty()) return null
+    val current = currentSelection?.let { sel -> channels.firstOrNull { it.slug == sel } }
+    return (current ?: channels.first()).slug
+}
+
 @Composable
 private fun PickerListCard(
     slotIndex: Int,
-    channels: List<Channel>,
-    initialIndex: Int,
+    sections: List<Pair<String, List<Channel>>>,
+    focusSlug: String?,
     listState: androidx.compose.foundation.lazy.LazyListState,
     maxCardHeight: Dp,
     onAssign: (slug: String) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val liveCount = remember(channels) { channels.count { it.isPlayable } }
-
     Column(
         modifier = Modifier
             .widthIn(min = 440.dp)
@@ -157,18 +165,15 @@ private fun PickerListCard(
             state = listState,
             modifier = Modifier.heightIn(max = (maxCardHeight.value - 90f).coerceAtLeast(120f).dp),
         ) {
-            itemsIndexed(channels, key = { _, c -> c.slug }) { index, channel ->
-                // A light LIVE / OFFLINE section header at the group boundary
-                // (the list is sorted live-first), so the grouping reads at 10ft.
-                if (index == 0 && liveCount > 0) SectionLabel("LIVE", MenuColors.RowDetail)
-                if (index == liveCount && index < channels.size) {
-                    SectionLabel("OFFLINE", MenuColors.RowDetailOffline)
+            sections.forEach { (category, chans) ->
+                item(key = "hdr-$category") { SectionLabel(category) }
+                items(chans, key = { it.slug }) { channel ->
+                    ChannelRow(
+                        channel = channel,
+                        isInitial = channel.slug == focusSlug,
+                        onSelect = { onAssign(channel.slug) },
+                    )
                 }
-                ChannelRow(
-                    channel = channel,
-                    isInitial = index == initialIndex,
-                    onSelect = { onAssign(channel.slug) },
-                )
             }
         }
 
@@ -182,20 +187,11 @@ private fun PickerListCard(
     }
 }
 
-/**
- * The list opens focused on the slot's current channel; if it's unset or no
- * longer in the list, it opens at the top. Pure — unit-tested.
- */
-internal fun initialChannelIndex(channels: List<Channel>, currentSelection: String?): Int =
-    currentSelection
-        ?.let { sel -> channels.indexOfFirst { it.slug == sel } }
-        ?.takeIf { it >= 0 } ?: 0
-
 @Composable
-private fun SectionLabel(text: String, color: Color) {
+private fun SectionLabel(text: String) {
     Text(
-        text = text,
-        color = color,
+        text = text.uppercase(),
+        color = MenuColors.FocusAccent,
         fontSize = 9.sp,
         letterSpacing = 2.sp,
         fontWeight = FontWeight.Bold,
@@ -213,12 +209,9 @@ private fun ChannelRow(
     val interaction = remember { MutableInteractionSource() }
     val isFocused by interaction.collectIsFocusedAsState()
 
-    // Open with focus on the slot's current channel.
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { if (isInitial) focusRequester.requestFocus() }
 
-    // Scroll the focused row into view (the picker follows the cursor — no
-    // sliding into the overscan-clipped edge).
     val bring = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
 
