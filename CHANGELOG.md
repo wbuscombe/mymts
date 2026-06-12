@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Web client parity — per-sport cards, news, settings, schema guard (2026-06-12, Campaign 3 HALF 1)
+
+The LAN web client (served at `/app`) reaches feature parity with the native wall (`web/` only; consumes the existing helper endpoints):
+- **Per-sport ticker cards** rendered from the **structured** ticker data (`game`/`card`, not display-string parsing): team game cards (abbr + score + the ESPN status block, color-coded live/final/upcoming) and the four individual-sport cards by `kind` (leaderboard / fight / match / race), matching the native design + palette.
+- **News** in the web ticker (source-labelled, inert plain text — A1).
+- **Honest-degradation pills** carry to web: per-entry SAMPLE (`is_sample`), envelope-level STALE — never faked (the real "no games" state shows no pill).
+- **`schema_version` guard** in the web client (closes **ARCH-1** PARTIAL): a version mismatch surfaces a visible "client out of date" state — never silently renders an unknown contract.
+- **Web settings parity** (gear modal): grid rows×cols, sports-leagues pool (built from the real served leagues), feed recency, ticker scroll / news toggles — localStorage-persisted; the TV-panel-only fit controls (Fit/Stretch/Overscan/Position) correctly skipped.
+- **CI now runs the web tests** (`node --test`, 50 green). CSP stays locked, no CDN, hls.js vendored untouched, no-proxy preserved.
+
+Goes live when the helper is redeployed at the NAS (rsyncs `web/`). Visual parity is the operator's in-browser feel-test. HALF 2 (playlist/M3U endpoint + the profile abstraction — the cross-platform-profiles fork) is the continuation.
+
 ## Ticker end-of-crawl dwell + in-flight deploy cleanup (2026-06-12)
 
 - **Ticker legibility (app):** the sports ticker now **holds at the fully-revealed right edge** of a league crawl before flipping to the next category, so the rightmost content is readable. `PageRow`'s continuous marquee became a controlled single-pass reveal + a ~0.75s end-hold (capped via `revealDurationMs` so the hold always fits before the flip); the page-flip dwell, the pinned marker curtain, and the stale/paused behavior are unchanged. New `RevealDurationTest` pins the capped-duration logic. *Ships on the next `.92` deploy; visual confirmation on the panel is the operator's step.*
