@@ -2,7 +2,24 @@
 
 > Ambient news video wall — a native Android TV app for the Onn 4K box, paired with a minimal NAS-side helper. Your channels, your wall, on-by-default, calm from the couch.
 
-**Status:** Stage 0 — repository bootstrapped, foundation docs locked, no code yet.
+**Status:** Built — Android TV app + Python helper + LAN web client are implemented and in use (markets/sports/weather, the configurable wall, the menu). See [`CHANGELOG.md`](CHANGELOG.md).
+
+## Quickstart (clone → running locally, no secrets)
+
+```bash
+# 1. Helper in demo mode — mock data, zero network egress, no NAS/secrets:
+cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper
+#    → http://localhost:8091  (web client at /app)
+
+# 2. TV app (Android TV emulator running), pointed at the local helper:
+./gradlew :app:installDebug
+adb shell am start -n com.mymts/.MainActivity --es helper "http://10.0.2.2:8091"
+```
+
+Full walkthrough (prerequisites, the fuller real-public-data path, troubleshooting):
+[`ONBOARDING.md`](ONBOARDING.md). Prefer your AI assistant to set it up? Feed it
+[`docs/onboarding/ONBOARD-01-SETUP.md`](docs/onboarding/ONBOARD-01-SETUP.md).
+Tests: `cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest`.
 
 ---
 

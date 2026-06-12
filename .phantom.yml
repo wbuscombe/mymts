@@ -1,0 +1,50 @@
+# Phantom (demo / offline) mode — the no-secrets, no-NAS, zero-outbound run.
+# A collaborator boots THIS out of the box: no operator keystore, cert, .env,
+# NAS, or real config required. The helper serves deterministic fixtures and a
+# hard contract that no outbound HTTP leaves the process.
+#
+# Audience: tooling + the onboarding flow (see ONBOARDING.md / docs/onboarding/).
+
+name: mymts
+description: >
+  Ambient news video wall — Android TV app + a minimal Python/FastAPI helper.
+  Phantom mode runs the helper on mock data so the wall UI works locally with
+  no credentials and no network egress.
+
+mode:
+  flag: PHANTOM_MODE           # env var; "1" enables phantom, "0" = live (default)
+  enable: PHANTOM_MODE=1
+  contract: zero-outbound      # phantom_resolver refuses to resolve ANY hostname
+
+components:
+  helper:
+    toolchain: python + uv
+    run: cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper
+    serves: http://localhost:8091     # HTTP only in phantom (no cert needed)
+    fixtures:
+      - feed items preloaded into the sqlite db (phantom.preload) → /api/feed
+      - two channels seeded status=live with synthetic current_urls → /api/channels
+      - ticker markets/sports return sample/honest entries → /api/ticker
+    web_client: http://localhost:8091/app   # the static LAN web client, mounted
+  app:
+    toolchain: gradle (Kotlin / Compose for TV)
+    helper_url_default: http://localhost:8091   # build default → points at the phantom helper
+    helper_url_override: MYMTS_HELPER_BASE_URL (local.properties or -P)
+    note: >
+      With no helper at all the app degrades honestly (SampleTickerSource ticker
+      + "helper unreachable" feed/grid). Run the phantom helper above for the
+      full mock wall.
+
+routes:
+  - GET /health          # liveness + build_sha + counts
+  - GET /api/channels    # phantom: 2 live mock channels
+  - GET /api/feed        # phantom: preloaded mock feed items
+  - GET /api/ticker      # phantom: sample markets + sports
+  - GET /app             # static web client
+
+verify:
+  # CI asserts the hard contract; locally:
+  - curl -fsS http://localhost:8091/health        # 200
+  - curl -fsS http://localhost:8091/api/feed       # non-empty mock items
+  - curl -fsS http://localhost:8091/api/channels   # 2 live mock channels
+  - "phantom boot performs ZERO outbound HTTP (helper test_phantom asserts this)"
