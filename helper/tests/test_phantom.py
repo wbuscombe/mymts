@@ -2,11 +2,10 @@
 
 Phantom mode (`PHANTOM_MODE=1`) is the operator's onboarding contract:
 the helper boots, serves /api/feed and /api/channels with synthetic
-data, and makes **zero outbound HTTP calls**. Run this test (`uv run
-pytest -k phantom`) to assert the contract holds — if a future change
-ever slips a network call into the phantom path, this test fails.
-(A CI gate to run it on every push is planned — see
-docs/adversarial-review-2026-06.md, DEPLOY-4.)
+data, and makes **zero outbound HTTP calls**. CI runs this test on every
+push/PR (.github/workflows/ci.yml); run it locally with `uv run pytest -k
+phantom`. If a future change ever slips a network call into the phantom
+path, this test fails.
 
 The mechanism: phantom mode swaps the fetcher's resolver for one that
 raises on every host lookup attempt. Any code path that tries to fetch

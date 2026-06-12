@@ -14,8 +14,8 @@
 
 `tests/test_phantom.py` asserts this hard contract: a phantom app boot +
 a /api/feed + a /api/channels request must produce zero outbound HTTP calls.
-Run it with `uv run pytest -k phantom`. (A CI gate to run it on every push is
-planned — see docs/adversarial-review-2026-06.md, DEPLOY-4.)
+CI runs it on every push/PR (.github/workflows/ci.yml); run it locally with
+`uv run pytest -k phantom`.
 """
 
 from __future__ import annotations

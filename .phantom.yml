@@ -43,7 +43,7 @@ routes:
   - GET /app             # static web client
 
 verify:
-  # run locally (no CI yet — planned; see docs/adversarial-review-2026-06.md DEPLOY-4):
+  # asserted by CI on every push/PR (.github/workflows/ci.yml); also run locally:
   - curl -fsS http://localhost:8091/health        # 200
   - curl -fsS http://localhost:8091/api/feed       # non-empty mock items
   - curl -fsS http://localhost:8091/api/channels   # all ~21 seeded channels, marked live

@@ -72,7 +72,7 @@ Each entry will have: **Threat**, **Affected boundary**, **Likelihood**, **Impac
 **T-H6. Phantom mode quietly making outbound calls.**
 *Likelihood:* low (a contributor would have to actively break the contract).
 *Impact:* phantom mode is the operator's onboarding contract; a leak undermines the no-network guarantee.
-*Mitigation:* `phantom.phantom_resolver` raises `PhantomNetworkBlocked` on every hostname lookup. A contract test (`test_phantom_app_boots_and_serves_synthetic_data`) asserts the full app + `/api/feed` + `/api/channels` flow completes without any outbound call — run with `uv run pytest`; a CI gate to run it on every push is planned (see `docs/adversarial-review-2026-06.md`, DEPLOY-4). Any future code path that bypasses the fetcher and dials raw sockets would still need to resolve a hostname through the OS — `PhantomNetworkBlocked` won't catch a literal-IP raw-socket dial, but that's a clear code-review signal that something's wrong.
+*Mitigation:* `phantom.phantom_resolver` raises `PhantomNetworkBlocked` on every hostname lookup. A contract test (`test_phantom_app_boots_and_serves_synthetic_data`) asserts the full app + `/api/feed` + `/api/channels` flow completes without any outbound call — CI runs it on every push/PR (`.github/workflows/ci.yml`), and you can run it with `uv run pytest`. Any future code path that bypasses the fetcher and dials raw sockets would still need to resolve a hostname through the OS — `PhantomNetworkBlocked` won't catch a literal-IP raw-socket dial, but that's a clear code-review signal that something's wrong.
 *Traces to:* **A4**, **A8** (boundary is observable + fails safe).
 
 **T-H7. Secret leakage through logs.**
