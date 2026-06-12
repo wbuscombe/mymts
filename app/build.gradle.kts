@@ -1,4 +1,5 @@
 import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -107,9 +108,66 @@ fun loadSigningSource(): SigningConfigSource {
 
 val signingSource = loadSigningSource()
 
+// Network-security-config is GENERATED at build time from the helper host, so
+// no operator IP/hostname is committed. Single source of truth: the same
+// `helperBaseUrl` (gitignored local.properties / -P / localhost default).
+//   - https helper host  -> domain-config pinning @raw/helper_cert for that
+//     host, cleartext refused (the operator's real release posture).
+//   - http/localhost     -> cleartext allowed only to loopback + the emulator
+//     alias (10.0.2.2), no pinning (the demo/local default).
+// The generated file lands in a generated res dir wired into sourceSets; the
+// static committed copy was removed. See PHASE 1b of the professionalization.
+val nscResDir = layout.buildDirectory.dir("generated/res/nsc")
+val generateNetworkSecurityConfig by tasks.registering {
+    val outDir = nscResDir
+    val helperUrl = helperBaseUrl
+    inputs.property("helperUrl", helperUrl)
+    outputs.dir(outDir)
+    doLast {
+        val host = runCatching { URI(helperUrl).host }.getOrNull()
+        val isHttps = helperUrl.startsWith("https://") && !host.isNullOrBlank()
+        val domainBlock = if (isHttps) """
+    <!-- Helper host pinned to its own self-signed cert (host from local
+         config, not committed). System/user CAs are NOT trust anchors here, so
+         even a global-CA-signed MITM cert is refused. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">$host</domain>
+        <trust-anchors>
+            <certificates src="@raw/helper_cert" />
+        </trust-anchors>
+    </domain-config>""" else """
+    <!-- Demo/local default: helper on http://localhost (or the emulator alias
+         10.0.2.2). Cleartext allowed ONLY to loopback/emulator; no pinning. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>"""
+        val xmlDir = outDir.get().dir("xml").asFile
+        xmlDir.mkdirs()
+        xmlDir.resolve("network_security_config.xml").writeText(
+            """<?xml version="1.0" encoding="utf-8"?>
+<!-- GENERATED at build time from the helper host (app/build.gradle.kts ->
+     generateNetworkSecurityConfig). Do NOT edit or commit this file. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>$domainBlock
+</network-security-config>
+"""
+        )
+    }
+}
+
 android {
     namespace = "com.mymts"
     compileSdk = 35
+
+    // Pick up the generated network_security_config.xml (TLS-pin host from
+    // local config). The generator runs before resource merge (see below).
+    sourceSets["main"].res.srcDir(nscResDir)
 
     defaultConfig {
         applicationId = "com.mymts"
@@ -185,6 +243,10 @@ android {
         buildConfig = true
     }
 }
+
+// Generate the network-security-config before any resource processing so the
+// merged resources always include the freshly-derived (uncommitted) file.
+tasks.named("preBuild") { dependsOn(generateNetworkSecurityConfig) }
 
 dependencies {
     implementation(libs.core.ktx)

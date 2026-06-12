@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+
 # MyMTS tile-count probe (Stage 2 Part C).
 #
 # For a given N: install fresh APK on the device, launch the soak harness
@@ -12,19 +15,21 @@ set -euo pipefail
 # This is the apparatus for the "escalating probe" — call it for N=1..6
 # and bracket the ceiling.
 #
-# Standing rule: NEVER touches the unrelated host container.
+# Standing rule: never touches unrelated services/containers sharing the
+# helper's host; the helper runs isolated on its own network.
 
 usage() {
     cat <<EOF
 Usage: $0 --device <ip[:port]> --tiles <N> --duration <seconds> [options]
 
 Required:
-  --device <ip[:port]>      Onn box address (e.g. <LAN_IP>:5555)
+  --device <ip[:port]>      Onn box address (e.g. 192.0.2.10:5555)
   --tiles <N>               number of tiles to probe (1..16)
   --duration <seconds>      how long to leave the soak running
 
 Options:
-  --helper <url>            helper base URL (default: http://<LAN_IP>:8091)
+  --helper <url>            helper base URL (default: http://192.0.2.20:8091,
+                            set in scripts/deploy.local.env)
   --run-id <id>             output dir name (default: auto-timestamped)
   --no-install              skip APK install (assume already on device)
 
@@ -34,10 +39,10 @@ EOF
     exit 2
 }
 
-DEVICE=""
+DEVICE="${MYMTS_DEPLOY_DEVICE:-}"
 TILES=""
 DURATION=""
-HELPER="http://<LAN_IP>:8091"
+HELPER="${MYMTS_PROBE_HELPER_URL:-http://192.0.2.20:8091}"
 RUN_ID=""
 INSTALL=1
 

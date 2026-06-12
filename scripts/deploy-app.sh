@@ -20,11 +20,15 @@
 # but does NOT install or touch the device. The decision logic is the
 # same Python function tested in `scripts/test_health_check.py`.
 #
-# **Hard rule:** NEVER touches the unrelated host services. NEVER pushes a debug-signed
-# APK to a real device — the signing-verification step refuses unless
-# the APK was signed with the operator's release key.
+# **Hard rule:** never touches unrelated services/containers sharing the
+# helper's host; the helper runs isolated on its own network. NEVER pushes
+# a debug-signed APK to a real device — the signing-verification step
+# refuses unless the APK was signed with the operator's release key.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
 
 usage() {
     cat <<EOF
@@ -35,7 +39,8 @@ Usage: $0 [--device <ip[:port]>] [--archive-dir <path>] [--dry-run]
 Stage 6 update flow. Default mode builds a signed release, installs to
 the device, and gates promotion on telemetry.
 
-  --device <ip[:port]>      Target device for adb. Default: <LAN_IP>:5555.
+  --device <ip[:port]>      Target device for adb. Default: 192.0.2.10:5555
+                            (set in scripts/deploy.local.env).
   --archive-dir <path>      Where versioned APKs + known-good pointer live.
                             Default: \$HOME/.mymts/release/.
   --dry-run                 Build + archive but do not touch the device. Use
@@ -50,7 +55,7 @@ the device, and gates promotion on telemetry.
 EOF
 }
 
-DEVICE="${MYMTS_DEPLOY_DEVICE:-<LAN_IP>:5555}"
+DEVICE="${MYMTS_DEPLOY_DEVICE:-192.0.2.10:5555}"
 ARCHIVE_DIR="${MYMTS_ARCHIVE_DIR:-$HOME/.mymts/release}"
 DRY_RUN=0
 MANUAL_ROLLBACK=0
@@ -120,7 +125,7 @@ write_known_good_atomic() {
 
 verify_signed_release() {
     # A debug-signed APK MUST NOT be deployed as a release — refuse
-    # here, never push debug to .182. apksigner is the source of truth
+    # here, never push debug to the device. apksigner is the source of truth
     # for the actual signing cert; aapt2 dump can't see it past
     # v2-signed APKs reliably.
     if command -v apksigner >/dev/null 2>&1; then

@@ -96,3 +96,6 @@ docs/findings/runs/**/events.log
 # Operator-local operational runbooks (deploy/provisioning/rotation/recovery).
 # Environment-specific: host names, IPs, paths, device inventory live ONLY here.
 docs/ops-local/
+
+# Operator-local deploy targets (real host/IP/path); template is .example.
+scripts/deploy.local.env

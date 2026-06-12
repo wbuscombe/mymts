@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+
 # MyMTS soak harness — host-side runner.
 #
 # Pushes a debug APK to the Onn 4K, starts the in-app soak mode, then
@@ -20,15 +23,17 @@ set -euo pipefail
 #   scripts/parse-soak-log.py docs/findings/runs/<run-id>/
 # to produce a summary the finding doc can quote.
 #
-# Hard rule: this script never touches the unrelated host container or any
-# NAS-side infra. It only talks to the Onn box over adb.
+# Hard rule: this script never touches unrelated services/containers
+# sharing the helper's host; the helper runs isolated on its own network.
+# It only talks to the Onn box over adb.
 
 usage() {
     cat <<EOF
 Usage: $0 --device <ip[:port]> --tiles <N> [options]
 
 Required:
-  --device <ip[:port]>      e.g. <LAN_IP> or <LAN_IP>:5555
+  --device <ip[:port]>      e.g. 192.0.2.10 or 192.0.2.10:5555
+                            (default set in scripts/deploy.local.env)
   --tiles <N>               number of simultaneous tiles (1-16)
 
 Options:
@@ -49,7 +54,7 @@ EOF
     exit 2
 }
 
-DEVICE=""
+DEVICE="${MYMTS_DEPLOY_DEVICE:-}"
 TILES=""
 POOL="live"
 RESOLUTION="auto"

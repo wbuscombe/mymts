@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+
 # MyMTS helper deploy — Stage 2.
 #
 # Builds the image with BUILD_SHA + BUILD_VERSION from the current git
-# state, copies the artifact set to the NAS, and runs the full
+# state, copies the artifact set to the helper host, and runs the full
 # pull → rebuild → restart cycle. Verifies /health responds with the
 # new SHA before declaring success.
 #
 # The deploy follows the standing standard: a bare restart never picks
 # up new code; this script does the full cycle and verifies.
 #
-# Hard rule: NEVER touches the unrelated host container. The compose file
-# defines its own internal network and references nothing else on the
-# NAS.
+# Hard rule: never touches unrelated services/containers sharing the
+# helper's host; the helper runs isolated on its own network. The compose
+# file defines its own internal network and references nothing else on
+# the host.
 
 usage() {
     cat <<EOF
-Usage: $0 [--host <user@nas>] [--remote-path <path>]
+Usage: $0 [--host <user@host>] [--remote-path <path>]
 
 Defaults:
-  --host         cargo@cargo.local        (override via MYMTS_NAS_HOST env)
-  --remote-path  /srv/docker/mymts-helper
+  --host         my-helper-host           (set in scripts/deploy.local.env)
+  --remote-path  /srv/mymts-helper        (set in scripts/deploy.local.env)
 
 This script:
   1. Computes BUILD_SHA + BUILD_VERSION from git.
@@ -31,24 +35,26 @@ This script:
   5. SSHes to host and runs:
         docker compose build --pull
         docker compose up -d
-  6. Polls /health from the NAS itself until it returns the new SHA
-     (or fails after a timeout).
+  6. Polls /health from the helper host itself until it returns the new
+     SHA (or fails after a timeout).
 
-Pre-reqs on the NAS:
+Pre-reqs on the helper host:
   - docker + docker compose v2
-  - the operator's standard /srv/docker layout
-  - unrelated host container untouched (this script never references it)
+  - the operator's standard docker layout
+  - unrelated services/containers untouched (this script never references
+    them; the helper runs isolated on its own network)
 EOF
     exit 2
 }
 
-HOST="${MYMTS_NAS_HOST:-<HOST>}"   # SSH alias resolves to cargo@<LAN_IP>
-REMOTE_PATH="/srv/docker/mymts-helper"
+HOST="${MYMTS_NAS_HOST:-my-helper-host}"   # SSH alias resolves to your helper host
+REMOTE_PATH="${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}"
+export MYMTS_HELPER_REMOTE_PATH="$REMOTE_PATH"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --host) HOST="$2"; shift 2 ;;
-        --remote-path) REMOTE_PATH="$2"; shift 2 ;;
+        --remote-path) REMOTE_PATH="$2"; export MYMTS_HELPER_REMOTE_PATH="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown arg: $1" >&2; usage ;;
     esac
@@ -75,7 +81,7 @@ echo "==> ensuring remote layout"
 ssh "$HOST" "mkdir -p '$REMOTE_PATH/_src'"
 # Note: container state lives in the named volume `mymts-helper-data`
 # (not a bind mount), so the host directory layout doesn't need to be
-# permissioned for uid 10001. To inspect state from the NAS host:
+# permissioned for uid 10001. To inspect state from the helper host:
 #   docker volume inspect mymts-helper-data
 #   docker exec mymts-helper ls -la /data
 # To back up:
@@ -92,7 +98,7 @@ rsync -az --delete \
     helper/ "$HOST:$REMOTE_PATH/_src/"
 
 # LAN web client static files (repo-root web/, a sibling of helper/ so
-# it isn't in the image build context). The NAS compose bind-mounts
+# it isn't in the image build context). The helper compose bind-mounts
 # _web/ read-only at /app/web; WEB_CLIENT_DIR (set in .env below) turns
 # the mount on. Inert static files only — no secrets, credential-free.
 echo "==> rsyncing web client static files"
@@ -101,7 +107,7 @@ rsync -az --delete \
     --exclude '.DS_Store' \
     web/ "$HOST:$REMOTE_PATH/_web/"
 
-echo "==> rendering compose.yml on the NAS"
+echo "==> rendering compose.yml on the helper host"
 ssh "$HOST" "cp '$REMOTE_PATH/_src/deploy/docker-compose.nas.yml' '$REMOTE_PATH/compose.yml'"
 
 echo "==> writing/refreshing .env (build identity + defaults)"

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+
 # MyMTS fixture validator — solo-test a single HLS URL on the Onn box.
 #
 # Why this exists: a HEAD-200 from the developer's Mac doesn't prove a stream
 # can play from the box's network/CDN path. The first long soak burned 24 h
-# on fixtures that HEAD'd fine but never produced a frame on .182. This
+# on fixtures that HEAD'd fine but never produced a frame on the box. This
 # validator launches the soak harness against ONE stream at tiles=1 via an
 # ad-hoc-fixture intent extra, sleeps for the requested duration, then
 # summarizes the relevant MYMTS_SOAK telemetry so the caller can decide
@@ -18,7 +21,8 @@ usage() {
 Usage: $0 --device <ip[:port]> --id <id> --label <label> --url <url> [options]
 
 Required:
-  --device <ip[:port]>      e.g. <LAN_IP>:5555
+  --device <ip[:port]>      e.g. 192.0.2.10:5555
+                            (default set in scripts/deploy.local.env)
   --id <id>                 short slug, used as the tile id
   --label <label>           human-friendly label (shown on screen)
   --url <url>               https://... HLS .m3u8
@@ -38,7 +42,7 @@ EOF
     exit 2
 }
 
-DEVICE=""
+DEVICE="${MYMTS_DEPLOY_DEVICE:-}"
 ID=""
 LABEL=""
 URL=""

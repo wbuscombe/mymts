@@ -1,7 +1,7 @@
 # MyMTS Helper — NAS deploy.
 #
-# Layout (operator standard):
-#   /srv/docker/mymts-helper/
+# Layout (operator standard, ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}):
+#   /srv/mymts-helper/
 #     compose.yml          (symlink to or copy of this file)
 #     data/                (sqlite + future state — bind-mounted)
 #     .env                 (PHANTOM_MODE/BUILD_SHA/BUILD_VERSION/LOG_LEVEL)
@@ -15,15 +15,18 @@
 #     reaches the helper through the NAS network, not the public internet,
 #   - secrets injected at runtime via .env (never baked into the image).
 #
-# unrelated host container is NEVER referenced or networked into. Standing rule.
+# Unrelated services/containers sharing the helper's host are NEVER
+# referenced or networked into; the helper runs isolated on its own
+# network. Standing rule.
 
 services:
   helper:
     container_name: mymts-helper
     image: mymts-helper:${BUILD_VERSION:-0.0.0-dev}
     build:
-      # On the NAS this resolves to /srv/docker/mymts-helper/_src/
-      # which is the rsynced helper/ tree from the dev machine.
+      # On the helper host this resolves to
+      # ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_src/ which is the
+      # rsynced helper/ tree from the dev machine.
       context: ./_src
       args:
         BUILD_SHA: ${BUILD_SHA:-dev}
@@ -68,24 +71,24 @@ services:
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
-      # /var/lib/docker/volumes/mymts-helper-data/_data on the NAS;
+      # /var/lib/docker/volumes/mymts-helper-data/_data on the helper host;
       # backup/restore commands are documented in
       # docs/OPERATIONS.md "Helper backup/restore".
       - mymts-helper-data:/data:rw
-      # TLS cert + private key — operator-supplied on the NAS at
-      # /srv/docker/mymts-helper/_secrets/. NEVER in the repo.
-      # Mounted read-only (`:ro`) so a compromised container cannot
-      # rewrite the key; ownership inside the container is 10001:10001
-      # to match the non-root user.
-      - /srv/docker/mymts-helper/_secrets:/etc/ssl/mymts:ro
+      # TLS cert + private key — operator-supplied on the helper host at
+      # ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_secrets/. NEVER in
+      # the repo. Mounted read-only (`:ro`) so a compromised container
+      # cannot rewrite the key; ownership inside the container is
+      # 10001:10001 to match the non-root user.
+      - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_secrets:/etc/ssl/mymts:ro
       # LAN web client static files — the repo-root `web/` tree, rsynced
-      # by deploy-helper.sh to `_web/` on the NAS. Mounted READ-ONLY: the
-      # client is inert static files (HTML/CSS/JS), credential-free, and
-      # the container can never rewrite them. Served at /app via
-      # WEB_CLIENT_DIR above. (web/ is a repo-root sibling of helper/, so
-      # it is NOT in the image build context — a bind mount is how it
-      # reaches the container without an image rebuild for web edits.)
-      - /srv/docker/mymts-helper/_web:/app/web:ro
+      # by deploy-helper.sh to `_web/` on the helper host. Mounted
+      # READ-ONLY: the client is inert static files (HTML/CSS/JS),
+      # credential-free, and the container can never rewrite them. Served
+      # at /app via WEB_CLIENT_DIR above. (web/ is a repo-root sibling of
+      # helper/, so it is NOT in the image build context — a bind mount is
+      # how it reaches the container without an image rebuild for web edits.)
+      - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_web:/app/web:ro
     networks:
       - mymts-net
     # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed
