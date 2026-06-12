@@ -1,0 +1,82 @@
+name: CI
+
+# Minimal, secret-free CI (review DEPLOY-4, the highest-leverage single action).
+# Everything here is keyless/phantom — it needs NO operator secret, no keystore,
+# no device. Release signing falls back to debug for unit tests. Do NOT add a
+# release-signing job here (that would require the keystore in CI — forbidden;
+# see AGENTS.md).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helper:
+    name: helper — pytest + ruff + contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync helper deps (locked)
+        working-directory: helper
+        run: uv sync --extra dev
+
+      # Advisory for now: the codebase carries ~51 pre-existing ruff violations
+      # (mostly E501 long lines in test fixtures) from never having had CI run
+      # ruff. New code is kept clean; clearing the existing debt is a separate
+      # backlog item, so this annotates but does not block the build yet.
+      - name: Lint (ruff, advisory)
+        working-directory: helper
+        continue-on-error: true
+        run: uv run ruff check .
+
+      - name: Helper test suite (incl. poller tests + the phantom zero-egress contract)
+        working-directory: helper
+        run: uv run pytest -q
+
+      - name: Cross-component schema_version consistency (ARCH-1)
+        run: python3 scripts/check_schema_consistency.py
+
+      - name: adb deploy-invariant gate test (DEPLOY-2)
+        run: bash scripts/test_adb_invariant.sh
+
+      - name: Phantom demo boots clean (no secrets, fresh-clone gate)
+        working-directory: helper
+        run: |
+          set -euo pipefail
+          PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper &
+          HELPER_PID=$!
+          trap 'kill "$HELPER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8091/health >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8091/health \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["phantom"], d; print("phantom /health ok, build_sha:", d.get("build_sha"))'
+          curl -fsS http://127.0.0.1:8091/api/channels \
+            | python3 -c 'import json,sys; c=json.load(sys.stdin)["channels"]; assert len(c) >= 1, c; print(len(c), "mock channels served")'
+          curl -fsS http://127.0.0.1:8091/api/feed \
+            | python3 -c 'import json,sys; i=json.load(sys.stdin)["items"]; assert len(i) >= 1, i; print(len(i), "mock feed items")'
+
+  app:
+    name: app — JVM unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: App unit tests (release variant, JVM)
+        run: ./gradlew :app:testReleaseUnitTest --no-daemon
