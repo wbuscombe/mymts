@@ -2,6 +2,7 @@ package com.mymts.ui.wall
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,8 +11,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -36,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -100,9 +103,50 @@ fun TickerStrip(
  *  percent shortens the dwell (faster), lower lengthens it (slower). */
 private const val BASE_DWELL_MS = 9000L
 
-/** Base horizontal marquee velocity at 100% scroll speed; the "Scroll speed"
+/** Base horizontal reveal velocity at 100% scroll speed; the "Scroll speed"
  *  slider scales it linearly. */
 private val BASE_SCROLL_VELOCITY = 32.dp
+
+/** A page rests at its START (left edge fully shown) for this long before the
+ *  single-pass reveal begins, so the operator catches the leftmost content. */
+private const val START_HOLD_MS = 800L
+
+/** A page HOLDS at its fully-revealed end (right edge shown) for this long
+ *  before the next flip, so the operator can READ the rightmost content — the
+ *  fix for the "flips almost instantly once the right edge is revealed" bug. */
+private const val END_HOLD_MS = 750L
+
+/**
+ * Pure, testable reveal-duration policy for one page's single-pass horizontal
+ * reveal.
+ *
+ * [overflowPx] is the row's horizontal overflow (`scrollState.maxValue`, the px
+ * that must scroll past the panel; 0 means the page already fits). The NATURAL
+ * duration is `overflowPx / velocityPxPerSec` (the configured scroll velocity,
+ * in dp/sec converted to px/sec via [density]). To GUARANTEE the end-hold is
+ * visible before [PagedTicker] flips this page, the reveal is CAPPED so
+ * `startHoldMs + reveal + endHoldMs <= dwellMs` — very wide content simply
+ * reveals a little faster rather than eating the end-hold.
+ *
+ * Returns 0 when there's nothing to reveal ([overflowPx] <= 0): the page just
+ * sits and holds.
+ */
+internal fun revealDurationMs(
+    overflowPx: Int,
+    velocityDpPerSec: Float,
+    density: Float,
+    dwellMs: Long,
+    startHoldMs: Long,
+    endHoldMs: Long,
+): Int {
+    if (overflowPx <= 0) return 0
+    val velocityPxPerSec = (velocityDpPerSec * density).coerceAtLeast(1f)
+    val natural = (overflowPx / velocityPxPerSec * 1000f).toLong()
+    // The reveal may use at most whatever dwell remains after both holds; never
+    // negative (clamped to 0 so an absurdly short dwell still flips cleanly).
+    val cap = (dwellMs - startHoldMs - endHoldMs).coerceAtLeast(0L)
+    return natural.coerceAtMost(cap).toInt()
+}
 
 /**
  * Flip through [pages] on a calm dwell, wrapping. The flip triggers on the
@@ -142,7 +186,7 @@ private fun PagedTicker(
         label = "ticker-paged-flip",
         modifier = modifier,
     ) { page ->
-        PageRow(page, stale = stale, paused = paused, scrollPct = scrollPct)
+        PageRow(page, stale = stale, paused = paused, scrollPct = scrollPct, dwellMs = dwellMs)
     }
 }
 
@@ -160,16 +204,58 @@ private fun PagedTicker(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean, scrollPct: Int = 100) {
+private fun PageRow(
+    page: TickerPaging.Page,
+    stale: Boolean,
+    paused: Boolean,
+    scrollPct: Int = 100,
+    dwellMs: Long = BASE_DWELL_MS,
+) {
     // The page area spans the FULL strip width and is clipped. The marker overlays
     // the TRUE left edge; the STALE flag (when present) overlays the RIGHT edge —
     // both pinned, on top of the scroll, so a stale pill can never shove the curtain
     // inboard (the marker must stay pinned at the panel's left edge regardless).
     Box(modifier = Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
-        val velocity = BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)
-        val scroll = if (paused) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = velocity)
+        // The configured reveal velocity (dp/sec, scaled by the scroll slider).
+        val velocityDp = (BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)).value
+        val density = LocalDensity.current.density
+        // Programmatic-only horizontal scroll (NOT user-scrollable): the page
+        // reveals itself in one controlled pass, then HOLDS at the revealed end.
+        val scrollState = rememberScrollState()
+        // Drive the per-page reveal: scroll to start → start-hold → single-pass
+        // animate-scroll to the fully-revealed end → END-HOLD (so the rightmost
+        // content is readable) → loop. Re-runs when the page, the scroll slider,
+        // or the paused state changes. Paused = no scroll at all.
+        LaunchedEffect(page.key, scrollPct, paused) {
+            if (paused) {
+                scrollState.scrollTo(0)
+                return@LaunchedEffect
+            }
+            while (true) {
+                scrollState.scrollTo(0)
+                val overflowPx = scrollState.maxValue // 0 → fits, nothing to reveal
+                delay(START_HOLD_MS)
+                val durationMs = revealDurationMs(
+                    overflowPx = overflowPx,
+                    velocityDpPerSec = velocityDp,
+                    density = density,
+                    dwellMs = dwellMs,
+                    startHoldMs = START_HOLD_MS,
+                    endHoldMs = END_HOLD_MS,
+                )
+                if (durationMs > 0) {
+                    scrollState.animateScrollTo(
+                        scrollState.maxValue,
+                        animationSpec = tween(durationMillis = durationMs, easing = LinearEasing),
+                    )
+                }
+                // HOLD at the fully-revealed end so the rightmost content is readable
+                // before PagedTicker's dwell flips a multi-page league set away.
+                delay(END_HOLD_MS)
+            }
+        }
         Row(
-            modifier = Modifier.fillMaxSize().then(scroll),
+            modifier = Modifier.fillMaxSize().horizontalScroll(scrollState, enabled = false),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
