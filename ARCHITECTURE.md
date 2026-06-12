@@ -212,7 +212,7 @@ Contract tests pin every field name and the C3 invariant ("non-live channels exp
 - **Hostile-input quarantine**: feed bodies go through `feedparser` (which auto-loads `defusedxml` because we declare it as a runtime dep — neutralises XXE / entity-bomb / DOCTYPE attacks before our code sees the parse tree). Item titles + summaries are stripped to plain text via an `html.parser.HTMLParser` subclass that drops `script`/`style`/`iframe`/`object`/`embed` contents entirely. The TV is told the truth: this is plain text and only plain text.
 - **Channel URL validation** is structured (not regex over the URL string): scheme + IDNA hostname + no userinfo + port {None, 443} + path that looks like an `.m3u8`. Rejects `rtsp://`, `file://`, ports we don't expect, etc.
 - **Per-source error isolation**: one bad/500ing RSS source records its failure on its own row; the poller continues to the next. Same for channels and the prober.
-- **Phantom mode** (`PHANTOM_MODE=1`) replaces the fetcher's resolver with one that raises on every hostname lookup, and preloads synthetic fixtures into the DB. A CI contract test asserts that a complete app boot + `/api/feed` + `/api/channels` request makes zero outbound calls.
+- **Phantom mode** (`PHANTOM_MODE=1`) replaces the fetcher's resolver with one that raises on every hostname lookup, and preloads synthetic fixtures into the DB. A contract test (`helper/tests/test_phantom.py`) asserts that a complete app boot + `/api/feed` + `/api/channels` request makes zero outbound calls — run locally with `uv run pytest`; a CI gate to run it on every push is planned (see `docs/adversarial-review-2026-06.md`, DEPLOY-4).
 
 ### Stage 2 NAS deploy
 

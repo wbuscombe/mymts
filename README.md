@@ -60,30 +60,21 @@ Two pieces, clean boundary:
 - **The TV app (the wall).** Native Android TV, Onn 4K. Renders feed as native text, plays video in the native player, owns all operator interaction, persists operator content on-device.
 - **The helper (back-of-house).** Minimal NAS-side service. Aggregates news (concentrating all hostile-input handling) and resolves live-stream addresses (isolated, egress-bounded). Nothing else.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) when it's filled in.
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full architecture + mechanism map.
 
-## Build stages (Operator's plan)
+## Status
 
-| Stage | What | Status |
-|---|---|---|
-| 0 | Bootstrap: repo, foundation docs, anti-drift anchor, scaffolding docs | ✅ Done |
-| 1 | Hardware-budget spike on Onn 4K + app/helper skeletons (GATE) | ⏳ Next |
-| 2 | The helper — news aggregation + stream-address resolution + boundary tests | ⏳ |
-| 3 | The wall — video grid, native playback, graceful dead-tile | ⏳ |
-| 4 | Feed pane (native text) + ticker | ⏳ |
-| 5 | Lineup, presets, settings, first-run | ⏳ |
-| 6 | Operational hardening — update + rollback, backups, alerting, health | ⏳ |
-| 7 | Portability pass + documentation completion | ⏳ |
-
-Each stage ends green (tests passing, committed, pushed) before the next begins. At every gate, verify against the foundation docs, not just the build prompt.
+**Built and in use.** The TV app (video wall + feed + ticker), the NAS helper (channels / feed / markets / sports / news), and the LAN web client are all implemented and running on the Onn 4K box. The original Stage 0–5 build plan is complete; operational hardening (the original Stage 6–7 — rollback, CI, alerting, docs) is ongoing — see [`docs/adversarial-review-2026-06.md`](docs/adversarial-review-2026-06.md) for the current backlog and [`CHANGELOG.md`](CHANGELOG.md) for history.
 
 ## Setup
 
-Setup steps will land with Stage 1. Today (Stage 0) there is nothing to install or run — only docs to read.
+See the **Quickstart** above to clone → run locally in demo mode (no secrets, no NAS). Full walkthrough: [`ONBOARDING.md`](ONBOARDING.md).
 
 ## Standards
 
-Conventional commits (`feat/fix/docs/chore/test/security`), semver with tagged releases, MIT licensed, no secrets in code or logs, signed installs, pinned dependencies, single-command test runner once Stage 1 lands. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md).
+Conventional commits (`feat/fix/docs/chore/test/security`), semver with tagged releases, MIT licensed, no secrets in code or logs, signed installs, pinned dependencies, single-command test runners (`cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest`). See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md).
+
+**AI agents working on this repo: read [`AGENTS.md`](AGENTS.md) first** — it codifies the protected invariants, the never-without-approval list, and the deploy (adb) invariant.
 
 ## Hard constraints
 

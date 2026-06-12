@@ -2,7 +2,7 @@
 
 Minimal NAS-side service. Aggregates news, resolves live-stream addresses. **Nothing else.**
 
-Stage 1: skeleton with `/health` only. Aggregation + resolution land in Stage 2.
+Built and in use: RSS news aggregation, live-stream address resolution, and a markets / sports / news ticker — serving the TV app and the LAN web client. See the top-level [`README`](../README.md) and [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Quick start (local dev)
 
@@ -14,20 +14,16 @@ uv run python -m mymts_helper  # starts the helper on :8091
 curl -s http://127.0.0.1:8091/health | jq .
 ```
 
-## Docker
+## Docker (the hardened-container shape)
 
-```bash
-docker compose build
-docker compose up -d
-docker compose logs -f
-docker compose down
-```
+`docker-compose.yml` runs the container the way the NAS does — non-root, `read_only` rootfs, all caps dropped, tmpfs `/tmp`. Because the rootfs is read-only the helper needs a **writable data volume** for its SQLite DB, and the bare compose here does **not** mount one — so `docker compose up` on it is **not** a one-command demo (it will fail to create the DB and crash-loop).
 
-The compose file is local-only. The NAS deploy file lands with Stage 2 once the helper does real upstream work.
+- For a quick local run, use the **`uv run` path above** (the supported demo path).
+- The production deploy uses the named-volume compose at [`deploy/docker-compose.nas.yml`](deploy/docker-compose.nas.yml).
 
 ## Phantom (demo / offline) mode
 
-Set `PHANTOM_MODE=1`. Stage 1 has nothing real to mock, so phantom mode currently just flips a flag in `/health`. Stage 2 fixtures will live under `tests/fixtures/`; the inventory is in `.phantom.yml`.
+Set `PHANTOM_MODE=1`. Phantom mode preloads deterministic fixtures — feed items, a sample sports slate, and the seeded channels marked live — and replaces the network resolver so the helper makes **zero outbound calls** (a hard contract). Fixtures live under `tests/fixtures/`; the inventory is in [`../.phantom.yml`](../.phantom.yml).
 
 ## Standards followed
 

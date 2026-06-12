@@ -5,15 +5,17 @@
   - The RSS poller is NOT started; instead `preload()` populates the
     database with a known set of feed items so /api/feed returns
     something legible.
-  - The channel prober is NOT started; preload also seeds two channels
-    to status=live with synthetic current_urls.
+  - The channel prober is NOT started; preload also seeds every channel
+    from seed.json (all ~21) to status=live with synthetic current_urls.
   - The fetcher's `default_resolver` is replaced with `phantom_resolver`
     so any code path that does try to make a real HTTP call refuses to
     resolve any hostname — phantom mode is a hard contract that no
     outbound traffic leaves the helper.
 
-CI asserts this hard contract: a phantom app boot + a /api/feed +
-a /api/channels request must produce zero outbound HTTP calls.
+`tests/test_phantom.py` asserts this hard contract: a phantom app boot +
+a /api/feed + a /api/channels request must produce zero outbound HTTP calls.
+Run it with `uv run pytest -k phantom`. (A CI gate to run it on every push is
+planned — see docs/adversarial-review-2026-06.md, DEPLOY-4.)
 """
 
 from __future__ import annotations

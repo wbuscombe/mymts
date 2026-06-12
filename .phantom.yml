@@ -23,7 +23,7 @@ components:
     serves: http://localhost:8091     # HTTP only in phantom (no cert needed)
     fixtures:
       - feed items preloaded into the sqlite db (phantom.preload) → /api/feed
-      - two channels seeded status=live with synthetic current_urls → /api/channels
+      - all seeded channels (~21) marked status=live with synthetic current_urls → /api/channels
       - ticker markets/sports return sample/honest entries → /api/ticker
     web_client: http://localhost:8091/app   # the static LAN web client, mounted
   app:
@@ -37,14 +37,14 @@ components:
 
 routes:
   - GET /health          # liveness + build_sha + counts
-  - GET /api/channels    # phantom: 2 live mock channels
+  - GET /api/channels    # phantom: all ~21 seeded channels, marked live
   - GET /api/feed        # phantom: preloaded mock feed items
   - GET /api/ticker      # phantom: sample markets + sports
   - GET /app             # static web client
 
 verify:
-  # CI asserts the hard contract; locally:
+  # run locally (no CI yet — planned; see docs/adversarial-review-2026-06.md DEPLOY-4):
   - curl -fsS http://localhost:8091/health        # 200
   - curl -fsS http://localhost:8091/api/feed       # non-empty mock items
-  - curl -fsS http://localhost:8091/api/channels   # 2 live mock channels
-  - "phantom boot performs ZERO outbound HTTP (helper test_phantom asserts this)"
+  - curl -fsS http://localhost:8091/api/channels   # all ~21 seeded channels, marked live
+  - "phantom boot performs ZERO outbound HTTP (helper test_phantom.py asserts this; run: cd helper && uv run pytest -k phantom)"
