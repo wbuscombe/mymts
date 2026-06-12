@@ -30,6 +30,9 @@
     <div class="ticker-mode-tag" id="ticker-mode">MARKETS</div>
     <span class="ticker-note" id="ticker-note"></span>
     <div class="ticker-viewport"><div class="ticker-track" id="ticker-track"></div></div>
+    <!-- Envelope-level STALE chip, pinned to the strip's right edge (native
+         StaleChip). Hidden unless the helper's envelope stale flag is set. -->
+    <span class="t-stale-chip hidden" id="ticker-stale">STALE</span>
     <button class="gear" id="gear" title="Settings" aria-label="Settings">⚙</button>
   </header>
 
@@ -51,21 +54,44 @@
     <div class="modal">
       <div class="modal-head"><span>WALL SETTINGS</span><button class="x" id="settings-close" aria-label="Close">✕</button></div>
       <div class="modal-body">
-        <label class="row"><span>Video cells</span>
-          <select id="cell-count">
+        <!-- ── Layout & Feed ── -->
+        <div class="section-head">Layout &amp; Feed</div>
+        <label class="row"><span>Grid rows</span>
+          <select id="grid-rows">
             <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="4" selected>4 (2×2)</option>
-            <option value="6">6</option>
-            <option value="9">9</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
           </select></label>
+        <label class="row"><span>Grid columns</span>
+          <select id="grid-cols">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+          </select></label>
+        <p class="note" id="grid-note"></p>
         <label class="row"><span>Feed width</span>
           <input type="range" id="feed-width" min="22" max="55" step="1" /></label>
         <label class="row"><span>Feed text size</span>
           <select id="feed-font"><option value="0.88">Small</option><option value="1" selected>Default</option><option value="1.18">Large</option></select></label>
+        <label class="row"><span>Feed recency</span>
+          <select id="feed-recency"></select></label>
         <div class="row col"><span>Feed sources (uncheck to hide)</span>
           <div id="source-toggles" class="toggles"></div></div>
-        <p class="note">Tip: click a video cell to choose its channel. View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.</p>
+
+        <!-- ── Ticker ── -->
+        <div class="section-head">Ticker</div>
+        <label class="row"><span>Scroll speed</span>
+          <span class="range-with-val"><input type="range" id="ticker-scroll" min="40" max="200" step="20" /><span id="ticker-scroll-val" class="range-val"></span></span></label>
+        <label class="row"><span>Ticker news (3rd mode)</span>
+          <input type="checkbox" id="ticker-news" /></label>
+
+        <!-- ── Sports ── -->
+        <div class="section-head">Sports</div>
+        <div class="row col"><span id="leagues-label">Sports leagues (uncheck to hide)</span>
+          <div id="league-toggles" class="toggles"></div></div>
+
+        <p class="note">Tip: click a video cell to choose its channel. View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.
+          Panel-fit controls (display size, fit scale, vertical stretch, overscan, position, calibration) are TV-only — they correct a physical panel's overscan and have no meaning in a browser.</p>
       </div>
     </div>
   </div>

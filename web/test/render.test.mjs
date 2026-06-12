@@ -1,5 +1,5 @@
 // Pure-logic tests for the web client's honesty-bearing render module.
-// Run: `node --test web/test/` (no dependencies — built-in node:test).
+// Run: `node --test web/test/*.test.mjs` (no dependencies — built-in node:test).
 //
 // These pin the same honesty invariants the native app's tests pin:
 // sample/stale/offline data is never presented as live-real, grouping +
@@ -24,6 +24,31 @@ import {
   gridLayout,
   GRID_CELL_COUNTS,
   browserPlayability,
+  TICKER_SCHEMA_VERSION,
+  tickerSchemaCheck,
+  tickerSchemaNote,
+  statusKind,
+  formatStatus,
+  tickerCardModel,
+  groupTickerCards,
+  newsTickerEntries,
+  entryLeague,
+  leaguePool,
+  filterHiddenLeagues,
+  FEED_RECENCY_OPTIONS,
+  feedRecencyOption,
+  filterFeedRecency,
+  GRID_DIM_MIN,
+  GRID_DIM_MAX,
+  clampGridDim,
+  gridLayoutFromDims,
+  TICKER_SPEED_MIN_PCT,
+  TICKER_SPEED_MAX_PCT,
+  clampTickerSpeedPct,
+  tickerScrollPxPerSec,
+  DEFAULT_VIEW_PREFS,
+  normalizeViewPrefs,
+  serializeViewPrefs,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -208,4 +233,449 @@ test("browserPlayability: yes/no/maybe tri-state hint (mixed-content reality)", 
   assert.equal(browserPlayability({ status: "live", current_url: url }), "maybe");
   // not playable at all → no
   assert.equal(browserPlayability({ status: "unavailable", current_url: null, browser_playable: null }), "no");
+});
+
+// ----- schema_version guard (ARCH-1) -----
+
+test("tickerSchemaCheck: v1 passes; mismatch/missing/null degrade honestly", () => {
+  assert.equal(TICKER_SCHEMA_VERSION, 1);
+  assert.deepEqual(tickerSchemaCheck({ schema_version: 1, entries: [] }), { ok: true, version: 1, reason: "" });
+  // A future contract this client doesn't understand → NOT ok (degrade, never render).
+  const mismatch = tickerSchemaCheck({ schema_version: 2, entries: [] });
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.version, 2);
+  // Missing version → not ok.
+  assert.equal(tickerSchemaCheck({ entries: [] }).ok, false);
+  assert.equal(tickerSchemaCheck({ entries: [] }).version, null);
+  // Null/garbage envelope → unavailable, not a crash.
+  assert.equal(tickerSchemaCheck(null).ok, false);
+  assert.equal(tickerSchemaCheck(null).reason, "unavailable");
+});
+
+test("tickerSchemaNote: visible 'client out of date' on mismatch; silent when ok/unavailable", () => {
+  assert.equal(tickerSchemaNote({ schema_version: 1, entries: [] }), "");          // ok → no note
+  assert.equal(tickerSchemaNote(null), "");                                        // unavailable owns its own state
+  assert.match(tickerSchemaNote({ schema_version: 7, entries: [] }), /client out of date/);
+  assert.match(tickerSchemaNote({ schema_version: 7, entries: [] }), /v7/);        // names the version mismatch
+  assert.match(tickerSchemaNote({ entries: [] }), /client out of date/);           // missing version
+});
+
+// ----- sports status block (mirrors native kindOf / formatStatus) -----
+
+test("statusKind: in→live, post→final, pre+unknown→upcoming", () => {
+  assert.equal(statusKind("in"), "live");
+  assert.equal(statusKind("post"), "final");
+  assert.equal(statusKind("pre"), "upcoming");
+  assert.equal(statusKind("weird"), "upcoming");
+  assert.equal(statusKind(""), "upcoming");
+  assert.equal(statusKind(undefined), "upcoming");
+});
+
+test("formatStatus: FINAL literal; LIVE uppercases+normalises ' - '; UPCOMING as-is/—", () => {
+  assert.equal(formatStatus("post", "anything"), "FINAL");
+  assert.equal(formatStatus("in", "5:42 - 1st"), "5:42 1ST");   // " - " → space, uppercased
+  assert.equal(formatStatus("in", ""), "LIVE");                 // blank live → "LIVE"
+  assert.equal(formatStatus("pre", "7:30 PM"), "7:30 PM");      // upcoming as-is
+  assert.equal(formatStatus("pre", ""), "—");                   // blank upcoming → "—"
+});
+
+// ----- structured card model: TEAM GAME renders from real fields, not display -----
+
+test("tickerCardModel TEAM GAME (in): scores + leader highlight from structured fields", () => {
+  const m = tickerCardModel({
+    symbol: "MLB", display: "NYY 4–6 BOS · Bot 9th", direction: "none", is_sample: false,
+    game: { league: "MLB", away: "NYY", away_score: "4", home: "BOS", home_score: "6", state: "in", status: "Bot 9th" },
+  });
+  assert.equal(m.type, "game");
+  assert.equal(m.kind, "live");
+  assert.equal(m.away, "NYY"); assert.equal(m.home, "BOS");
+  assert.equal(m.awayScore, "4"); assert.equal(m.homeScore, "6");
+  assert.equal(m.hasScores, true);
+  assert.equal(m.homeLeads, true);     // 6 > 4, LIVE → home leads
+  assert.equal(m.awayLeads, false);
+  assert.equal(m.status, "BOT 9TH");   // LIVE uppercased
+  assert.equal(m.sample, false);
+});
+
+test("tickerCardModel TEAM GAME (pre): no phantom 0–0, renders matchup not scores", () => {
+  const m = tickerCardModel({
+    symbol: "NHL", display: "CAR @ VGK · 8:00 PM", direction: "none", is_sample: false,
+    game: { league: "NHL", away: "CAR", away_score: "", home: "VGK", home_score: "", state: "pre", status: "8:00 PM" },
+  });
+  assert.equal(m.kind, "upcoming");
+  assert.equal(m.hasScores, false);    // empty scores → matchup, never a fake 0–0
+  assert.equal(m.awayLeads, false); assert.equal(m.homeLeads, false);
+  assert.equal(m.status, "8:00 PM");
+});
+
+test("tickerCardModel TEAM GAME (post/final): no leader highlight even with scores", () => {
+  const m = tickerCardModel({
+    symbol: "MLB", display: "SEA 4–0 DET · Final", direction: "none", is_sample: false,
+    game: { league: "MLB", away: "SEA", away_score: "4", home: "DET", home_score: "0", state: "post", status: "Final" },
+  });
+  assert.equal(m.kind, "final");
+  assert.equal(m.hasScores, true);
+  assert.equal(m.awayLeads, false);    // FINAL shows no leader emphasis
+  assert.equal(m.homeLeads, false);
+  assert.equal(m.status, "FINAL");
+});
+
+// ----- structured card model: EACH individual sport kind renders -----
+
+test("tickerCardModel CARD leaderboard (PGA): kind + title + lines from card", () => {
+  const m = tickerCardModel({
+    symbol: "PGA", display: "The Memorial · 1. Scheffler -6", direction: "none", is_sample: false,
+    card: { league: "PGA", kind: "leaderboard", title: "The Memorial Tournament", state: "in",
+            status: "R3 In Progress", lines: ["1. Scheffler -6", "2. McIlroy -4"] },
+  });
+  assert.equal(m.type, "card");
+  assert.equal(m.kind, "leaderboard");
+  assert.equal(m.title, "The Memorial Tournament");
+  assert.deepEqual(m.lines, ["1. Scheffler -6", "2. McIlroy -4"]);
+  assert.equal(m.statusKind, "live");
+  assert.equal(m.status, "R3 IN PROGRESS");
+});
+
+test("tickerCardModel CARD fight (UFC): kind + title + weight line", () => {
+  const m = tickerCardModel({
+    symbol: "UFC", display: "Garcia def. Silva · KO/TKO R2", direction: "none", is_sample: false,
+    card: { league: "UFC", kind: "fight", title: "Garcia def. Silva", state: "post",
+            status: "KO/TKO R2", lines: ["Lightweight"] },
+  });
+  assert.equal(m.kind, "fight");
+  assert.equal(m.title, "Garcia def. Silva");
+  assert.deepEqual(m.lines, ["Lightweight"]);
+  assert.equal(m.status, "FINAL");     // post → FINAL chip text
+});
+
+test("tickerCardModel CARD match (Tennis): kind + players + set scores", () => {
+  const m = tickerCardModel({
+    symbol: "Tennis", display: "Alcaraz d. Sinner 6-4 7-6(3)", direction: "none", is_sample: false,
+    card: { league: "Tennis", kind: "match", title: "Alcaraz d. Sinner", state: "post",
+            status: "Final", lines: ["6-4 7-6(3)"] },
+  });
+  assert.equal(m.kind, "match");
+  assert.equal(m.title, "Alcaraz d. Sinner");
+  assert.deepEqual(m.lines, ["6-4 7-6(3)"]);
+});
+
+test("tickerCardModel CARD race (F1): kind + GP + podium lines", () => {
+  const m = tickerCardModel({
+    symbol: "F1", display: "Barcelona-Catalunya GP · Race", direction: "none", is_sample: false,
+    card: { league: "F1", kind: "race", title: "Barcelona-Catalunya GP", state: "post",
+            status: "Final", lines: ["1. Verstappen", "2. Norris", "3. Leclerc"] },
+  });
+  assert.equal(m.kind, "race");
+  assert.equal(m.title, "Barcelona-Catalunya GP");
+  assert.deepEqual(m.lines, ["1. Verstappen", "2. Norris", "3. Leclerc"]);
+});
+
+test("tickerCardModel CARD unknown kind → generic (forward-compatible, never crashes)", () => {
+  const m = tickerCardModel({
+    symbol: "DARTS", display: "x", direction: "none", is_sample: false,
+    card: { league: "PDC", kind: "checkout", title: "Final", state: "in", status: "Leg 5", lines: ["a"] },
+  });
+  assert.equal(m.type, "card");
+  assert.equal(m.kind, "generic");     // unknown kind dispatches to the generic card
+  assert.equal(m.title, "Final");
+});
+
+test("tickerCardModel MARKETS cell: no game/card → direction arrow + value", () => {
+  const m = tickerCardModel({ symbol: "S&P 500", display: "5,431.60", direction: "up", is_sample: false });
+  assert.equal(m.type, "cell");
+  assert.equal(m.value, "5,431.60");
+  assert.equal(m.glyph, "▲");
+  assert.equal(m.dirClass, "dir-up");
+  assert.equal(m.sample, false);
+});
+
+test("tickerCardModel uses the `in` operator, not null — absent game/card ≠ present null", () => {
+  // The wire OMITS game/card when absent (popped, not null). A markets entry
+  // has NEITHER key → cell. Defend the contract: no fabricated card.
+  const m = tickerCardModel({ symbol: "BTC", display: "—", direction: "flat", is_sample: true });
+  assert.equal(m.type, "cell");
+});
+
+// ----- HONESTY: sample/stale never rendered as live-real -----
+
+test("HONESTY: is_sample=true surfaces sample:true through EVERY card branch", () => {
+  // game
+  assert.equal(tickerCardModel({ symbol: "NBA", display: "x", is_sample: true,
+    game: { league: "NBA", away: "LAL", away_score: "", home: "BOS", home_score: "", state: "pre", status: "7:30 ET" } }).sample, true);
+  // card (fight) — the pinned invariant from the brief
+  assert.equal(tickerCardModel({ symbol: "UFC", display: "x", is_sample: true,
+    card: { league: "UFC", kind: "fight", title: "A vs B", state: "pre", status: "", lines: [] } }).sample, true);
+  // markets cell
+  assert.equal(tickerCardModel({ symbol: "BTC", display: "—", direction: "flat", is_sample: true }).sample, true);
+  // and the converse: explicit false stays false; missing flag is NOT upgraded to live (defaults false here, helper sends it).
+  assert.equal(tickerCardModel({ symbol: "X", display: "1", direction: "flat", is_sample: false }).sample, false);
+  assert.equal(tickerCardModel({ symbol: "X", display: "1", direction: "flat" }).sample, false);
+});
+
+// ----- grouping into card-bearing league runs (page markers) -----
+
+test("groupTickerCards: keys on game.league/card.league, collapses consecutive runs", () => {
+  const entries = [
+    { symbol: "MLB", display: "a", is_sample: false, game: { league: "MLB", away: "A", away_score: "1", home: "B", home_score: "2", state: "in", status: "Top 9th" } },
+    { symbol: "MLB", display: "b", is_sample: false, game: { league: "MLB", away: "C", away_score: "0", home: "D", home_score: "0", state: "pre", status: "7pm" } },
+    { symbol: "PGA", display: "c", is_sample: false, card: { league: "PGA", kind: "leaderboard", title: "T", state: "in", status: "R1", lines: [] } },
+  ];
+  const g = groupTickerCards(entries);
+  assert.deepEqual(g.map((x) => x.label), ["MLB", "PGA"]);
+  assert.equal(g[0].cards.length, 2);       // both MLB games under one marker
+  assert.equal(g[0].cards[0].type, "game");
+  assert.equal(g[1].cards[0].type, "card");
+  assert.deepEqual(groupTickerCards([]), []);
+  assert.deepEqual(groupTickerCards(null), []);
+});
+
+test("groupTickerCards: 'no games right now' is a normal entry — NOT sample, NOT a card", () => {
+  // The helper's honest empty-sports state arrives as a plain cell entry.
+  const g = groupTickerCards([{ symbol: "SPORTS", display: "no games right now", direction: "none", is_sample: false }]);
+  assert.equal(g.length, 1);
+  assert.equal(g[0].label, "SPORTS");
+  assert.equal(g[0].cards[0].type, "cell");
+  assert.equal(g[0].cards[0].sample, false);    // never a SAMPLE pill for an honest "nothing on"
+});
+
+// ----- NEWS in the ticker (source-labelled, inert, honest) -----
+
+test("newsTickerEntries: source-labelled, newest-first, real (is_sample=false), capped", () => {
+  const items = [
+    { id: 1, source: "Guardian", title: "g-old", published_at: "2026-06-01T10:00:00.000Z" },
+    { id: 2, source: "BBC", title: "b-new", published_at: "2026-06-05T10:00:00.000Z" },
+    { id: 3, source: "", title: "blank-src", published_at: "2026-06-04T10:00:00.000Z" },
+    { id: 4, source: "Reuters", title: "", published_at: "2026-06-06T10:00:00.000Z" },  // empty title dropped
+  ];
+  const out = newsTickerEntries(items);
+  assert.deepEqual(out.map((e) => e.title ?? e.display), ["b-new", "blank-src", "g-old"]);  // empty-title dropped, newest-first
+  assert.equal(out[0].symbol, "BBC");
+  assert.equal(out[1].symbol, "Unknown source");   // blank source → bucket label
+  assert.ok(out.every((e) => e.is_sample === false));  // real headlines, never a fake SAMPLE
+  assert.ok(out.every((e) => e.direction === "none"));
+  // cap respected
+  assert.equal(newsTickerEntries(items, 1).length, 1);
+});
+
+test("groupTickerCards newsMode: every entry under a single 'NEWS' marker as news cells", () => {
+  const entries = newsTickerEntries([
+    { id: 1, source: "BBC", title: "headline one", published_at: "2026-06-05T10:00:00.000Z" },
+    { id: 2, source: "Reuters", title: "headline two", published_at: "2026-06-04T10:00:00.000Z" },
+  ]);
+  const g = groupTickerCards(entries, { newsMode: true });
+  assert.equal(g.length, 1);
+  assert.equal(g[0].label, "NEWS");
+  assert.equal(g[0].cards.length, 2);
+  assert.equal(g[0].cards[0].type, "news");
+  assert.equal(g[0].cards[0].source, "BBC");
+  assert.equal(g[0].cards[0].headline, "headline one");
+  assert.equal(g[0].cards[0].sample, false);
+});
+
+// ===== BUILD 2: SETTINGS PARITY =====
+
+// ----- sports-league filter (mirrors native HelperTickerSource.filterLeagues) -----
+
+test("entryLeague: game.league wins; falls back to symbol (matches native key)", () => {
+  // Team game → game.league is the grouping/label key.
+  assert.equal(entryLeague({ symbol: "MLB", game: { league: "MLB", away: "A", home: "B", state: "in" } }), "MLB");
+  // A symbol/league divergence: the GAME's league is authoritative (so a hidden
+  // league can't leak through the symbol) — native uses game.league ?? symbol.
+  assert.equal(entryLeague({ symbol: "BASEBALL", game: { league: "MLB" } }), "MLB");
+  // Individual sport (no game) → keys on symbol (the league), like native.
+  assert.equal(entryLeague({ symbol: "UFC", card: { league: "UFC", kind: "fight" } }), "UFC");
+  // Blank game.league → fall back to symbol, never an empty key.
+  assert.equal(entryLeague({ symbol: "NHL", game: { league: "  " } }), "NHL");
+  assert.equal(entryLeague({ symbol: "S&P 500" }), "S&P 500");   // markets cell → its symbol
+});
+
+test("leaguePool: distinct league labels from sports entries, alpha, dedup, blanks dropped", () => {
+  const entries = [
+    { symbol: "MLB", game: { league: "MLB", away: "A", home: "B", state: "in" } },
+    { symbol: "MLB", game: { league: "MLB", away: "C", home: "D", state: "pre" } },  // dup → one
+    { symbol: "UFC", card: { league: "UFC", kind: "fight" } },
+    { symbol: "NHL", game: { league: "NHL", away: "E", home: "F", state: "post" } },
+    { symbol: "", display: "no games right now" },   // blank league → not a togglable league
+  ];
+  assert.deepEqual(leaguePool(entries), ["MLB", "NHL", "UFC"]);   // alpha, deduped
+  // Case-insensitive dedup keeps the first-seen casing.
+  assert.deepEqual(leaguePool([{ symbol: "nba" }, { symbol: "NBA" }]), ["nba"]);
+  assert.deepEqual(leaguePool([]), []);
+  assert.deepEqual(leaguePool(null), []);
+});
+
+test("filterHiddenLeagues: DENYLIST, case-insensitive; empty set = passthrough; keeps honesty flags", () => {
+  const entries = [
+    { symbol: "MLB", is_sample: false, game: { league: "MLB", away: "A", away_score: "1", home: "B", home_score: "2", state: "in", status: "Top 9th" } },
+    { symbol: "NHL", is_sample: true, game: { league: "NHL", away: "C", home: "D", state: "pre", status: "8pm" } },
+    { symbol: "UFC", is_sample: false, card: { league: "UFC", kind: "fight", title: "A vs B", state: "pre", status: "", lines: [] } },
+  ];
+  // Empty denylist → unchanged.
+  assert.equal(filterHiddenLeagues(entries, new Set()).length, 3);
+  // Hide NHL (case-insensitive) → MLB + UFC remain.
+  const kept = filterHiddenLeagues(entries, new Set(["nhl"]));
+  assert.deepEqual(kept.map((e) => e.symbol), ["MLB", "UFC"]);
+  // A kept entry's sample flag is NEVER altered by filtering (honesty preserved).
+  assert.equal(filterHiddenLeagues(entries, new Set(["mlb"]))[0].is_sample, true);  // the NHL one (sample) survives untouched
+  assert.deepEqual(filterHiddenLeagues([], new Set(["x"])), []);
+  assert.deepEqual(filterHiddenLeagues(null, new Set(["x"])), []);
+});
+
+test("BEHAVIOR: the leagues denylist actually filters which sports show", () => {
+  // A setting must affect behavior — hiding a league removes exactly its entries.
+  const sports = [
+    { symbol: "MLB", game: { league: "MLB", away: "SEA", home: "DET", state: "post", status: "Final" } },
+    { symbol: "NBA", game: { league: "NBA", away: "LAL", home: "BOS", state: "in", status: "Q4" } },
+    { symbol: "NHL", game: { league: "NHL", away: "CAR", home: "VGK", state: "pre", status: "8pm" } },
+  ];
+  // All shown by default (denylist empty).
+  assert.deepEqual(leaguePool(sports), ["MLB", "NBA", "NHL"]);
+  assert.equal(filterHiddenLeagues(sports, new Set()).length, 3);
+  // Operator hides NBA + NHL → only MLB remains in the ticker.
+  const hidden = new Set(["NBA", "NHL"]);
+  const shown = filterHiddenLeagues(sports, hidden);
+  assert.deepEqual(shown.map((e) => e.symbol), ["MLB"]);
+  // A NEWLY-appearing league (not in the denylist) shows by default.
+  const withNew = [...sports, { symbol: "F1", card: { league: "F1", kind: "race", title: "GP", state: "pre", status: "", lines: [] } }];
+  assert.ok(filterHiddenLeagues(withNew, hidden).some((e) => e.symbol === "F1"));
+});
+
+// ----- feed recency window (mirrors native FeedRecency) -----
+
+test("FEED_RECENCY_OPTIONS / feedRecencyOption: native presets, unknown → All", () => {
+  assert.deepEqual(FEED_RECENCY_OPTIONS.map((o) => o.id), ["all", "hour", "six", "day"]);
+  assert.equal(feedRecencyOption("all").maxAgeMs, null);
+  assert.equal(feedRecencyOption("hour").maxAgeMs, 60 * 60 * 1000);
+  assert.equal(feedRecencyOption("six").maxAgeMs, 6 * 60 * 60 * 1000);
+  assert.equal(feedRecencyOption("day").maxAgeMs, 24 * 60 * 60 * 1000);
+  assert.equal(feedRecencyOption("nonsense").id, "all");   // unknown → safe default
+  assert.equal(feedRecencyOption(undefined).id, "all");
+});
+
+test("filterFeedRecency: drops items older than the window; null = passthrough; no-ts dropped under a bound", () => {
+  const now = Date.parse("2026-06-12T12:00:00.000Z");
+  const items = [
+    { id: 1, title: "fresh", published_at: "2026-06-12T11:30:00.000Z" },  // 30m ago
+    { id: 2, title: "old", published_at: "2026-06-12T05:00:00.000Z" },    // 7h ago
+    { id: 3, title: "no-ts" },                                            // no timestamp
+  ];
+  // null → everything kept (the All preset), no-ts included.
+  assert.equal(filterFeedRecency(items, null, now).length, 3);
+  // Last hour → only the 30m-ago item; old + no-ts dropped (no-ts is not provably recent).
+  assert.deepEqual(filterFeedRecency(items, 60 * 60 * 1000, now).map((i) => i.title), ["fresh"]);
+  // Last 24h → both timestamped items; no-ts still dropped under a bounded window.
+  assert.deepEqual(filterFeedRecency(items, 24 * 60 * 60 * 1000, now).map((i) => i.title), ["fresh", "old"]);
+  // fetched_at fallback when published_at is absent.
+  assert.equal(filterFeedRecency([{ id: 9, fetched_at: "2026-06-12T11:50:00.000Z" }], 60 * 60 * 1000, now).length, 1);
+  assert.deepEqual(filterFeedRecency([], 1000, now), []);
+  assert.deepEqual(filterFeedRecency(null, 1000, now), []);
+});
+
+// ----- grid rows × cols (native parity: independent dims, each 1–3) -----
+
+test("clampGridDim: 1–3 range, rounds, non-finite → min", () => {
+  assert.equal(GRID_DIM_MIN, 1);
+  assert.equal(GRID_DIM_MAX, 3);
+  assert.equal(clampGridDim(2), 2);
+  assert.equal(clampGridDim(0), 1);     // below min
+  assert.equal(clampGridDim(9), 3);     // above max
+  assert.equal(clampGridDim(2.7), 3);   // rounds
+  assert.equal(clampGridDim("3"), 3);   // numeric string
+  assert.equal(clampGridDim(NaN), 1);   // non-finite → min
+  assert.equal(clampGridDim(undefined), 1);
+});
+
+test("gridLayoutFromDims: count = rows × cols; both clamped; same {count,cols,rows} shape", () => {
+  assert.deepEqual(gridLayoutFromDims(2, 2), { count: 4, cols: 2, rows: 2 });
+  assert.deepEqual(gridLayoutFromDims(1, 3), { count: 3, cols: 3, rows: 1 });
+  assert.deepEqual(gridLayoutFromDims(3, 2), { count: 6, cols: 2, rows: 3 });
+  assert.deepEqual(gridLayoutFromDims(3, 3), { count: 9, cols: 3, rows: 3 });
+  // Out-of-range dims clamp into 1–3 (defensive on read).
+  assert.deepEqual(gridLayoutFromDims(0, 9), { count: 3, cols: 3, rows: 1 });
+});
+
+// ----- ticker scroll speed (native parity: tickerScrollPct slider) -----
+
+test("clampTickerSpeedPct: 40–200 range, step-agnostic, non-finite → 100", () => {
+  assert.equal(TICKER_SPEED_MIN_PCT, 40);
+  assert.equal(TICKER_SPEED_MAX_PCT, 200);
+  assert.equal(clampTickerSpeedPct(100), 100);
+  assert.equal(clampTickerSpeedPct(10), 40);    // below min
+  assert.equal(clampTickerSpeedPct(999), 200);  // above max
+  assert.equal(clampTickerSpeedPct(NaN), 100);  // non-finite → default
+});
+
+test("tickerScrollPxPerSec: scales base velocity by clamped percent (faster = more px/sec)", () => {
+  assert.equal(tickerScrollPxPerSec(60, 100), 60);   // 100% = base
+  assert.equal(tickerScrollPxPerSec(60, 200), 120);  // 200% = double
+  assert.equal(tickerScrollPxPerSec(60, 40), 24);    // 40% = slower
+  // An out-of-range stored pref is clamped, never a 0/absurd velocity.
+  assert.equal(tickerScrollPxPerSec(60, 0), 24);     // clamps to 40% → 24
+  assert.ok(tickerScrollPxPerSec(60, 5) >= 1);       // always > 0
+});
+
+// ----- view-prefs persistence round-trip (the established web pattern) -----
+
+test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () => {
+  const d = normalizeViewPrefs({});
+  assert.equal(d.gridRows, 2); assert.equal(d.gridCols, 2);
+  assert.equal(d.feedPct, 32); assert.equal(d.feedFont, 1);
+  assert.equal(d.tickerNews, false);            // load-bearing: OFF unless explicit true
+  assert.equal(d.feedRecency, "all");
+  assert.equal(d.tickerScrollPct, 100);
+  assert.deepEqual(d.hidden, []); assert.deepEqual(d.hiddenLeagues, []);
+  assert.deepEqual(d.assignments, {});
+  // Matches the exported default shape.
+  assert.deepEqual(d, DEFAULT_VIEW_PREFS);
+  // tickerNews is ONLY true on an explicit true (not "true", not 1).
+  assert.equal(normalizeViewPrefs({ tickerNews: "true" }).tickerNews, false);
+  assert.equal(normalizeViewPrefs({ tickerNews: true }).tickerNews, true);
+  // Out-of-range values are clamped on load (defensive against a tampered blob).
+  assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridRows, 3);
+  assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridCols, 1);
+  assert.equal(normalizeViewPrefs({ tickerScrollPct: 9999 }).tickerScrollPct, 200);
+  assert.equal(normalizeViewPrefs({ feedRecency: "bogus" }).feedRecency, "all");
+});
+
+test("normalizeViewPrefs: migrates a legacy v3 cellCount into rows × cols", () => {
+  // v3 stored a single cellCount; v4 is rows × cols. The grid size carries over.
+  assert.equal(normalizeViewPrefs({ cellCount: 9 }).gridRows, 3);
+  assert.equal(normalizeViewPrefs({ cellCount: 9 }).gridCols, 3);
+  assert.equal(normalizeViewPrefs({ cellCount: 6 }).gridRows, 2);
+  assert.equal(normalizeViewPrefs({ cellCount: 6 }).gridCols, 3);
+  // An explicit gridRows/gridCols wins over a stale cellCount (no double-migrate).
+  const both = normalizeViewPrefs({ cellCount: 9, gridRows: 1, gridCols: 2 });
+  assert.equal(both.gridRows, 1); assert.equal(both.gridCols, 2);
+});
+
+test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)", () => {
+  // The live prefs object carries denylists as Sets; serialize flattens to
+  // arrays; normalize is the canonical re-read. The round-trip must be stable.
+  const live = {
+    gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
+    tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
+    hidden: new Set(["BBC", "Reuters"]),
+    hiddenLeagues: new Set(["NBA"]),
+    assignments: { 0: "espn", 1: "tnt" },
+  };
+  const stored = serializeViewPrefs(live);           // → plain, arrays
+  // Survives a real JSON round-trip (what localStorage does).
+  const reread = normalizeViewPrefs(JSON.parse(JSON.stringify(stored)));
+  assert.deepEqual(reread, {
+    gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
+    tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
+    hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],
+    assignments: { 0: "espn", 1: "tnt" },
+  });
+  // Idempotent: normalize(serialize(reread-as-live)) is the same again.
+  const live2 = { ...reread, hidden: new Set(reread.hidden), hiddenLeagues: new Set(reread.hiddenLeagues) };
+  assert.deepEqual(normalizeViewPrefs(JSON.parse(JSON.stringify(serializeViewPrefs(live2)))), reread);
+});
+
+test("PERSISTENCE: a tampered/garbage blob normalizes to safe honest defaults", () => {
+  // Whatever is in storage, the loaded prefs are valid + honest (news OFF).
+  assert.deepEqual(serializeViewPrefs(normalizeViewPrefs("not an object")), DEFAULT_VIEW_PREFS);
+  assert.deepEqual(serializeViewPrefs(normalizeViewPrefs(null)), DEFAULT_VIEW_PREFS);
+  assert.equal(normalizeViewPrefs({ hidden: "BBC" }).hidden.length, 0);   // non-array denylist → empty
+  assert.equal(normalizeViewPrefs({ hiddenLeagues: 5 }).hiddenLeagues.length, 0);
 });

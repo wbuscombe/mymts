@@ -48,6 +48,9 @@ jobs:
       - name: adb deploy-invariant gate test (DEPLOY-2)
         run: bash scripts/test_adb_invariant.sh
 
+      - name: Web client tests (node:test — render/cards/schema-guard/settings)
+        run: node --test web/test/*.test.mjs
+
       - name: Phantom demo boots clean (no secrets, fresh-clone gate)
         working-directory: helper
         run: |

@@ -12,6 +12,49 @@
 // touches an article page. The web client is a dumb consumer of the
 // helper's already-inert plain-text data, exactly like the native app.
 
+// ----- schema_version guard (ARCH-1: never render a contract we don't grok) -----
+
+/** The ticker envelope schema this web client understands. Pinned to the
+ *  helper's TICKER_SCHEMA_VERSION. If the helper bumps it (a new wire
+ *  contract), this client is out of date and must DEGRADE HONESTLY —
+ *  surface a visible "client out of date" state, never silently render
+ *  fields it may misread. Additive helper changes keep this number; a
+ *  breaking shape change bumps it on both sides in lockstep. */
+export const TICKER_SCHEMA_VERSION = 1;
+
+/**
+ * Validate a ticker envelope's schema_version against what this client
+ * understands. Pure; returns { ok, version, reason }.
+ *   ok=true  → version matches → safe to render the entries.
+ *   ok=false → missing/mismatched version → caller must show the honest
+ *              "client out of date" state and render NO cards (degrade,
+ *              don't fabricate against an unknown contract).
+ * A null/undefined envelope is treated as "no data" (ok:false, reason
+ * "unavailable") so the caller never tries to read entries off nothing.
+ */
+export function tickerSchemaCheck(envelope) {
+  if (!envelope || typeof envelope !== "object") {
+    return { ok: false, version: null, reason: "unavailable" };
+  }
+  const version = envelope.schema_version;
+  if (version === TICKER_SCHEMA_VERSION) {
+    return { ok: true, version, reason: "" };
+  }
+  if (version == null) {
+    return { ok: false, version: null, reason: "missing schema_version" };
+  }
+  return { ok: false, version, reason: "schema mismatch" };
+}
+
+/** Short, honest banner text for a failed schema check (empty when ok). */
+export function tickerSchemaNote(envelope) {
+  const { ok, version, reason } = tickerSchemaCheck(envelope);
+  if (ok) return "";
+  if (reason === "unavailable") return "";   // unavailability is its own state
+  if (version == null) return "client out of date — update needed";
+  return `client out of date — expects v${TICKER_SCHEMA_VERSION}, helper sent v${version}`;
+}
+
 // ----- direction glyphs (markets) / none (sports) -----
 
 export function directionGlyph(direction) {
@@ -57,6 +100,177 @@ export function tickerStaleNote(envelope) {
   if (!envelope) return "";
   if (envelope.stale === true) return "stale — not updating";
   return "";
+}
+
+// ----- sports status block (mirrors native kindOf / formatStatus) -----
+
+/**
+ * Lifecycle kind from the ESPN state token — the same 3-way the native
+ * SportsTicker.kindOf draws: `in`→LIVE, `post`→FINAL, everything else
+ * (`pre` + unknown) → UPCOMING. Pure. Drives the status-chip colour.
+ */
+export function statusKind(state) {
+  switch (String(state ?? "").toLowerCase()) {
+    case "in": return "live";
+    case "post": return "final";
+    default: return "upcoming";   // "pre" + any unknown token
+  }
+}
+
+/**
+ * Status chip text, mirroring native formatStatus exactly:
+ *   FINAL    → literal "FINAL"
+ *   LIVE     → "LIVE" if blank, else status with " - " normalised to a
+ *              space, UPPERCASED ("5:42 - 1st" → "5:42 1ST")
+ *   UPCOMING → status as-is, or "—" if blank
+ * Pure.
+ */
+export function formatStatus(state, status) {
+  const s = String(status ?? "").trim();
+  switch (statusKind(state)) {
+    case "final": return "FINAL";
+    case "live": return s === "" ? "LIVE" : s.replace(/ - /g, " ").toUpperCase();
+    default: return s === "" ? "—" : s;
+  }
+}
+
+/**
+ * Structured display model for one ticker entry — the honest, DOM-free
+ * branch the caller renders. Branches on the wire shape the helper emits
+ * (NOT by parsing `display`):
+ *   - `card` present  → individual sport, type "card", dispatch on card.kind
+ *                       (leaderboard|fight|match|race|generic-for-unknown).
+ *   - `game` present  → team game, type "game".
+ *   - neither         → markets/news cell, type "cell" (direction arrow + value).
+ *
+ * `game`/`card` are ABSENT (popped, not null) when not applicable, so we
+ * test with the `in` operator, exactly as the wire contract specifies.
+ *
+ * Honesty: `sample` (per-entry is_sample) rides through untouched on EVERY
+ * branch — sample is NEVER upgraded to live-real. Only an explicit
+ * is_sample===true is sample.
+ *
+ * `newsMode` forces the news cell shape (source label + headline, inert)
+ * for entries pulled from the feed into the ticker's NEWS mode.
+ */
+export function tickerCardModel(entry, { newsMode = false } = {}) {
+  const e = entry ?? {};
+  const sample = e.is_sample === true;
+  const symbol = String(e.symbol ?? "");
+  const display = String(e.display ?? "");
+
+  if (newsMode) {
+    return { type: "news", source: symbol, headline: display, sample };
+  }
+
+  if (e.card && typeof e.card === "object") {
+    const c = e.card;
+    const knownKinds = new Set(["leaderboard", "fight", "match", "race"]);
+    const rawKind = String(c.kind ?? "");
+    const kind = knownKinds.has(rawKind) ? rawKind : "generic";
+    return {
+      type: "card",
+      kind,
+      league: String(c.league ?? symbol),
+      title: String(c.title ?? ""),
+      state: String(c.state ?? ""),
+      statusKind: statusKind(c.state),
+      status: formatStatus(c.state, c.status),
+      lines: Array.isArray(c.lines) ? c.lines.map((l) => String(l)) : [],
+      sample,
+    };
+  }
+
+  if (e.game && typeof e.game === "object") {
+    const g = e.game;
+    const kind = statusKind(g.state);
+    const away = String(g.away ?? "");
+    const home = String(g.home ?? "");
+    const awayScore = String(g.away_score ?? "");
+    const homeScore = String(g.home_score ?? "");
+    // Scores shown only when LIVE/FINAL and both sides have a score; a `pre`
+    // matchup (empty scores) renders "AWAY @ HOME", never a phantom 0–0.
+    const hasScores = kind !== "upcoming" && awayScore !== "" && homeScore !== "";
+    // Leader highlight is LIVE-only and only when both scores parse — FINAL
+    // shows no leader emphasis (matches native TeamScore.leading rule).
+    let awayLeads = false, homeLeads = false;
+    if (kind === "live" && hasScores) {
+      const a = Number(awayScore), h = Number(homeScore);
+      if (Number.isFinite(a) && Number.isFinite(h)) {
+        awayLeads = a > h;
+        homeLeads = h > a;
+      }
+    }
+    return {
+      type: "game",
+      league: String(g.league ?? symbol),
+      kind,
+      away, home, awayScore, homeScore,
+      hasScores, awayLeads, homeLeads,
+      status: formatStatus(g.state, g.status),
+      sample,
+    };
+  }
+
+  // Neither game nor card → markets/news cell (direction arrow + value).
+  return {
+    type: "cell",
+    symbol,
+    value: display,
+    glyph: directionGlyph(e.direction),
+    dirClass: directionClass(e.direction),
+    direction: String(e.direction ?? "none"),
+    sample,
+  };
+}
+
+/**
+ * Group a list of ticker entries into labelled, card-bearing runs, keyed
+ * by the page marker the native app uses: `game.league ?? card.league ??
+ * symbol`. Consecutive entries sharing a label collapse under one marker
+ * (ESPN-BottomLine: the league shows ONCE). Each run carries structured
+ * card models (via tickerCardModel), NOT flat strings — so the caller
+ * renders bespoke per-sport cards from real fields.
+ *
+ * Pure. Returns [{ label, cards: [model, ...] }]. `newsMode` routes every
+ * entry through the news-cell shape under a "NEWS" marker.
+ */
+export function groupTickerCards(entries, { newsMode = false } = {}) {
+  const groups = [];
+  for (const entry of entries ?? []) {
+    const model = tickerCardModel(entry, { newsMode });
+    let label;
+    if (newsMode) label = "NEWS";
+    else if (model.type === "card" || model.type === "game") label = model.league;
+    else label = model.symbol;
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.cards.push(model);
+    else groups.push({ label, cards: [model] });
+  }
+  return groups;
+}
+
+/**
+ * Build the NEWS ticker entries from feed items: source-labelled, inert
+ * plain text (A1 — no in-ticker reading). Newest-first, capped so the
+ * marquee stays glanceable. Pure — reuses the same chronological+source
+ * discipline as the feed pane. Each becomes a normal ticker entry shape
+ * ({symbol, display, direction, is_sample}) consumed by groupTickerCards
+ * in newsMode. Honest: a feed item carries no sample flag, so news is
+ * is_sample=false (real headlines) — never a fabricated SAMPLE pill.
+ */
+export function newsTickerEntries(items, limit = 24) {
+  // Drop empty-title items BEFORE capping so an untitled feed row never
+  // consumes a marquee slot (cap counts only renderable headlines).
+  return feedChronological(items)
+    .map((it) => ({
+      symbol: sourceLabel(it),
+      display: String(it.title ?? "").trim(),
+      direction: "none",
+      is_sample: false,
+    }))
+    .filter((e) => e.display !== "")
+    .slice(0, Math.max(0, limit));
 }
 
 // ----- ticker league grouping (ESPN-BottomLine style) -----
@@ -138,6 +352,127 @@ export function gridLayout(cellCount) {
   return { count, cols, rows };
 }
 
+// ----- grid rows × cols (native parity: independent dims, each 1–3) -----
+
+/** Grid rows/cols are each clamped to this range (1–3 → up to a 3×3 = 9
+ *  grid), mirroring the native GRID_DIM_MIN/MAX. The web's earlier
+ *  cell-COUNT model is a derived view of this (count = rows × cols). */
+export const GRID_DIM_MIN = 1;
+export const GRID_DIM_MAX = 3;
+
+/** Clamp a stored/edited grid dimension into [GRID_DIM_MIN]..[GRID_DIM_MAX]
+ *  (mirrors native clampGridDim). A non-finite value clamps to the min. */
+export function clampGridDim(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return GRID_DIM_MIN;
+  return Math.min(GRID_DIM_MAX, Math.max(GRID_DIM_MIN, Math.round(n)));
+}
+
+/**
+ * Lay out the video grid from independent ROWS × COLS (native parity — the
+ * operator tunes rows and cols separately, each 1–3, so 2×2, 1×3, 3×2, …,
+ * up to 3×3 = 9). Returns the SAME `{ count, cols, rows }` shape as
+ * `gridLayout` so the rest of the client (CSS vars, cell reconcile) is
+ * unchanged. `count = rows × cols` (native `gridCells`). Pure; both dims
+ * are clamped defensively on read. The per-slot channel assignments are
+ * keyed by slot index, so they survive a dims change for slots that still
+ * exist (native LineupStore behaviour).
+ */
+export function gridLayoutFromDims(rows, cols) {
+  const r = clampGridDim(rows);
+  const c = clampGridDim(cols);
+  return { count: r * c, cols: c, rows: r };
+}
+
+// ----- ticker scroll speed (native parity: tickerScrollPct slider) -----
+
+/** Ticker-speed slider bounds + step, mirroring the native
+ *  TICKER_SPEED_MIN/MAX/STEP_PCT. 100% = the calm default; the bounds keep
+ *  the marquee from getting unreadably fast or painfully slow. */
+export const TICKER_SPEED_MIN_PCT = 40;
+export const TICKER_SPEED_MAX_PCT = 200;
+export const TICKER_SPEED_STEP_PCT = 20;
+
+/** Clamp a ticker-speed percent into the allowed range (defensive on read +
+ *  nudge), mirroring native clampTickerSpeedPct. Non-finite → 100 (default). */
+export function clampTickerSpeedPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 100;
+  return Math.min(TICKER_SPEED_MAX_PCT, Math.max(TICKER_SPEED_MIN_PCT, Math.round(n)));
+}
+
+/**
+ * Scale a base marquee px/sec velocity by the operator's `tickerScrollPct`
+ * (native `tickerScrollPct` scales BASE_SCROLL_VELOCITY). 100% = base;
+ * higher = faster. The CSS animation duration is `trackHalfWidth / px-per-
+ * sec`, so the caller divides by this scaled velocity. Pure; the percent
+ * is clamped so an out-of-range stored pref can't produce a 0 or absurd
+ * velocity. Returns px/sec (> 0).
+ */
+export function tickerScrollPxPerSec(basePxPerSec, pct) {
+  const clamped = clampTickerSpeedPct(pct);
+  return Math.max(1, basePxPerSec * (clamped / 100));
+}
+
+// ----- view-prefs normalize / serialize (browser-local, pure + testable) -----
+
+/** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
+export const DEFAULT_VIEW_PREFS = {
+  gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
+  tickerNews: false, feedRecency: "all", tickerScrollPct: 100,
+  hidden: [], hiddenLeagues: [], assignments: {},
+};
+
+/**
+ * Normalize a raw (parsed-JSON or partial) prefs object into the canonical
+ * view-prefs shape — clamping every value into its valid range, defaulting
+ * the missing, and honestly defaulting `tickerNews` OFF (explicit opt-in
+ * only, the load-bearing native default). Denylists come back as ARRAYS
+ * (JSON-friendly; the caller wraps them in Sets). A legacy single
+ * `cellCount` (the v3 grid model) migrates into rows × cols so the
+ * operator's grid size carries forward. Pure — no DOM, no localStorage —
+ * so the persistence round-trip is unit-tested against the REAL code path.
+ */
+export function normalizeViewPrefs(raw) {
+  const p = (raw && typeof raw === "object") ? raw : {};
+  let gridRows = p.gridRows, gridCols = p.gridCols;
+  if (gridRows == null && gridCols == null && GRID_CELL_COUNTS.includes(p.cellCount)) {
+    const legacy = gridLayout(p.cellCount);
+    gridRows = legacy.rows; gridCols = legacy.cols;
+  }
+  return {
+    gridRows: clampGridDim(gridRows ?? DEFAULT_VIEW_PREFS.gridRows),
+    gridCols: clampGridDim(gridCols ?? DEFAULT_VIEW_PREFS.gridCols),
+    feedPct: typeof p.feedPct === "number" ? p.feedPct : DEFAULT_VIEW_PREFS.feedPct,
+    feedFont: typeof p.feedFont === "number" ? p.feedFont : DEFAULT_VIEW_PREFS.feedFont,
+    tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
+    feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
+    tickerScrollPct: clampTickerSpeedPct(p.tickerScrollPct ?? DEFAULT_VIEW_PREFS.tickerScrollPct),
+    hidden: Array.isArray(p.hidden) ? p.hidden.map(String) : [],
+    hiddenLeagues: Array.isArray(p.hiddenLeagues) ? p.hiddenLeagues.map(String) : [],
+    assignments: (p.assignments && typeof p.assignments === "object") ? p.assignments : {},
+  };
+}
+
+/**
+ * Serialize the live prefs object (with denylists as Sets) into the plain,
+ * JSON-storable, normalized shape (denylists as arrays). Round-trips with
+ * `normalizeViewPrefs`: normalize(serialize(prefs)) === the canonical prefs.
+ * Pure.
+ */
+export function serializeViewPrefs(prefs) {
+  const p = prefs ?? {};
+  return normalizeViewPrefs({
+    gridRows: p.gridRows, gridCols: p.gridCols,
+    feedPct: p.feedPct, feedFont: p.feedFont,
+    tickerNews: p.tickerNews, feedRecency: p.feedRecency,
+    tickerScrollPct: p.tickerScrollPct,
+    hidden: p.hidden instanceof Set ? [...p.hidden] : p.hidden,
+    hiddenLeagues: p.hiddenLeagues instanceof Set ? [...p.hiddenLeagues] : p.hiddenLeagues,
+    assignments: p.assignments,
+  });
+}
+
 // ----- browser playability hint (mixed-content / CORS reality) -----
 
 /**
@@ -181,6 +516,103 @@ export function filterHiddenSources(items, hiddenSet) {
   return (items ?? []).filter((it) => {
     const key = (it.source && it.source.trim()) ? it.source : "Unknown source";
     return !lower.has(key.toLowerCase());
+  });
+}
+
+// ----- sports-league filter (browser-local view pref, mirrors the wall) -----
+
+/**
+ * The league label a sports ticker ENTRY belongs to — the same key the
+ * native `HelperTickerSource.filterLeagues` matches on: the team game's
+ * `game.league` when present (the value the card groups + labels by),
+ * falling back to the entry `symbol`, so a hidden league can't leak
+ * through a symbol/league divergence. Individual-sport entries (UFC/PGA/
+ * etc.) have NO `game`, so they key on `symbol` (which the helper sets to
+ * the league) — matching native, which also falls back to symbol there.
+ * Pure; returns the raw (un-lowercased) label for display.
+ */
+export function entryLeague(entry) {
+  const e = entry ?? {};
+  if (e.game && typeof e.game === "object" && e.game.league != null && String(e.game.league).trim()) {
+    return String(e.game.league);
+  }
+  return String(e.symbol ?? "");
+}
+
+/**
+ * The distinct league labels present in a list of sports ticker entries,
+ * alphabetical (case-insensitive) — the pool the Sports-leagues filter UI
+ * offers as toggles. Markets/news "leagues" never appear here because this
+ * is fed only the SPORTS envelope's entries. Blank labels are dropped (an
+ * unlabelled honest "no games" cell is not a togglable league). Pure.
+ *
+ * Honest: the pool is derived from what the helper actually serves, so a
+ * NEWLY-appearing league shows up here and — being absent from the
+ * denylist — is shown by default (denylist semantics, matching native).
+ */
+export function leaguePool(entries) {
+  const seen = new Map();   // lower → first-seen original-case label
+  for (const entry of entries ?? []) {
+    const label = entryLeague(entry).trim();
+    if (label === "") continue;
+    const lower = label.toLowerCase();
+    if (!seen.has(lower)) seen.set(lower, label);
+  }
+  return [...seen.values()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
+/**
+ * Drop sports ticker entries whose league is in the hidden-set
+ * (case-insensitive) — a DENYLIST, exactly mirroring the native
+ * `filterLeagues`: match on `game.league ?? symbol`, lowercased. New
+ * leagues show by default. The league filter is TV-SIDE in native (the
+ * helper still serves all leagues); the web filters client-side here,
+ * identically, so the two clients agree on what's shown.
+ *
+ * Honest: filtering is the ONLY transform — it never fabricates, reorders,
+ * or upgrades a sample/stale entry; a kept entry's flags ride through
+ * untouched. Pure.
+ */
+export function filterHiddenLeagues(entries, hiddenSet) {
+  if (!hiddenSet || hiddenSet.size === 0) return entries ?? [];
+  const lower = new Set([...hiddenSet].map((s) => String(s).toLowerCase()));
+  return (entries ?? []).filter((e) => !lower.has(entryLeague(e).toLowerCase()));
+}
+
+// ----- feed recency window (browser-local view pref, mirrors the wall) -----
+
+/**
+ * The feed recency presets the web offers, mirroring the native
+ * `FeedRecency` enum: `All` (no bound) + three bounded windows. `maxAgeMs`
+ * null means "no bound" (everything the helper retains). Pure data; the
+ * settings <select> renders these and persists the chosen `id`.
+ */
+export const FEED_RECENCY_OPTIONS = [
+  { id: "all", label: "All", maxAgeMs: null },
+  { id: "hour", label: "Last hour", maxAgeMs: 60 * 60 * 1000 },
+  { id: "six", label: "Last 6h", maxAgeMs: 6 * 60 * 60 * 1000 },
+  { id: "day", label: "Last 24h", maxAgeMs: 24 * 60 * 60 * 1000 },
+];
+
+/** Look up a recency option by id; unknown id → `All` (the safe default). */
+export function feedRecencyOption(id) {
+  return FEED_RECENCY_OPTIONS.find((o) => o.id === id) ?? FEED_RECENCY_OPTIONS[0];
+}
+
+/**
+ * Drop feed items older than `maxAgeMs` (published time preferred, fetched
+ * time fallback), mirroring the native `FeedListBuilder` recency window.
+ * `maxAgeMs` null → passthrough (the `All` preset). An item with NO
+ * parseable timestamp is KEPT under `All` and DROPPED under a bounded
+ * window — we can't prove it's recent, exactly as native does (honest: we
+ * never present an unproven-recent item inside a "last hour" claim). Pure.
+ */
+export function filterFeedRecency(items, maxAgeMs, now = Date.now()) {
+  if (maxAgeMs == null) return items ?? [];
+  return (items ?? []).filter((it) => {
+    const ts = Date.parse(itemTimestamp(it));
+    if (Number.isNaN(ts)) return false;   // no provable timestamp → not provably recent
+    return (now - ts) <= maxAgeMs;
   });
 }
 

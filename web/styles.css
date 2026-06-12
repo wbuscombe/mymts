@@ -31,17 +31,67 @@ body { display: flex; flex-direction: column; }
 @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .ticker-bar:hover .ticker-track { animation-play-state: paused; }  /* hover to read */
 
-/* A league/market run: the marker shows ONCE, then its cells follow. */
-.t-group { display: inline-flex; gap: 14px; align-items: center; }
+/* A league/market run: the marker shows ONCE, then its cards follow. Each
+   card is a discrete bordered cell — the native model where the card IS the
+   divider unit (rounded bordered cell + gap, no separate divider element). */
+.t-group { display: inline-flex; gap: 8px; align-items: center; }
 .t-league { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: #000;
-  background: var(--accent); border-radius: 3px; padding: 2px 7px; }
-.t-cell { display: inline-flex; gap: 6px; align-items: center; }
-.t-val { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  background: var(--accent); border-radius: 3px; padding: 3px 8px; flex: 0 0 auto; }
+
+/* shared card cell — native cardRow register (CardBg #15171A, 1px border,
+   5px radius, 8px h / 3px v padding, children centered with a small gap). */
+.t-card { display: inline-flex; align-items: center; gap: 6px;
+  background: #15171a; border: 1px solid rgba(255,255,255,0.18); border-radius: 5px;
+  padding: 3px 8px; white-space: nowrap; }
+
+/* market/news fallback cell (direction arrow + value) */
+.t-card--cell .t-val { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+.t-card--cell.t-card--sample .t-val { color: var(--ghost); }     /* dimmed when sample */
 .t-arrow { font-size: 11px; }
 .dir-up { color: var(--live); } .dir-down { color: var(--down); } .dir-flat { color: var(--muted); }
-.t-pill { font-size: 8px; letter-spacing: 1px; color: var(--ghost); background: #ffffff33;
-  border-radius: 2px; padding: 1px 4px; }
+.t-card--sample .t-arrow { opacity: 0.5; }                        /* arrow alpha halved when sample */
+.t-sample-inline { font-size: 8px; font-style: italic; letter-spacing: 0.5px; color: var(--ghost); }
+
+/* team game card — abbrs + scores (or "@"), status chip */
+.t-matchup { display: inline-flex; align-items: center; gap: 8px;
+  font-family: ui-monospace, Menlo, monospace; }
+.t-side { display: inline-flex; align-items: baseline; gap: 4px; }
+.t-team { font-size: 13px; font-weight: 600; color: var(--label); }
+.t-side--final .t-team { color: var(--muted); }                   /* FINAL → muted teams */
+.t-at { font-size: 12px; color: var(--ghost); }
+.t-score { font-size: 14px; font-weight: 700; color: var(--muted); }
+.t-score--lead { color: #fff; }                                   /* leader (LIVE only) → primary */
+
+/* individual sport cards — title + lines */
+.t-card--sport { flex-direction: row; }
+.t-title { font-size: 12px; font-weight: 600; color: var(--label); }
+.t-card--fight .t-title { font-size: 13px; }
+.t-line { font-size: 12px; color: var(--muted); }
+.t-card--fight .t-line { font-size: 10px; }
+.t-line--mono { font-family: ui-monospace, Menlo, monospace; }    /* leaderboard / match alignment */
+
+/* news card — SOURCE label (green) + headline, inert plain text */
+.t-card--news .t-news-source { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+.t-card--news .t-news-headline { font-size: 12px; color: var(--muted); }
+
+/* status chip (shared color-rule engine — native StatusBlock) */
+.t-status { font-size: 10px; font-weight: 700; letter-spacing: 0.8px; border-radius: 3px; padding: 2px 6px; }
+.t-status--live { color: var(--live); background: rgba(0,229,160,0.13); }
+.t-status--final { color: var(--muted); background: rgba(255,255,255,0.10); }
+.t-status--upcoming { color: #bfc6cc; background: rgba(255,255,255,0.08); }
+
+/* per-card SAMPLE chip (boxed) — honest degradation, never faked live */
+.t-sample { font-size: 8px; letter-spacing: 1px; color: var(--ghost);
+  background: rgba(255,255,255,0.20); border-radius: 2px; padding: 1px 4px; }
+
+/* schema-guard / unavailability fallbacks inside the track */
 .t-stale { color: var(--recover); font-size: 11px; }
+.t-schema-warn { color: var(--stale); font-size: 12px; font-weight: 600; }
+
+/* envelope-level STALE chip pinned to the strip's RIGHT edge (native StaleChip) */
+.t-stale-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 1.4px;
+  color: var(--stale); background: rgba(5,5,5,0.9); border-radius: 2px; padding: 2px 6px; }
+
 .gear { flex: 0 0 auto; background: transparent; border: 1px solid var(--line); color: var(--label);
   font-size: 16px; width: 30px; height: 28px; border-radius: 4px; cursor: pointer; }
 .gear:hover { background: #ffffff14; }
@@ -108,8 +158,18 @@ body { display: flex; flex-direction: column; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
 .row.col { flex-direction: column; align-items: stretch; gap: 6px; }
 .toggles label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.toggles .empty { padding: 4px 0; }
 .note { font-size: 11px; color: var(--ghost); line-height: 1.5; display: flex; flex-direction: column; gap: 3px; }
+.note:empty { display: none; }
+/* grouped-settings section header (mirrors the native SettingsOverlay sections) */
+.section-head { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--accent); margin: 4px 0 -4px; }
+.section-head:first-child { margin-top: 0; }
+/* a range slider with its live value to the right (scroll speed) */
+.range-with-val { display: inline-flex; align-items: center; gap: 8px; }
+.range-val { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); min-width: 38px; text-align: right; }
 input[type=range] { accent-color: var(--accent); }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
 select { background: #111; color: var(--label); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
 
 /* channel picker rows */

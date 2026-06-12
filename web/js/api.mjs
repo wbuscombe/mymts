@@ -9,6 +9,15 @@
 //
 // A1: this only ever GETs the helper's own JSON endpoints — never an
 // article page, never an arbitrary URL. The helper is the sole boundary.
+//
+// ARCH-1 (schema guard): the ticker fetchers run the parsed envelope
+// through tickerSchemaCheck() — the single pure validator in render.mjs —
+// and attach a `_schema` field { ok, version, reason }. If the helper
+// bumps TICKER_SCHEMA_VERSION (a new wire contract this client doesn't
+// understand), the app shows an honest "client out of date" state and
+// renders NO cards, rather than silently misreading an unknown contract.
+
+import { tickerSchemaCheck } from "./render.mjs";
 
 async function getJson(path) {
   const res = await fetch(path, {
@@ -21,10 +30,17 @@ async function getJson(path) {
   return res.json();
 }
 
+/** Fetch a ticker envelope and tag it with the schema-guard verdict. The
+ *  verdict travels on `_schema`; the caller renders cards only when ok. */
+async function getTicker(path) {
+  const env = await getJson(path);
+  return { ...env, _schema: tickerSchemaCheck(env) };
+}
+
 export const api = {
   feed: (limit = 100) => getJson(`/api/feed?limit=${encodeURIComponent(limit)}`),
   channels: () => getJson(`/api/channels`),
-  tickerMarkets: () => getJson(`/api/ticker/markets`),
-  tickerSports: () => getJson(`/api/ticker/sports`),
+  tickerMarkets: () => getTicker(`/api/ticker/markets`),
+  tickerSports: () => getTicker(`/api/ticker/sports`),
   health: () => getJson(`/health`),
 };
