@@ -21,6 +21,23 @@ def _default_data_dir() -> str:
     return os.path.join(base, "mymts-helper")
 
 
+def _default_web_client_dir() -> str | None:
+    """Locate the in-repo web/ client so a clean clone / demo serves it at /app
+    with no config (matches .phantom.yml + ONBOARDING). Used only in phantom
+    mode; production serving stays opt-in via WEB_CLIENT_DIR. Returns None if not
+    found (e.g. an installed package outside the source tree)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+    for c in (
+        os.path.join(repo_root, "web"),
+        os.path.join(os.getcwd(), "web"),
+        os.path.join(os.getcwd(), "..", "web"),
+    ):
+        if os.path.isfile(os.path.join(c, "index.html")):
+            return c
+    return None
+
+
 @dataclass(frozen=True)
 class Config:
     phantom_mode: bool
@@ -72,8 +89,16 @@ class Config:
             v = os.environ.get(name)
             return v if v else None
 
+        phantom = os.environ.get("PHANTOM_MODE", "0") == "1"
+        # Web client: opt-in via WEB_CLIENT_DIR. In phantom/demo mode, default to
+        # the in-repo web/ so a fresh clone serves /app with no config (matches
+        # .phantom.yml + ONBOARDING). Production stays opt-in / byte-identical.
+        web_dir = _opt_str("WEB_CLIENT_DIR")
+        if web_dir is None and phantom:
+            web_dir = _default_web_client_dir()
+
         return cls(
-            phantom_mode=os.environ.get("PHANTOM_MODE", "0") == "1",
+            phantom_mode=phantom,
             port=int(os.environ.get("PORT", "8091")),
             log_level=os.environ.get("LOG_LEVEL", "info").lower(),
             build_sha=os.environ.get("BUILD_SHA", "dev"),
@@ -99,7 +124,7 @@ class Config:
             https_port=_opt_int("HTTPS_PORT"),
             ssl_keyfile=_opt_str("SSL_KEYFILE"),
             ssl_certfile=_opt_str("SSL_CERTFILE"),
-            web_client_dir=_opt_str("WEB_CLIENT_DIR"),
+            web_client_dir=web_dir,
         )
 
     def has_https(self) -> bool:
