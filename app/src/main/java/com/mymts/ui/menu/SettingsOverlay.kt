@@ -6,7 +6,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,11 +35,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusEvent
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -90,7 +96,8 @@ fun SettingsOverlay(
     onNudgeOffsetY: (Int) -> Unit,
     onNudgeFitScale: (Int) -> Unit,
     onNudgeFitStretchY: (Int) -> Unit,
-    onCycleGridSize: () -> Unit,
+    onNudgeGridRows: (Int) -> Unit,
+    onNudgeGridCols: (Int) -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -125,7 +132,8 @@ fun SettingsOverlay(
                 onNudgeOffsetY = onNudgeOffsetY,
                 onNudgeFitScale = onNudgeFitScale,
                 onNudgeFitStretchY = onNudgeFitStretchY,
-                onCycleGridSize = onCycleGridSize,
+                onNudgeGridRows = onNudgeGridRows,
+                onNudgeGridCols = onNudgeGridCols,
                 onToggleCalibration = onToggleCalibration,
                 onCancel = onCancel,
             )
@@ -150,7 +158,8 @@ private fun SettingsCard(
     onNudgeOffsetY: (Int) -> Unit,
     onNudgeFitScale: (Int) -> Unit,
     onNudgeFitStretchY: (Int) -> Unit,
-    onCycleGridSize: () -> Unit,
+    onNudgeGridRows: (Int) -> Unit,
+    onNudgeGridCols: (Int) -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -240,12 +249,19 @@ private fun SettingsCard(
 
         // ── Layout & Feed ────────────────────────────────────────────────
         SectionHeader("Layout & Feed")
-        // Video grid — how many channel cells the wall shows (1/2/4/6/9). Each
-        // cell is a [video + label] unit; the layout is grid-agnostic.
-        SettingRow(
-            title = "Video grid",
-            valueLabel = settings.gridSize.displayName,
-            onCycle = onCycleGridSize,
+        // Video grid — independent ROWS × COLUMNS (each 1–3). Cell count =
+        // rows × cols; each cell is a [video + label] unit, grid-agnostic.
+        AdjustRow(
+            title = "Grid rows  ‹ fewer · more ›",
+            valueLabel = "${settings.gridRows}",
+            onLeft = { onNudgeGridRows(-1) },
+            onRight = { onNudgeGridRows(1) },
+        )
+        AdjustRow(
+            title = "Grid columns  ‹ fewer · more ›",
+            valueLabel = "${settings.gridCols}",
+            onLeft = { onNudgeGridCols(-1) },
+            onRight = { onNudgeGridCols(1) },
         )
         SettingRow(
             title = "Feed width",
@@ -308,6 +324,23 @@ private fun SettingsCard(
  * plain Text), so grouping adds zero nav complexity — every setting row stays
  * reachable with the same single-level D-pad nav.
  */
+/**
+ * Scroll the focused row INTO the card's viewport (the menu follows the
+ * cursor). The default `.focusable()` bring-into-view scrolled flush to the
+ * edge — on this overscan-clipped, fit-scaled panel that left the focused row
+ * at/below the visible bottom (the operator's "cursor scrolls offscreen" bug).
+ * An explicit [BringIntoViewRequester] fired on focus reliably pulls the row in.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.bringFocusedIntoView(): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    return this
+        .bringIntoViewRequester(requester)
+        .onFocusEvent { if (it.isFocused) scope.launch { requester.bringIntoView() } }
+}
+
 @Composable
 private fun SectionHeader(title: String) {
     Spacer(modifier = Modifier.height(6.dp))
@@ -334,6 +367,7 @@ private fun SettingRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .bringFocusedIntoView()
             .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
             // The key handler MUST sit ABOVE .clickable()/.focusable() in the
             // chain. A key-input modifier only receives events when the focus
@@ -418,6 +452,7 @@ private fun AdjustRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .bringFocusedIntoView()
             .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
             // Key handler ABOVE .clickable()/.focusable() — see SettingRow note:
             // below .focusable() it never fires and the nudges silently no-op.

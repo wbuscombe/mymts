@@ -217,7 +217,8 @@ class WallSettingsTest {
         assertNotEquals(a, a.copy(calibrationBorder = true))
         assertNotEquals(a, a.copy(fitScalePct = 80))
         assertNotEquals(a, a.copy(fitStretchYPct = 110))
-        assertNotEquals(a, a.copy(gridSize = GridSize.Nine))
+        assertNotEquals(a, a.copy(gridRows = 3))
+        assertNotEquals(a, a.copy(gridCols = 3))
         // copy preserves the panel-fit fields when other knobs change.
         val next = a.copy(feedWidth = FeedWidth.Wide)
         assertEquals(UiScale.Default, next.uiScale)
@@ -239,12 +240,17 @@ class WallSettingsTest {
         assertEquals(74, clampFitScalePct(74))   // in-range passes through
     }
 
-    @Test fun `grid size defaults to Four (2x2) and exposes 1-2-4-6-9 cells`() {
-        assertEquals(GridSize.Four, WallSettings.Default.gridSize)
-        assertEquals(4, GridSize.Four.cells)
-        assertEquals(listOf(1, 2, 4, 6, 9), GridSize.values().map { it.cells })
-        assertEquals(GridSize.Four, gridSizeFromOrdinal(99))                 // fallback
-        assertEquals(GridSize.Nine, gridSizeFromOrdinal(GridSize.Nine.ordinal))
+    @Test fun `grid defaults to 2x2 with cells = rows times cols, dims clamp 1-3`() {
+        assertEquals(2, WallSettings.Default.gridRows)
+        assertEquals(2, WallSettings.Default.gridCols)
+        assertEquals(4, WallSettings.Default.gridCells)
+        assertEquals(6, WallSettings.Default.copy(gridRows = 2, gridCols = 3).gridCells)
+        assertEquals(3, WallSettings.Default.copy(gridRows = 1, gridCols = 3).gridCells)
+        // dims clamp to 1..3 (no 0×N or absurd grids)
+        assertEquals(GRID_DIM_MAX, clampGridDim(9))
+        assertEquals(GRID_DIM_MIN, clampGridDim(0))
+        assertEquals(GRID_DIM_MIN, clampGridDim(-5))
+        assertEquals(3, clampGridDim(3))
     }
 
     @Test fun `vertical stretch defaults to 100 (none) and clamps to range`() {

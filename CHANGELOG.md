@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Menu focus fixes + Rows×Cols grid + channel list picker (2026-06-11)
+
+Four issues from the operator using the new menu — two focus bugs (the core) + two UI enhancements.
+- **Fix — focus-loss on menu exit (the Onn-box focus-escape, WyzeGrid pattern):** closing the menu lost D-pad control / leaked focus to the video "main panel." Three deterministic fixes: (1) the video `PlayerView` is now **non-focusable** (`isFocusable=false` + `FOCUS_BLOCK_DESCENDANTS`) so focus can never escape to a tile; (2) the side menu **explicitly reclaims focus** when a sub-overlay dismisses (keyed re-home, was a one-shot that never re-fired); (3) the wall root **explicitly re-homes focus** on full menu close via a frame-yielded `requestFocus` (replaced the racy `DisposableEffect`). **Verified on-box across 3 open/close cycles** — focus returns to the wall root (`[0,0][1280,720]`), never lost, never hijacked.
+- **Fix — menu scroll doesn't follow the cursor:** navigating down, the focused row slid into the overscan-clipped bottom. The default `.focusable()` bring-into-view scrolled flush to the edge; now each row uses an explicit `BringIntoViewRequester` fired on focus, so the cursor stays visible. **Verified on-box** — scrolling to the last row keeps it on-screen (y within 0–720).
+- **Feat — independent Rows × Columns grid:** the single "Video grid" preset (1/2/4/6/9) is replaced by two selectors — **Grid rows (1–3)** and **Grid columns (1–3)** — so 2×2, 2×3, 1×3, 3×2 … up to 3×3. `WallSettings.gridRows`/`gridCols` (default 2×2, clamped, persisted); `VideoGrid` takes explicit `columns`; the focus model's column nav matches. Cell count = rows × cols; per-slot channel overrides survive an R×C change. *(Migration: the old `gridSize` pref is dropped — the grid resets to 2×2; re-set R×C if you'd changed it.)*
+- **Feat — channel selection is a scrollable LIST:** the 1-at-a-time left/right cycler is replaced by a `LazyColumn` picker — D-pad UP/DOWN through every channel, SELECT to assign, BACK to cancel. Opens focused on the slot's current channel, scrolls to follow the cursor (same fix as above), LIVE/OFFLINE section headers + per-row `live`/`offline` tags (honest status, C3).
+- Tests: `WallSettings`/`LineupStore` grid-dims (default 2×2, clamp, persist), `ChannelPickerListTest` (initial index). Full suite green. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit VALUES untouched (Fit 80% / Stretch 110% / Overscan None / Pos 0,0).
+
 ## Individual-sports ticker cards — UFC / PGA / Tennis / F1 (2026-06-11)
 
 The four structurally-different sports now have bespoke ticker cards (they don't fit the team-vs-team game card). Research-first (`docs/findings/21`), then built on a shared per-sport payload — **all four shipped**.

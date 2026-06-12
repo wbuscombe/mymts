@@ -78,6 +78,7 @@ private val SECTION_SAFE_BOTTOM = 28.dp
 @Composable
 fun VideoGrid(
     slots: List<Slot>,
+    columns: Int,
     modifier: Modifier = Modifier,
     helperUnreachable: Boolean = false,
     audibleSlot: Int = -1,
@@ -144,7 +145,10 @@ fun VideoGrid(
         }
     }
 
-    val columns = remember(slots.size) { gridColumnsFor(slots.size) }
+    // Explicit column count from the operator's R×C setting (clamped so a 1-tile
+    // grid can't try to draw 3 columns). Rows are derived from count ÷ columns,
+    // which equals the configured rows when count = rows × cols.
+    val cols = columns.coerceIn(1, bound.size.coerceAtLeast(1))
 
     Box(modifier = modifier.background(WallColors.Background)) {
         if (bound.isEmpty()) {
@@ -154,7 +158,7 @@ fun VideoGrid(
             )
         } else {
             AutofitGrid(
-                columns = columns,
+                columns = cols,
                 bound = bound,
                 focusedCellIndex = focusedCellIndex,
                 modifier = Modifier.fillMaxSize(),

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -168,7 +169,7 @@ fun WallScreen(
     // defaults to (Four = 4). Channel overrides are keyed by slot index, so the
     // operator's per-cell channel choices survive a grid-size change for the
     // slots that still exist.
-    val effectiveTileCount = wallSettings.gridSize.cells
+    val effectiveTileCount = wallSettings.gridCells   // rows × cols
     val defaultOrder = remember(playable, effectiveTileCount) {
         LineupSelector.forWall(maxCount = effectiveTileCount).invoke(playable)
     }
@@ -192,19 +193,27 @@ fun WallScreen(
     BackHandler(enabled = menu.isOpen) { menu.close() }
 
     val rootFocusRequester = remember { FocusRequester() }
-    // Restore root focus whenever the menu closes OR a modal
-    // (controls / picker) dismisses. The pendingSelection key matters
-    // when the modal was opened straight from a focused grid cell (no
-    // menu involved) — without it the wall's onPreviewKeyEvent stops
-    // receiving D-pad events after the modal goes away.
-    DisposableEffect(menu.isOpen, menu.pendingSelection) {
+    // Deterministically RE-HOME focus to the wall root whenever the menu fully
+    // closes (or a modal opened straight from a grid cell dismisses). This is
+    // the fix for the Onn-box focus-escape the operator hit (focus lost /
+    // leaking to the video "main panel" on menu exit): we yield a frame so the
+    // dismissed overlay releases focus FIRST, then explicitly claim it
+    // (runCatching so a transient detached requester can't crash). The video
+    // surfaces are non-focusable (StreamSurface), so nothing else can grab it.
+    // The pendingSelection key matters when a modal was opened straight from a
+    // focused grid cell (no side menu) — without it the wall's onPreviewKeyEvent
+    // stops receiving D-pad after the modal goes away.
+    LaunchedEffect(menu.isOpen, menu.pendingSelection) {
         if (!menu.isOpen && menu.pendingSelection == null) {
-            rootFocusRequester.requestFocus()
+            withFrameNanos { }
+            runCatching { rootFocusRequester.requestFocus() }
         }
-        onDispose { }
     }
 
-    val gridColumns = remember(slots.size) { gridColumnsFor(slots.size) }
+    // Explicit column count from the operator's R×C setting (clamped to the
+    // actual slot count) — drives the grid layout AND the focus model's
+    // row/column nav, so D-pad movement matches the visible R×C exactly.
+    val gridColumns = wallSettings.gridCols.coerceIn(1, slots.size.coerceAtLeast(1))
 
     // Dispatch a NavIntent through the pure focus model and apply its
     // result. Returns true if the event was handled (caller should
@@ -377,6 +386,7 @@ fun WallScreen(
             val videoGrid = @Composable {
                 VideoGrid(
                     slots = slots,
+                    columns = gridColumns,
                     modifier = Modifier.fillMaxSize(),
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                     audibleSlot = audibleSlot,
@@ -484,7 +494,8 @@ fun WallScreen(
                 onNudgeOffsetY = { delta -> lineupStore.nudgeOffsetY(delta) },
                 onNudgeFitScale = { delta -> lineupStore.nudgeFitScale(delta) },
                 onNudgeFitStretchY = { delta -> lineupStore.nudgeFitStretchY(delta) },
-                onCycleGridSize = { lineupStore.cycleGridSize() },
+                onNudgeGridRows = { delta -> lineupStore.nudgeGridRows(delta) },
+                onNudgeGridCols = { delta -> lineupStore.nudgeGridCols(delta) },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),

@@ -44,6 +44,14 @@ fun StreamSurface(
         factory = { context ->
             PlayerView(context).apply {
                 useController = false
+                // The video surface must NEVER take D-pad focus — the wall's
+                // focus is driven entirely by the root Box + WallFocusModel.
+                // A focusable embedded View would let focus escape to the
+                // "main panel" when an overlay dismisses (the Onn-box focus-
+                // hijack the operator hit). Block it at the View + descendants.
+                isFocusable = false
+                isFocusableInTouchMode = false
+                descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                 this.resizeMode = resizeMode
                 // No tap-to-toggle controller, no rewind/forward inc — TV

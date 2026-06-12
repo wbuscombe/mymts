@@ -6,33 +6,43 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -40,27 +50,28 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mymts.data.helper.Channel
+import kotlinx.coroutines.launch
 
 /**
- * The TV-style centered channel picker — WyzeGrid's signature popup
- * pattern, adapted for the news wall.
+ * The channel picker — a **scrollable LIST** (2026-06-11, replacing the old
+ * 1-at-a-time left/right cycler). The operator D-pads **UP/DOWN** through every
+ * channel and presses **SELECT** to assign one to the slot; **BACK** cancels.
  *
- * The picker shows the **focused channel** in the centre as
- * `< Channel Name (status) >`. D-pad **LEFT/RIGHT cycles** through the
- * available channels (wrapping at the ends); **SELECT/ENTER assigns**
- * it to the slot and dismisses the popup; **BACK cancels**, leaving
- * the slot unchanged.
+ * Focus discipline (same fixes as the menu chapter): the list **scrolls to keep
+ * the focused row visible** (explicit bring-into-view, so the cursor never
+ * slides into the overscan-clipped edge), it opens **focused on the slot's
+ * current channel**, and closing returns focus cleanly to the controls/menu
+ * underneath (the parent re-homes focus on dismiss).
  *
- * **Honest live/offline marking (Trust Bar C3 at the menu layer):**
- * every channel in the cycle is decorated with its real current
- * status — `(live)` or `(offline)` — so the operator can never
- * mistake an offline channel for one that will play. Assignment of
- * an offline channel is allowed (mark-and-allow); the wall already
- * renders the C2 honest panel for offline-assigned slots
- * (see `WallTile`'s `OfflineTile` path).
+ * Honest live/offline marking (Trust Bar C3): the list is sorted live-first
+ * (by the call site) and each row carries its real status — a `LIVE` / `OFFLINE`
+ * section header + a per-row `live`/`offline` tag — so the operator picks an
+ * informed channel. Assigning an offline channel is allowed (mark-and-allow;
+ * the wall renders the honest C2 panel for it).
  */
 @Composable
 fun ChannelPickerOverlay(
@@ -71,181 +82,189 @@ fun ChannelPickerOverlay(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (channels.isEmpty()) return  // nothing to cycle through — caller decides what to do.
+    if (channels.isEmpty()) return  // nothing to choose — caller decides what to do.
 
-    // Index of the channel currently displayed. Starts at the channel
-    // already in the slot if present, otherwise at 0. Wrapped on cycle.
     val initialIndex = remember(channels, currentSelection) {
-        val byIdx = currentSelection?.let { sel -> channels.indexOfFirst { it.slug == sel } }
-        if (byIdx == null || byIdx < 0) 0 else byIdx
+        initialChannelIndex(channels, currentSelection)
     }
-    var cursor by rememberSaveable(channels, slotIndex) { mutableIntStateOf(initialIndex) }
-    // Re-anchor to the current selection if the channel list shape
-    // changes underneath us (e.g. helper poll returns new set).
-    LaunchedEffect(channels, currentSelection) {
-        cursor = initialIndex.coerceIn(0, channels.lastIndex)
-    }
+    // Open scrolled so the current channel is visible (with a little lead-in
+    // above it where possible), and focus it.
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (initialIndex - 1).coerceAtLeast(0),
+    )
 
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
-
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(MenuColors.Scrim),
         contentAlignment = Alignment.Center,
     ) {
+        val maxCardHeight = maxHeight - 24.dp
         AnimatedVisibility(
             visible = true,
             enter = scaleIn(tween(160), initialScale = 0.92f) + fadeIn(tween(160)),
             exit = scaleOut(tween(120), targetScale = 0.92f) + fadeOut(tween(120)),
         ) {
-            val bounded = cursor.coerceIn(0, channels.lastIndex)
-            PickerCard(
+            PickerListCard(
                 slotIndex = slotIndex,
-                channel = channels[bounded],
-                group = pickerGroupAt(channels, bounded),
-                onLeft = { cursor = (cursor - 1 + channels.size) % channels.size },
-                onRight = { cursor = (cursor + 1) % channels.size },
-                onAssign = { onAssign(channels[cursor.coerceIn(0, channels.lastIndex)].slug) },
+                channels = channels,
+                initialIndex = initialIndex,
+                listState = listState,
+                maxCardHeight = maxCardHeight,
+                onAssign = onAssign,
                 onCancel = onCancel,
-                modifier = Modifier
-                    .focusRequester(focusRequester)
-                    .focusable(),
             )
         }
-    }
-}
-
-/**
- * One channel's position within the live/offline groups the picker
- * surfaces.
- *
- * The picker's channel list is sorted live-first by the call site, so
- * the live channels form a contiguous prefix and the offline ones a
- * contiguous suffix. This small data class lets the picker render a
- * "LIVE 3/8" / "OFFLINE 2/5" orientation chip — the operator's
- * "sections for live and offline" feedback applied at the cycler's
- * orientation layer (the channels themselves are already grouped by
- * sort order; the chip surfaces the grouping legibly from 10 ft).
- */
-internal data class PickerGroup(
-    val isLive: Boolean,
-    /** 1-based position within the group. */
-    val positionWithinGroup: Int,
-    val groupSize: Int,
-)
-
-internal fun pickerGroupAt(channels: List<Channel>, cursor: Int): PickerGroup {
-    val liveCount = channels.count { it.isPlayable }
-    val isLive = cursor < liveCount
-    return if (isLive) {
-        PickerGroup(isLive = true, positionWithinGroup = cursor + 1, groupSize = liveCount)
-    } else {
-        val offlineCount = channels.size - liveCount
-        PickerGroup(
-            isLive = false,
-            positionWithinGroup = (cursor - liveCount) + 1,
-            groupSize = offlineCount.coerceAtLeast(1),
-        )
     }
 }
 
 @Composable
-private fun PickerCard(
+private fun PickerListCard(
     slotIndex: Int,
-    channel: Channel,
-    group: PickerGroup,
-    onLeft: () -> Unit,
-    onRight: () -> Unit,
-    onAssign: () -> Unit,
+    channels: List<Channel>,
+    initialIndex: Int,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    maxCardHeight: Dp,
+    onAssign: (slug: String) -> Unit,
     onCancel: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
+    val liveCount = remember(channels) { channels.count { it.isPlayable } }
+
+    Column(
+        modifier = Modifier
+            .widthIn(min = 440.dp)
+            .heightIn(max = maxCardHeight)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MenuColors.PanelBackground)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onCancel(); true
+                } else false
+            }
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "SLOT ${slotIndex + 1}  ·  CHOOSE CHANNEL",
+            color = MenuColors.RowLabelMuted,
+            fontSize = 10.sp,
+            letterSpacing = 3.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.heightIn(max = (maxCardHeight.value - 90f).coerceAtLeast(120f).dp),
+        ) {
+            itemsIndexed(channels, key = { _, c -> c.slug }) { index, channel ->
+                // A light LIVE / OFFLINE section header at the group boundary
+                // (the list is sorted live-first), so the grouping reads at 10ft.
+                if (index == 0 && liveCount > 0) SectionLabel("LIVE", MenuColors.RowDetail)
+                if (index == liveCount && index < channels.size) {
+                    SectionLabel("OFFLINE", MenuColors.RowDetailOffline)
+                }
+                ChannelRow(
+                    channel = channel,
+                    isInitial = index == initialIndex,
+                    onSelect = { onAssign(channel.slug) },
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "▲▼ choose      SELECT to assign      BACK to cancel",
+            color = MenuColors.RowLabelMuted,
+            fontSize = 10.sp,
+            letterSpacing = 1.sp,
+        )
+    }
+}
+
+/**
+ * The list opens focused on the slot's current channel; if it's unset or no
+ * longer in the list, it opens at the top. Pure — unit-tested.
+ */
+internal fun initialChannelIndex(channels: List<Channel>, currentSelection: String?): Int =
+    currentSelection
+        ?.let { sel -> channels.indexOfFirst { it.slug == sel } }
+        ?.takeIf { it >= 0 } ?: 0
+
+@Composable
+private fun SectionLabel(text: String, color: Color) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 9.sp,
+        letterSpacing = 2.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ChannelRow(
+    channel: Channel,
+    isInitial: Boolean,
+    onSelect: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val isFocused by interaction.collectIsFocusedAsState()
+
+    // Open with focus on the slot's current channel.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (isInitial) focusRequester.requestFocus() }
+
+    // Scroll the focused row into view (the picker follows the cursor — no
+    // sliding into the overscan-clipped edge).
+    val bring = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+
     val statusText = if (channel.isPlayable) "live" else "offline"
     val statusColor = if (channel.isPlayable) MenuColors.RowDetail else MenuColors.RowDetailOffline
 
-    Column(
-        modifier = modifier
-            .widthIn(min = 420.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MenuColors.PanelBackground)
-            .padding(horizontal = 28.dp, vertical = 22.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (isInitial) it.focusRequester(focusRequester) else it }
+            .bringIntoViewRequester(bring)
+            .onFocusEvent { if (it.isFocused) scope.launch { bring.bringIntoView() } }
+            .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionLeft -> { onLeft(); true }
-                    Key.DirectionRight -> { onRight(); true }
-                    Key.DirectionCenter, Key.Enter -> { onAssign(); true }
-                    Key.Back -> { onCancel(); true }
+                    Key.DirectionCenter, Key.Enter -> { onSelect(); true }
                     else -> false
                 }
-            },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // "SLOT 1   ·   LIVE 3/8" — the group chip orients the operator
-        // inside the cycler: which of the two groups they're in (live
-        // or offline) and where within it. As the cursor crosses the
-        // live↔offline boundary the chip flips colour + label.
-        val (groupLabel, groupColor) = if (group.isLive) {
-            "LIVE ${group.positionWithinGroup}/${group.groupSize}" to MenuColors.RowDetail
-        } else {
-            "OFFLINE ${group.positionWithinGroup}/${group.groupSize}" to MenuColors.RowDetailOffline
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = "SLOT ${slotIndex + 1}",
-                color = MenuColors.RowLabelMuted,
-                fontSize = 11.sp,
-                letterSpacing = 3.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(text = "·", color = MenuColors.RowLabelMuted, fontSize = 11.sp)
-            Text(
-                text = groupLabel,
-                color = groupColor,
-                fontSize = 11.sp,
-                letterSpacing = 2.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(text = "‹", color = MenuColors.FocusAccent, fontSize = 32.sp)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = channel.label,
-                    color = MenuColors.RowLabel,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = statusText,
-                    color = statusColor,
-                    fontSize = 12.sp,
-                    letterSpacing = 1.sp,
-                )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = "›", color = MenuColors.FocusAccent, fontSize = 32.sp)
+            .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
+            .focusable(interactionSource = interaction)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (isFocused) MenuColors.FocusAccent else Color.Transparent),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = channel.label,
+                color = if (isFocused) MenuColors.RowLabel else MenuColors.RowLabelMuted,
+                fontSize = 15.sp,
+                fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Normal,
+            )
         }
-        // Gesture hint so a first-run operator knows the model.
         Text(
-            text = "‹  cycle  ›        SELECT to assign        BACK to cancel",
-            color = MenuColors.RowLabelMuted,
-            fontSize = 10.sp,
+            text = statusText,
+            color = statusColor,
+            fontSize = 11.sp,
             letterSpacing = 1.sp,
         )
     }

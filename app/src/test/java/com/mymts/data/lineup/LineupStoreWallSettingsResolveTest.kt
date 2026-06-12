@@ -2,7 +2,6 @@ package com.mymts.data.lineup
 
 import com.mymts.data.settings.FeedWidth
 import com.mymts.data.settings.FIT_SCALE_MAX_PCT
-import com.mymts.data.settings.GridSize
 import com.mymts.data.settings.FIT_STRETCH_Y_MAX_PCT
 import com.mymts.data.settings.OFFSET_RANGE_DP
 import com.mymts.data.settings.Overscan
@@ -36,7 +35,8 @@ class LineupStoreWallSettingsResolveTest {
         assertFalse(s.calibrationBorder)
         assertEquals(100, s.fitScalePct)
         assertEquals(100, s.fitStretchYPct)
-        assertEquals(GridSize.Four, s.gridSize)
+        assertEquals(2, s.gridRows)
+        assertEquals(2, s.gridCols)
     }
 
     @Test fun `fit scale is read from prefs and clamped on read`() {

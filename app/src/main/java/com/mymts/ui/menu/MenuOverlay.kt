@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,6 +89,10 @@ fun MenuOverlay(
                 exit = slideOutHorizontally(tween(140)) { if (isLeft) -it else it } + fadeOut(tween(120)),
             ) {
                 MenuPanel(
+                    // When a sub-overlay (settings / picker / controls) is up,
+                    // IT owns focus; when it dismisses, the side menu must
+                    // reclaim focus (keyed below) rather than leave it unset.
+                    subOverlayActive = state.pendingSelection != null,
                     slotRows = slotRows,
                     versionLine = versionLine,
                     onSlotSelected = onSlotSelected,
@@ -100,6 +105,7 @@ fun MenuOverlay(
 
 @Composable
 private fun MenuPanel(
+    subOverlayActive: Boolean,
     slotRows: List<SlotRow>,
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
@@ -107,8 +113,15 @@ private fun MenuPanel(
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        firstRowFocusRequester.requestFocus()
+    // Claim focus on first open AND whenever a sub-overlay dismisses back to
+    // the side menu (key flips false). Yield a frame first so the dismissed
+    // overlay releases focus before we reclaim it — deterministic re-home,
+    // never a dead/unset focus state on the way back from Settings/picker.
+    LaunchedEffect(subOverlayActive) {
+        if (!subOverlayActive) {
+            withFrameNanos { }
+            runCatching { firstRowFocusRequester.requestFocus() }
+        }
     }
 
     Column(

@@ -355,9 +355,18 @@ The video section lays out structurally so the channel label is always a clean s
 
 Net effect: every cell — including the bottom row — shows its video letterboxed with a uniform label strip below it, never clipped, at any grid count. The bottom row stopped being a special case the moment label space became structural rather than overlaid.
 
-### Configurable grid count
+### Configurable grid — independent Rows × Columns (2026-06-11)
 
-`WallSettings.GridSize` (1 / 2 / 4 / 6 / 9 cells; **default 4 · 2×2**) is an operator setting in the Settings menu, persisted by `LineupStore` (SharedPreferences ordinal, fallback-to-`Four` on absent/corrupt). `WallScreen` reads `gridSize.cells` as the effective tile count and feeds it to the slot resolver, `gridColumnsFor`, and the focus model — the whole section is grid-agnostic. Channel choices survive a grid-size change: explicit per-slot `overrides` are keyed by slot index, and the default fill is a stable prefix (see *Lineup selection*), so 4 → 6 → 4 restores the same lineup. *(Backlog: restrict the offered counts to those sensible for the panel's real dimensions/resolution — the measured-area model above is the foundation.)*
+The grid is configured as **independent rows × columns**, each **1–3** (so 2×2, 2×3, 1×3, 3×2 … up to 3×3 = 9) — `WallSettings.gridRows` / `gridCols` (default 2×2, clamped by `clampGridDim`, persisted by `LineupStore` as two ints; the old single-count `gridSize` enum is retired). `WallScreen` feeds `gridCells = rows × cols` to the slot resolver and passes the explicit `gridCols` to both `VideoGrid` (which lays out exactly `cols × rows`, not a count-derived shape) and the focus model (so D-pad row/column nav matches the visible R×C). Channel choices survive an R×C change: explicit per-slot `overrides` are keyed by slot index, and the default fill is a stable prefix (see *Lineup selection*). *(Backlog: restrict the offered dims to those sensible for the panel's real resolution.)*
+
+### Focus restoration on overlay dismiss (the Onn-box focus-escape fix)
+
+The wall's focus is driven by a **single root focusable Box** + the pure `WallFocusModel` (the `focus` state is the cursor; the model handles all D-pad via `onPreviewKeyEvent`). When a menu/overlay opens, its focusable rows take Compose focus; on dismiss, focus must return **deterministically** to the wall — Compose-for-TV's implicit return is unreliable on this hardware (focus lands nowhere, or escapes to a focusable video `PlayerView` = the "main panel hijack"). Three guards make it deterministic:
+1. **Video surfaces are non-focusable** (`StreamSurface`: `isFocusable=false` + `FOCUS_BLOCK_DESCENDANTS`) — focus can never escape to a tile.
+2. The **side menu re-homes** its first row whenever a sub-overlay dismisses (a focus request keyed on the sub-overlay's presence, not a one-shot).
+3. The **wall root re-homes** on full menu close via a frame-yielded `requestFocus` (`LaunchedEffect` + `withFrameNanos` + `runCatching`, replacing a racy `DisposableEffect`) — yield first so the dismissed overlay releases focus, then claim it.
+
+Verified on-box across repeated open/close cycles (the focused node returns to the full-screen root). The same per-row explicit `BringIntoViewRequester` keeps a focused menu/picker row scrolled into the visible area on this overscan-clipped panel.
 
 ### Lineup selection
 
