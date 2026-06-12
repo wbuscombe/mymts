@@ -56,22 +56,23 @@ class LineupSelector(
 
     companion object {
         /**
-         * Operator's preferred lineup for the 2×2 default.
-         *
-         * Updated 2026-06-04 — Bloomberg TV + CNBC at the top, then the
-         * prior preferred 4 (CBS Sports HQ, BBC News, CNN, LiveNOW from
-         * FOX), then the fallback list, then the rest of the helper's
-         * playable set. DW News English is no longer in the default
-         * lineup but remains available in the menu picker for manual
-         * assignment.
+         * Operator's preferred lineup. The first four fill the default 2×2
+         * (slot order is row-major): **TL LiveNOW from FOX (live US news), TR
+         * Fox Weather (national weather), BL BBC News (global), BR CBS Sports
+         * HQ (sports)** — the operator's chosen default set (2026-06-11). The
+         * rest follow for when the grid grows past 4. Explicit per-slot
+         * `overrides` (LineupStore) still win, so this only sets the default
+         * where the operator hasn't customized; everything stays available in
+         * the picker for manual assignment.
          */
         val PREFERRED: List<String> = listOf(
+            "livenow-fox",    // TL — Fox live news
+            "fox-weather",    // TR — national weather
+            "bbc-news",       // BL — global news
+            "cbs-sports-hq",  // BR — sports
             "bloomberg-tv",
             "cnbc",
-            "cbs-sports-hq",
-            "bbc-news",
             "cnn",
-            "livenow-fox",
         )
 
         /**

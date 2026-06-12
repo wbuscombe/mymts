@@ -95,6 +95,13 @@ data class WallSettings(
     // change for the slots that still exist. Cell count = rows × cols.
     val gridRows: Int = 2,
     val gridCols: Int = 2,
+    // Ticker speed (2026-06-11), as percentages adjusted by D-pad LEFT/RIGHT
+    // sliders. 100% = the (calmer) defaults; higher = faster, lower = slower,
+    // clamped to readable bounds. `tickerScrollPct` scales the horizontal
+    // marquee velocity; `tickerFlipPct` scales the page-flip speed (higher =
+    // shorter dwell). Live-applied + persisted.
+    val tickerScrollPct: Int = 100,
+    val tickerFlipPct: Int = 100,
 ) {
     /** Total cells the wall shows — drives the slot resolver + the layout. */
     val gridCells: Int get() = gridRows * gridCols
@@ -110,6 +117,16 @@ const val GRID_DIM_MAX = 3
 
 /** Clamp a stored/edited grid dimension into [GRID_DIM_MIN]..[GRID_DIM_MAX]. */
 internal fun clampGridDim(value: Int): Int = value.coerceIn(GRID_DIM_MIN, GRID_DIM_MAX)
+
+/** Ticker-speed sliders: percentage range + step (D-pad LEFT/RIGHT). Bounds keep
+ *  the scroll/flip from getting unreadably fast or painfully slow. */
+const val TICKER_SPEED_MIN_PCT = 40
+const val TICKER_SPEED_MAX_PCT = 200
+const val TICKER_SPEED_STEP_PCT = 20
+
+/** Clamp a ticker-speed percentage into [TICKER_SPEED_MIN_PCT]..[TICKER_SPEED_MAX_PCT]. */
+internal fun clampTickerSpeedPct(value: Int): Int =
+    value.coerceIn(TICKER_SPEED_MIN_PCT, TICKER_SPEED_MAX_PCT)
 
 /** Position-offset bounds (dp), real screen space, symmetric around 0. The
  *  range covers a typical overscan shift (~±5% of a 1280-wide panel); the

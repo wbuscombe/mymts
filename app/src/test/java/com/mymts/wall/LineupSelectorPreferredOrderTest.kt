@@ -6,9 +6,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Pins the operator's preferred lineup ordering after the 2026-06-04
- * push: Bloomberg TV + CNBC lead, then the prior preferred 4, then
- * the fallback list, then the rest.
+ * Pins the operator's preferred lineup ordering after the 2026-06-11 default
+ * change: the first four fill the 2×2 in row-major order — TL LiveNOW from FOX,
+ * TR Fox Weather, BL BBC News, BR CBS Sports HQ — then the financials + CNN.
  */
 class LineupSelectorPreferredOrderTest {
 
@@ -23,34 +23,35 @@ class LineupSelectorPreferredOrderTest {
         errorCount = 0,
     )
 
-    @Test fun `PREFERRED begins with bloomberg-tv then cnbc`() {
-        val preferred = LineupSelector.PREFERRED
-        assertEquals("bloomberg-tv", preferred[0])
-        assertEquals("cnbc", preferred[1])
-    }
-
-    @Test fun `prior preferred 4 follow the financial pair`() {
+    @Test fun `PREFERRED begins with the 2x2 default — fox, weather, bbc, sports`() {
         val expected = listOf(
-            "bloomberg-tv", "cnbc",
-            "cbs-sports-hq", "bbc-news", "cnn", "livenow-fox",
+            "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq",
+            "bloomberg-tv", "cnbc", "cnn",
         )
         assertEquals(expected, LineupSelector.PREFERRED)
     }
 
+    @Test fun `the 2x2 default cells map to the row-major slot order`() {
+        // first 4 PREFERRED = TL, TR, BL, BR
+        assertEquals("livenow-fox", LineupSelector.PREFERRED[0])   // TL
+        assertEquals("fox-weather", LineupSelector.PREFERRED[1])   // TR
+        assertEquals("bbc-news", LineupSelector.PREFERRED[2])      // BL
+        assertEquals("cbs-sports-hq", LineupSelector.PREFERRED[3]) // BR
+    }
+
     @Test fun `dw-news-en is NOT in the preferred list`() {
-        // After the swap, DW News stays seeded for manual assignment but
-        // drops out of the default cycler's preferred tier.
+        // DW News stays seeded for manual assignment but isn't a default slot.
         assertEquals(false, "dw-news-en" in LineupSelector.PREFERRED)
     }
 
-    @Test fun `bloomberg + cnbc + cbs all live — those three win in order`() {
+    @Test fun `the default 2x2 four win in order when all live`() {
         val selector = LineupSelector.forWall(maxCount = 4)
         val all = listOf(
-            "bloomberg-tv", "cnbc", "cbs-sports-hq", "bbc-news",
-            "dw-news-en", "redbull-tv",
+            "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq",
+            "bloomberg-tv", "dw-news-en", "redbull-tv",
         ).map(::playable)
         val pick = selector(all).map { it.slug }
-        assertEquals(listOf("bloomberg-tv", "cnbc", "cbs-sports-hq", "bbc-news"), pick)
+        assertEquals(listOf("livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq"), pick)
     }
 
     @Test fun `dw-news-en falls into the rest tier when no preferred channel resolves`() {

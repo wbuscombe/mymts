@@ -48,8 +48,8 @@ def test_pga_live_builds_leaderboard_card() -> None:
     assert c is not None
     assert (c.league, c.kind, c.state) == ("PGA", "leaderboard", "in")
     assert c.title == "RBC Canadian Open"
-    # top-3 by order, compact name + score-to-par; "0" → "E"
-    assert c.lines == ["S. Theegala -6", "R. McIlroy -5", "Scheffler E"]
+    # top-10 by order (all 4 here), position + compact name + score; "0" → "E"
+    assert c.lines == ["1. S. Theegala -6", "2. R. McIlroy -5", "3. Scheffler E", "4. X. Schauffele +2"]
     assert "card" in e.to_json()  # additive on the wire
 
 
@@ -57,7 +57,7 @@ def test_pga_pre_tournament_lists_players_without_phantom_scores() -> None:
     # Starts in 1 day (within the pre-window) → current, but no scores yet.
     entries = individual.parse_pga(_pga("pre", date_offset_ms=24 * 60 * 60 * 1000), now_ms=_NOW_MS)
     assert len(entries) == 1
-    assert entries[0].card.lines == ["S. Theegala", "R. McIlroy", "Scheffler"]
+    assert entries[0].card.lines == ["1. S. Theegala", "2. R. McIlroy", "3. Scheffler", "4. X. Schauffele"]
 
 
 def test_pga_far_future_is_dropped() -> None:
@@ -71,8 +71,8 @@ def test_pga_long_finished_is_dropped() -> None:
     assert individual.parse_pga(body, now_ms=_NOW_MS) == []
 
 
-def test_pga_orders_by_rank_takes_top_three() -> None:
-    # Competitors out of order → parser sorts by `order` and keeps the top 3.
+def test_pga_orders_by_rank_with_position_and_caps_at_top_10() -> None:
+    # Out of order → sorted by `order`, numbered, capped at PGA_TOP_N (10).
     comp = [
         {"order": 3, "score": "0", "athlete": {"shortName": "C"}},
         {"order": 1, "score": "-9", "athlete": {"shortName": "A"}},
@@ -80,7 +80,11 @@ def test_pga_orders_by_rank_takes_top_three() -> None:
         {"order": 4, "score": "+1", "athlete": {"shortName": "D"}},
     ]
     lines = individual.parse_pga(_pga("in", competitors=comp), now_ms=_NOW_MS)[0].card.lines
-    assert lines == ["A -9", "B -7", "C E"]
+    assert lines == ["1. A -9", "2. B -7", "3. C E", "4. D +1"]
+    # 12 players → capped to the top 10
+    many = [{"order": i, "score": f"-{i}", "athlete": {"shortName": f"P{i}"}} for i in range(1, 13)]
+    capped = individual.parse_pga(_pga("in", competitors=many), now_ms=_NOW_MS)[0].card.lines
+    assert len(capped) == individual.PGA_TOP_N == 10
 
 
 def test_pga_never_raises_on_junk() -> None:

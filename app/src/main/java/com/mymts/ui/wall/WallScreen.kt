@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -215,6 +216,16 @@ fun WallScreen(
     // row/column nav, so D-pad movement matches the visible R×C exactly.
     val gridColumns = wallSettings.gridCols.coerceIn(1, slots.size.coerceAtLeast(1))
 
+    // Manual stream-reconnect signal (Part D): bumping the nonce triggers a
+    // reconnect inside VideoGrid (the StreamPlayerManager lives there). slot
+    // index -1 = all tiles; >=0 = that one tile.
+    var reconnectNonce by remember { mutableIntStateOf(0) }
+    var reconnectSlot by remember { mutableIntStateOf(-1) }
+    fun requestReconnect(slot: Int) {
+        reconnectSlot = slot
+        reconnectNonce++
+    }
+
     // Dispatch a NavIntent through the pure focus model and apply its
     // result. Returns true if the event was handled (caller should
     // consume it).
@@ -350,6 +361,8 @@ fun WallScreen(
                 source = ticker,
                 focused = focus.active == WallZone.Ticker,
                 paused = focus.tickerPaused,
+                scrollPct = wallSettings.tickerScrollPct,
+                flipPct = wallSettings.tickerFlipPct,
             )
             Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
             // Compose three children — the feed pane, a thin divider,
@@ -387,6 +400,8 @@ fun WallScreen(
                 VideoGrid(
                     slots = slots,
                     columns = gridColumns,
+                    reconnectNonce = reconnectNonce,
+                    reconnectSlot = reconnectSlot,
                     modifier = Modifier.fillMaxSize(),
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                     audibleSlot = audibleSlot,
@@ -457,6 +472,7 @@ fun WallScreen(
                 onPickChannel = { menu.pickSlot(pending.slotIndex) },
                 onToggleAudio = { lineupStore.toggleAudible(pending.slotIndex) },
                 onToggleCaptions = { lineupStore.toggleCaptions(pending.slotIndex) },
+                onReconnect = { requestReconnect(pending.slotIndex); menu.dismissSelection() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -496,6 +512,9 @@ fun WallScreen(
                 onNudgeFitStretchY = { delta -> lineupStore.nudgeFitStretchY(delta) },
                 onNudgeGridRows = { delta -> lineupStore.nudgeGridRows(delta) },
                 onNudgeGridCols = { delta -> lineupStore.nudgeGridCols(delta) },
+                onNudgeTickerScroll = { delta -> lineupStore.nudgeTickerScroll(delta) },
+                onNudgeTickerFlip = { delta -> lineupStore.nudgeTickerFlip(delta) },
+                onRefreshAllVideo = { requestReconnect(-1) },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),

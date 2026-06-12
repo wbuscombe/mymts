@@ -240,6 +240,15 @@ class WallSettingsTest {
         assertEquals(74, clampFitScalePct(74))   // in-range passes through
     }
 
+    @Test fun `ticker speeds default to 100 percent and clamp to readable bounds`() {
+        assertEquals(100, WallSettings.Default.tickerScrollPct)
+        assertEquals(100, WallSettings.Default.tickerFlipPct)
+        assertEquals(TICKER_SPEED_MAX_PCT, clampTickerSpeedPct(9999))
+        assertEquals(TICKER_SPEED_MIN_PCT, clampTickerSpeedPct(0))
+        assertEquals(120, clampTickerSpeedPct(120))
+        assertTrue("min below max", TICKER_SPEED_MIN_PCT < TICKER_SPEED_MAX_PCT)
+    }
+
     @Test fun `grid defaults to 2x2 with cells = rows times cols, dims clamp 1-3`() {
         assertEquals(2, WallSettings.Default.gridRows)
         assertEquals(2, WallSettings.Default.gridCols)

@@ -72,6 +72,7 @@ fun SlotControlsOverlay(
     onPickChannel: () -> Unit,
     onToggleAudio: () -> Unit,
     onToggleCaptions: () -> Unit,
+    onReconnect: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -94,6 +95,7 @@ fun SlotControlsOverlay(
                 onPickChannel = onPickChannel,
                 onToggleAudio = onToggleAudio,
                 onToggleCaptions = onToggleCaptions,
+                onReconnect = onReconnect,
                 onCancel = onCancel,
             )
         }
@@ -109,6 +111,7 @@ private fun ControlsCard(
     onPickChannel: () -> Unit,
     onToggleAudio: () -> Unit,
     onToggleCaptions: () -> Unit,
+    onReconnect: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -166,6 +169,12 @@ private fun ControlsCard(
             // the operator can confirm what's happening) but pressing
             // SELECT is a no-op — caller doesn't toggle when no track.
             isEffectivelyDisabled = captionsState == CaptionsState.NotAvailable,
+        )
+        ControlRow(
+            title = "Reconnect",
+            detail = "reload this stream",
+            detailStyle = MenuColors.RowDetailMuted,
+            onSelect = onReconnect,
         )
         Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
         ControlRow(

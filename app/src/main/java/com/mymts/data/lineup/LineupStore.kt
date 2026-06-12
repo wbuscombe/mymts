@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.settings.clampGridDim
+import com.mymts.data.settings.clampTickerSpeedPct
 import com.mymts.data.settings.FeedWidth
 import com.mymts.data.settings.FeedRecency
 import com.mymts.data.settings.Overscan
@@ -121,6 +122,8 @@ class LineupStore(context: Context) {
             .putInt(KEY_FIT_STRETCH_Y, settings.fitStretchYPct)
             .putInt(KEY_GRID_ROWS, settings.gridRows)
             .putInt(KEY_GRID_COLS, settings.gridCols)
+            .putInt(KEY_TICKER_SCROLL, settings.tickerScrollPct)
+            .putInt(KEY_TICKER_FLIP, settings.tickerFlipPct)
             .apply()
     }
 
@@ -195,6 +198,18 @@ class LineupStore(context: Context) {
     fun nudgeGridCols(delta: Int) {
         val next = clampGridDim(_wallSettings.value.gridCols + delta)
         updateWallSettings(_wallSettings.value.copy(gridCols = next))
+    }
+
+    /** Nudge the ticker horizontal-scroll speed by [delta]% (clamped, live). */
+    fun nudgeTickerScroll(delta: Int) {
+        val next = clampTickerSpeedPct(_wallSettings.value.tickerScrollPct + delta)
+        updateWallSettings(_wallSettings.value.copy(tickerScrollPct = next))
+    }
+
+    /** Nudge the ticker page-flip speed by [delta]% (clamped, live). */
+    fun nudgeTickerFlip(delta: Int) {
+        val next = clampTickerSpeedPct(_wallSettings.value.tickerFlipPct + delta)
+        updateWallSettings(_wallSettings.value.copy(tickerFlipPct = next))
     }
 
     /** Advance the recency window (All → 1h → 6h → 24h → All). */
@@ -356,6 +371,8 @@ class LineupStore(context: Context) {
         private const val KEY_FIT_STRETCH_Y = "wall_settings_fit_stretch_y_pct"
         private const val KEY_GRID_ROWS = "wall_settings_grid_rows"
         private const val KEY_GRID_COLS = "wall_settings_grid_cols"
+        private const val KEY_TICKER_SCROLL = "wall_settings_ticker_scroll_pct"
+        private const val KEY_TICKER_FLIP = "wall_settings_ticker_flip_pct"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -381,7 +398,8 @@ class LineupStore(context: Context) {
                 !contains(KEY_OVERSCAN) && !contains(KEY_OFFSET_X) &&
                 !contains(KEY_OFFSET_Y) && !contains(KEY_CALIBRATION) &&
                 !contains(KEY_FIT_SCALE) && !contains(KEY_FIT_STRETCH_Y) &&
-                !contains(KEY_GRID_ROWS) && !contains(KEY_GRID_COLS)
+                !contains(KEY_GRID_ROWS) && !contains(KEY_GRID_COLS) &&
+                !contains(KEY_TICKER_SCROLL) && !contains(KEY_TICKER_FLIP)
             ) {
                 return WallSettings.Default
             }
@@ -406,6 +424,9 @@ class LineupStore(context: Context) {
                 // Clamp on read — corrupt dims can't make a 0×N or huge grid.
                 gridRows = clampGridDim(getInt(KEY_GRID_ROWS, 2)),
                 gridCols = clampGridDim(getInt(KEY_GRID_COLS, 2)),
+                // Clamp on read — a corrupt speed can't make the ticker unreadable.
+                tickerScrollPct = clampTickerSpeedPct(getInt(KEY_TICKER_SCROLL, 100)),
+                tickerFlipPct = clampTickerSpeedPct(getInt(KEY_TICKER_FLIP, 100)),
             )
         }
 

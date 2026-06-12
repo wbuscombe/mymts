@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.mymts.data.settings.FIT_SCALE_STEP_PCT
 import com.mymts.data.settings.FIT_STRETCH_Y_STEP_PCT
 import com.mymts.data.settings.OFFSET_STEP_DP
+import com.mymts.data.settings.TICKER_SPEED_STEP_PCT
 import com.mymts.data.settings.WallSettings
 
 /**
@@ -98,6 +99,9 @@ fun SettingsOverlay(
     onNudgeFitStretchY: (Int) -> Unit,
     onNudgeGridRows: (Int) -> Unit,
     onNudgeGridCols: (Int) -> Unit,
+    onNudgeTickerScroll: (Int) -> Unit,
+    onNudgeTickerFlip: (Int) -> Unit,
+    onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -134,6 +138,9 @@ fun SettingsOverlay(
                 onNudgeFitStretchY = onNudgeFitStretchY,
                 onNudgeGridRows = onNudgeGridRows,
                 onNudgeGridCols = onNudgeGridCols,
+                onNudgeTickerScroll = onNudgeTickerScroll,
+                onNudgeTickerFlip = onNudgeTickerFlip,
+                onRefreshAllVideo = onRefreshAllVideo,
                 onToggleCalibration = onToggleCalibration,
                 onCancel = onCancel,
             )
@@ -160,6 +167,9 @@ private fun SettingsCard(
     onNudgeFitStretchY: (Int) -> Unit,
     onNudgeGridRows: (Int) -> Unit,
     onNudgeGridCols: (Int) -> Unit,
+    onNudgeTickerScroll: (Int) -> Unit,
+    onNudgeTickerFlip: (Int) -> Unit,
+    onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -290,6 +300,30 @@ private fun SettingsCard(
             title = "Feed sources…",
             valueLabel = if (hiddenCount == 0) "all shown" else "$hiddenCount hidden",
             onCycle = onOpenSourceFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
+        )
+        // Manual refresh of every video tile (reload streams that have drifted /
+        // stalled). SELECT triggers it; honest play-what-works on the result.
+        SettingRow(
+            title = "Refresh all video",
+            valueLabel = "reload",
+            onCycle = onRefreshAllVideo,
+        )
+
+        // ── Ticker ───────────────────────────────────────────────────────
+        // Scroll/flip speed sliders (D-pad LEFT/RIGHT steps the percent; the
+        // wall updates live). Bounded so neither gets unreadably fast/slow.
+        SectionHeader("Ticker")
+        AdjustRow(
+            title = "Scroll speed  ‹ slower · faster ›",
+            valueLabel = "${settings.tickerScrollPct}%",
+            onLeft = { onNudgeTickerScroll(-TICKER_SPEED_STEP_PCT) },
+            onRight = { onNudgeTickerScroll(TICKER_SPEED_STEP_PCT) },
+        )
+        AdjustRow(
+            title = "Flip speed  ‹ slower · faster ›",
+            valueLabel = "${settings.tickerFlipPct}%",
+            onLeft = { onNudgeTickerFlip(-TICKER_SPEED_STEP_PCT) },
+            onRight = { onNudgeTickerFlip(TICKER_SPEED_STEP_PCT) },
         )
 
         // ── Sports ───────────────────────────────────────────────────────

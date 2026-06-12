@@ -79,6 +79,8 @@ private val SECTION_SAFE_BOTTOM = 28.dp
 fun VideoGrid(
     slots: List<Slot>,
     columns: Int,
+    reconnectNonce: Int = 0,
+    reconnectSlot: Int = -1,
     modifier: Modifier = Modifier,
     helperUnreachable: Boolean = false,
     audibleSlot: Int = -1,
@@ -142,6 +144,19 @@ fun VideoGrid(
                     onSoftCaptionAvailabilityChanged(slot.index, available)
                 }
             }
+        }
+    }
+
+    // Manual reconnect (Part D): when the nonce bumps, reload the requested
+    // tile's stream (or all of them) — the operator refreshing a drifted feed.
+    // Skip nonce 0 (initial) so a recompose doesn't reconnect on first frame.
+    LaunchedEffect(reconnectNonce) {
+        if (reconnectNonce <= 0) return@LaunchedEffect
+        if (reconnectSlot < 0) {
+            manager.reconnectAll()
+        } else {
+            val pIdx = playingSlots.indexOfFirst { it.index == reconnectSlot }
+            if (pIdx >= 0) manager.reconnect(pIdx)
         }
     }
 

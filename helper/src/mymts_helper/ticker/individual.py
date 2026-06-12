@@ -29,9 +29,9 @@ from .sports import _event_start_ms, _state, _status_short, scoreboard_url
 
 __all__ = ["scoreboard_url", "parse_pga", "INDIVIDUAL_LEAGUES"]
 
-# How many leaderboard rows a PGA card shows (the leader + a couple chasers —
-# a ticker can't show 150). Kept small for 10-ft legibility.
-PGA_TOP_N = 3
+# How many leaderboard rows a PGA card shows — the top 10 (the card scrolls
+# horizontally via the page marquee when it overflows the panel width).
+PGA_TOP_N = 10
 
 # "Current event" windows for individual sports — wider than the team-game
 # windows because a tournament/weekend spans multiple days.
@@ -126,13 +126,14 @@ def parse_pga(body: bytes, *, now_ms: int | None = None) -> list[TickerEntryDTO]
         key=_competitor_order,
     )
     lines: list[str] = []
-    for c in ranked[:PGA_TOP_N]:
+    for pos, c in enumerate(ranked[:PGA_TOP_N], start=1):
         name = _athlete_short(c)
         if not name:
             continue
-        # Pre-tournament has no score yet — list the player without a phantom par.
+        # "1. Theegala -6" — position + player + score-to-par. Pre-tournament
+        # has no score yet, so list the player without a phantom par.
         score = "" if state == "pre" else _to_par(c.get("score"))
-        lines.append(f"{name} {score}".strip())
+        lines.append(f"{pos}. {name} {score}".strip())
     if not lines:
         return []
 

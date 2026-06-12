@@ -170,6 +170,18 @@ class StreamPlayer(
         handler.postDelayed(tickRunnable, tickIntervalMs)
     }
 
+    /**
+     * MANUAL reconnect/reload — a fresh player + manifest fetch, for when the
+     * operator suspects the live feed has drifted or stalled (a deliberate
+     * refresh, not an auto-recovery strike, so it resets the recovery state via
+     * [initialize]). Honest (C3): if the fresh stream still can't play, the tile
+     * settles into its real state — never faked-live.
+     */
+    fun reconnect() {
+        Log.i(TAG, "[${spec.label}] manual reconnect requested")
+        initialize()
+    }
+
     private fun createPlayer() {
         val renderersFactory = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)

@@ -99,8 +99,10 @@ class LineupSelectorTest {
 
     @Test fun `companion factory wires the operator's lineup`() {
         val s = LineupSelector.forWall(maxCount = 4)
+        // fox-weather (PREFERRED[1]) isn't in this set, so it's skipped; the rest
+        // come in PREFERRED order: livenow-fox, bbc-news, cbs-sports-hq, then cnn.
         val playable = listOf("cbs-sports-hq", "bbc-news", "cnn", "livenow-fox", "extra").map(::ch)
         val pick = s(playable).map { it.slug }
-        assertEquals(listOf("cbs-sports-hq", "bbc-news", "cnn", "livenow-fox"), pick)
+        assertEquals(listOf("livenow-fox", "bbc-news", "cbs-sports-hq", "cnn"), pick)
     }
 }

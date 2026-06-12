@@ -68,6 +68,8 @@ fun TickerStrip(
     modifier: Modifier = Modifier,
     focused: Boolean = false,
     paused: Boolean = false,
+    scrollPct: Int = 100,
+    flipPct: Int = 100,
 ) {
     val entries by source.state.collectAsState()
     val stale by source.stale.collectAsState()
@@ -85,12 +87,22 @@ fun TickerStrip(
         if (entries.isEmpty()) return@Box // C2: empty source = empty strip.
         val pages = remember(entries) { TickerPaging.pagesFor(entries) }
         if (pages.isEmpty()) return@Box
-        PagedTicker(pages, stale = stale, paused = paused, modifier = Modifier.padding(horizontal = 12.dp))
+        PagedTicker(
+            pages, stale = stale, paused = paused,
+            scrollPct = scrollPct, flipPct = flipPct,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
     }
 }
 
-/** How long a page holds before flipping to the next (within a multi-page mode). */
-private const val PAGE_DWELL_MS = 6500L
+/** Base page dwell at 100% flip speed — calmer than the original 6500ms (the
+ *  operator wanted the flip slowed). The "Flip speed" slider scales it: a higher
+ *  percent shortens the dwell (faster), lower lengthens it (slower). */
+private const val BASE_DWELL_MS = 9000L
+
+/** Base horizontal marquee velocity at 100% scroll speed; the "Scroll speed"
+ *  slider scales it linearly. */
+private val BASE_SCROLL_VELOCITY = 32.dp
 
 /**
  * Flip through [pages] on a calm dwell, wrapping. The flip triggers on the
@@ -104,13 +116,18 @@ private fun PagedTicker(
     pages: List<TickerPaging.Page>,
     stale: Boolean,
     paused: Boolean,
+    scrollPct: Int,
+    flipPct: Int,
     modifier: Modifier = Modifier,
 ) {
+    // Higher flip % = faster = shorter dwell (clamped so a busy poll can't make
+    // the dwell zero). Re-keys the loop on flipPct so a live change applies.
+    val dwellMs = (BASE_DWELL_MS * 100 / flipPct.coerceAtLeast(1)).coerceAtLeast(2000L)
     var index by remember(pages) { mutableIntStateOf(0) }
-    LaunchedEffect(pages) {
+    LaunchedEffect(pages, dwellMs) {
         if (pages.size <= 1) return@LaunchedEffect // single page (markets/news): hold until mode change
         while (true) {
-            delay(PAGE_DWELL_MS)
+            delay(dwellMs)
             index = TickerPaging.nextPage(index, pages.size)
         }
     }
@@ -125,7 +142,7 @@ private fun PagedTicker(
         label = "ticker-paged-flip",
         modifier = modifier,
     ) { page ->
-        PageRow(page, stale = stale, paused = paused)
+        PageRow(page, stale = stale, paused = paused, scrollPct = scrollPct)
     }
 }
 
@@ -143,13 +160,14 @@ private fun PagedTicker(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean) {
+private fun PageRow(page: TickerPaging.Page, stale: Boolean, paused: Boolean, scrollPct: Int = 100) {
     // The page area spans the FULL strip width and is clipped. The marker overlays
     // the TRUE left edge; the STALE flag (when present) overlays the RIGHT edge —
     // both pinned, on top of the scroll, so a stale pill can never shove the curtain
     // inboard (the marker must stay pinned at the panel's left edge regardless).
     Box(modifier = Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
-        val scroll = if (paused) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = 32.dp)
+        val velocity = BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)
+        val scroll = if (paused) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE, velocity = velocity)
         Row(
             modifier = Modifier.fillMaxSize().then(scroll),
             verticalAlignment = Alignment.CenterVertically,

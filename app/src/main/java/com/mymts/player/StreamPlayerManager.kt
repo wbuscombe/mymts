@@ -60,6 +60,16 @@ class StreamPlayerManager(
 
     fun player(idx: Int): StreamPlayer? = _players[idx]
 
+    /** Manually reconnect ONE tile's stream (operator refresh of a drifted feed). */
+    fun reconnect(idx: Int) {
+        _players[idx]?.reconnect()
+    }
+
+    /** Manually reconnect EVERY tile's stream (the menu's "Refresh all video"). */
+    fun reconnectAll() {
+        _players.values.forEach { it.reconnect() }
+    }
+
     override fun onStart(owner: LifecycleOwner) {
         if (_players.isEmpty()) {
             specs.forEachIndexed { idx, spec ->
