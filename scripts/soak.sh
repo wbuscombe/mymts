@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+# The adb invariant (push + byte-verify + pm install; never streamed install).
+source "$SCRIPT_DIR/lib-adb.sh"
 
 # MyMTS soak harness — host-side runner.
 #
@@ -99,8 +101,8 @@ adb connect "$DEVICE" >/dev/null
 
 if [[ "$INSTALL" == "1" ]]; then
     [[ -f "$APK" ]] || { echo "APK not found: $APK (build it first or pass --apk)" >&2; exit 1; }
-    echo "==> installing $APK"
-    adb -s "$DEVICE" install -r "$APK"
+    echo "==> installing $APK (byte-verified push + pm install, never streamed)"
+    adb_install_verified "$DEVICE" "$APK" "$PACKAGE"
 fi
 
 echo "==> capturing device facts"
@@ -181,7 +183,7 @@ trap cleanup EXIT INT TERM
             ALIVE="$(adb -s "$DEVICE" shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || true)"
             if [[ -n "$ALIVE" ]]; then
                 echo "[$TS] meminfo timed out 3× (pid $ALIVE still alive); sample skipped"
-                sleep "$INTERVAL"
+                sleep "$MEMINFO_INTERVAL"
                 continue
             fi
         fi

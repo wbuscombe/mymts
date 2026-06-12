@@ -95,6 +95,10 @@ log() {
     echo "$line" | tee -a "$LOG_FILE" >&2
 }
 
+# The adb invariant (push + byte-verify + pm install + lastUpdateTime advanced;
+# never a streamed install; reconnect-not-kill-server on a wedge). See AGENTS.md.
+source "$SCRIPT_DIR/lib-adb.sh"
+
 require_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         log "FATAL: required command not found: $1"
@@ -156,10 +160,14 @@ verify_signed_release() {
 }
 
 build_release() {
-    log "build: assembling :app:assembleRelease"
+    # `:app:clean` first — a config-driven buildConfigField change (e.g. the
+    # helper URL from local.properties) does NOT invalidate the assembleRelease
+    # up-to-date check, so without a clean gradle can silently reuse a STALE APK
+    # (the documented stale-APK trap; review DEPLOY-1).
+    log "build: clean + assembling :app:assembleRelease"
     (cd "$PROJECT_ROOT" && JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}" \
         PATH="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}/bin:$PATH" \
-        ./gradlew :app:assembleRelease --no-daemon -q)
+        ./gradlew :app:clean :app:assembleRelease --no-daemon -q)
     if [[ ! -f "$APK_PATH" ]]; then
         log "FATAL: expected APK not found at $APK_PATH"
         exit 6
@@ -185,9 +193,10 @@ archive_release() {
 }
 
 adb_install() {
+    # The adb invariant (push + byte-verify + pm install + lastUpdateTime),
+    # never a streamed `adb install`. See scripts/lib-adb.sh / AGENTS.md.
     local apk="$1"
-    log "install: adb -s $DEVICE install -r -t $apk"
-    adb -s "$DEVICE" install -r -t "$apk"
+    adb_install_verified "$DEVICE" "$apk" "$PACKAGE" -t
 }
 
 launch_app() {
@@ -223,12 +232,18 @@ rollback_to_known_good() {
         return 8
     fi
     log "rollback: reinstalling $kg"
-    # `-d` allows downgrading the versionCode if needed (the rolled-back
-    # build may be older than the failed one). `-r` keeps the install
-    # data (lineup overrides etc.) so the operator's state survives.
-    adb -s "$DEVICE" install -r -d "$kg_path"
+    # Roll back via the SAME byte-verified invariant — the rollback-of-rollback:
+    # a truncated rollback push is caught + retried, never silently installed,
+    # and the known-good APK is retained so a failed rollback can be re-run.
+    # `-d` allows a versionCode downgrade (the known-good may be older than the
+    # failed build); `-r` keeps install data so the operator's state survives.
+    if ! adb_install_verified "$DEVICE" "$kg_path" "$PACKAGE" -d; then
+        log "FATAL: rollback install could not be byte-verified — device may need manual recovery."
+        log "       The known-good APK is retained at $kg_path; re-run with --manual-rollback."
+        return 9
+    fi
     adb -s "$DEVICE" shell am start -n "$PACKAGE/$ACTIVITY" >/dev/null
-    log "rollback: known-good $kg reinstalled and launched"
+    log "rollback: known-good $kg reinstalled (byte-verified) and launched"
 }
 
 # ============== Main flow ==============

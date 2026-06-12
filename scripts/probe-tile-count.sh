@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$SCRIPT_DIR/deploy.local.env" ]] && source "$SCRIPT_DIR/deploy.local.env"
+# The adb invariant (push + byte-verify + pm install; never streamed install).
+source "$SCRIPT_DIR/lib-adb.sh"
 
 # MyMTS tile-count probe (Stage 2 Part C).
 #
@@ -111,8 +113,8 @@ done
 if [[ "$INSTALL" == "1" ]]; then
     APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
     [[ -f "$APK_PATH" ]] || { >&2 echo "ERROR: APK not found at $APK_PATH"; exit 1; }
-    >&2 echo "==> installing $APK_PATH"
-    adb -s "$DEVICE" install -r "$APK_PATH" >/dev/null
+    >&2 echo "==> installing $APK_PATH (byte-verified push + pm install, never streamed)"
+    adb_install_verified "$DEVICE" "$APK_PATH" "$PACKAGE" >&2
 fi
 
 >&2 echo "==> capturing device facts"
