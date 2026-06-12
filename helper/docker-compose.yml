@@ -7,7 +7,8 @@
 #   - All capabilities dropped.
 #   - no-new-privileges so suid escalation cannot happen mid-flight.
 #   - cpus/memory caps so a runaway never starves the host.
-#   - unrelated host container is NEVER referenced or networked into — standing rule.
+#   - Unrelated services on the host are NEVER referenced or networked into;
+#     the helper runs on its own bridge network only — standing rule.
 
 services:
   helper:

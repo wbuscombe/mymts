@@ -1,9 +1,9 @@
 """Structured JSON logging to stdout.
 
 Captured by Docker's json-file driver. Includes a redaction pass that strips
-known secret-shaped substrings (Bearer tokens, Authorization headers, internal
-IPv4s, the literal "unrelated host services"-anywhere line as a guard against any code path that
-might log it). Stage 6 hardens this further; Stage 1 ships the pass so we
+known secret-shaped substrings (Bearer tokens, Authorization headers, and
+internal/loopback/link-local IPv4s) as a guard against any code path that
+might log them. Stage 6 hardens this further; Stage 1 ships the pass so we
 never start logging secrets in the first place.
 """
 
