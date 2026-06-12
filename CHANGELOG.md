@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Governance layer: AGENTS.md + doc-honesty reconcile (2026-06-12)
+
+Made the repo self-governing and reconciled docs to reality (campaign 2a — docs/governance only, no code behaviour change, no deploy). Follows the 2026-06 adversarial review.
+
+- **`AGENTS.md` (new, repo root)** — the canonical in-repo standard any coding agent reads first, generated from the review's §17.5 Guardrails: protected invariants (locked panel-fit, manual-launch, honest-degradation, same release key, the wire schemas), the never-without-approval list (PIA, gitignored config/keystore, force-push/history-rewrite, background/kill-server adb, container-hardening), sensitive areas (.92 transport, focus model, untested pollers), and the **deploy adb invariant** codified (push + on-device byte-size verify + `pm install -r` + `lastUpdateTime` advanced; never streamed install; one foreground op; never kill-server). Referenced from the README.
+- **Doc-honesty fixes** (review's "Today" items): corrected the "2 mock channels" claim to the real ~21 across `.phantom.yml`, `ONBOARDING.md`, `ONBOARD-01`, and the `phantom.py` docstring; made the **imaginary-CI** claims honest (no CI exists yet — marked "planned") in `.phantom.yml`, `ARCHITECTURE.md`, `docs/THREAT-MODEL.md`, `SECURITY-PRACTICES.md`, and the `phantom.py`/`test_phantom.py` docstrings (comment-only, no behaviour change); rewrote the stale `helper/README.md` (pre-Stage-2 skeleton wording + a `docker compose up` path that crash-loops) to built reality + the supported `uv run` path; reconciled the top-level README (Stage-0 table/Setup → built status; fixed the `ARCHITECTURE.md` link).
+- Also updated the house `professionalize.md` (workspace-level, outside this repo): added the authorized-history-rewrite safety protocol to §0 and re-added the audience-aware-docs standard (both the §4 body and the quick-ref).
+
+The code remediation (DEPLOY-2 adb invariant, CI, poller tests) is campaign 2b and will conform to `AGENTS.md`.
+
 ## Professionalization: portable docs + parameterized config + history scrub (2026-06-12)
 
 Made the repository **clean-in-itself** — generic, portable, and free of internal
