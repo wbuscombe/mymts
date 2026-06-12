@@ -77,6 +77,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Wrong-box guard. A MyMTS deploy must never fall through to the wrong device
+# (a prior run hit .182 — WyzeGrid's box — and failed on a signature mismatch).
+# Refuse the scrubbed placeholder / an unset target, and require the device be
+# actually connected BEFORE the multi-minute build. Pass --device explicitly.
+if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
+    echo "FATAL: deploy device is the placeholder/unset ('$DEVICE')." >&2
+    echo "       Pass --device <ip:port> explicitly (e.g. --device 192.168.50.92:5555)" >&2
+    echo "       or set a real MYMTS_DEPLOY_DEVICE in scripts/deploy.local.env." >&2
+    exit 2
+fi
+if command -v adb >/dev/null 2>&1; then
+    if ! adb devices | awk 'NR>1 {print $1}' | grep -qx "$DEVICE"; then
+        echo "FATAL: target $DEVICE is not connected (not in 'adb devices')." >&2
+        echo "       Connect it first: adb connect $DEVICE" >&2
+        exit 2
+    fi
+fi
+
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APK_PATH="$PROJECT_ROOT/app/build/outputs/apk/release/app-release.apk"
 PACKAGE="com.mymts"
