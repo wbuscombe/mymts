@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import urllib.parse
 
 from . import DIR_DOWN, DIR_FLAT, DIR_UP, TickerEntryDTO
@@ -133,12 +134,24 @@ def parse_yahoo_chart(body: bytes) -> tuple[float, str] | None:
     if not isinstance(meta, dict):
         return None
     price = meta.get("regularMarketPrice")
-    if not isinstance(price, (int, float)) or isinstance(price, bool):
+    # json.loads accepts NaN/Infinity, and isinstance(nan, float) is True — so
+    # finiteness is part of the strict-parse contract, not just type. A non-finite
+    # price drops the symbol to the honest sample fallback rather than shipping a
+    # fake-live 'nan'/'inf' cell (review DATA-1).
+    if (
+        not isinstance(price, (int, float))
+        or isinstance(price, bool)
+        or not math.isfinite(price)
+    ):
         return None
     prev = meta.get("chartPreviousClose")
     if not isinstance(prev, (int, float)) or isinstance(prev, bool):
         prev = meta.get("previousClose")
-    prev_v = float(prev) if isinstance(prev, (int, float)) and not isinstance(prev, bool) else None
+    prev_v = (
+        float(prev)
+        if isinstance(prev, (int, float)) and not isinstance(prev, bool) and math.isfinite(prev)
+        else None
+    )
     return (float(price), _direction(prev_v, float(price)))
 
 
@@ -159,7 +172,8 @@ def parse_coingecko(body: bytes) -> dict[str, tuple[float, str]]:
         if not isinstance(payload, dict):
             continue
         usd = payload.get("usd")
-        if not isinstance(usd, (int, float)):
+        # reject NaN/Inf as well as non-numeric (DATA-1)
+        if not isinstance(usd, (int, float)) or not math.isfinite(usd):
             continue
         change = payload.get("usd_24h_change")
         if isinstance(change, (int, float)):

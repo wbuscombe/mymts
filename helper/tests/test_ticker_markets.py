@@ -49,6 +49,16 @@ def test_yahoo_drops_missing_or_nonnumeric_price() -> None:
     assert markets.parse_yahoo_chart(boolprice) is None
 
 
+def test_yahoo_drops_non_finite_price() -> None:
+    # json.loads accepts NaN/Infinity and isinstance(nan, float) is True, so the
+    # finiteness guard must drop them rather than ship a fake-live 'nan' cell (DATA-1).
+    assert markets.parse_yahoo_chart(_chart(float("nan"))) is None
+    assert markets.parse_yahoo_chart(_chart(float("inf"))) is None
+    assert markets.parse_yahoo_chart(_chart(float("-inf"))) is None
+    # a non-finite prev must not crash direction (price finite, prev ignored).
+    assert markets.parse_yahoo_chart(_chart(100.0, float("nan"))) == (100.0, DIR_FLAT)
+
+
 def test_yahoo_never_raises_on_junk() -> None:
     assert markets.parse_yahoo_chart(b"not json") is None
     assert markets.parse_yahoo_chart(b"\xff\xfe\x00\x01") is None
@@ -75,6 +85,14 @@ def test_coingecko_drops_missing_usd() -> None:
     out = markets.parse_coingecko(body)
     assert "bitcoin" not in out
     assert out["ethereum"][1] == DIR_FLAT  # no change field -> flat
+
+
+def test_coingecko_drops_non_finite_usd() -> None:
+    # NaN/Infinity usd must be dropped, not shipped as a fake-live crypto cell (DATA-1).
+    body = b'{"bitcoin":{"usd":NaN,"usd_24h_change":1.0},"ethereum":{"usd":1600}}'
+    out = markets.parse_coingecko(body)
+    assert "bitcoin" not in out
+    assert out["ethereum"][0] == 1600.0
 
 
 def test_coingecko_never_raises_on_junk() -> None:
