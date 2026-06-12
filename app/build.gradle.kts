@@ -47,10 +47,18 @@ val defaultMaxTiles: Int =
     (project.findProperty("MYMTS_DEFAULT_MAX_TILES") as? String)?.toIntOrNull() ?: 6
 
 // Helper base URL — the TV consumes /api/channels + /api/feed from here.
-// Sourced from gradle.properties so retargeting the helper host doesn't
-// require a source edit.
-val helperBaseUrl: String =
-    (project.findProperty("MYMTS_HELPER_BASE_URL") as? String) ?: "http://<LAN_IP>:8091"
+// Resolved highest-first: a -P/gradle property, then the gitignored
+// local.properties (where the operator keeps their real helper host — kept OUT
+// of the shared repo), then a localhost default for a collaborator / demo (a
+// locally-run helper). No internal topology is hardcoded or committed.
+val helperBaseUrl: String = run {
+    val local = Properties()
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) localFile.inputStream().use { local.load(it) }
+    (project.findProperty("MYMTS_HELPER_BASE_URL") as? String)
+        ?: local.getProperty("MYMTS_HELPER_BASE_URL")
+        ?: "http://localhost:8091"
+}
 
 // Release signing — Stage 6 update path.
 //
