@@ -14,7 +14,7 @@ topology in both the working tree and git history.
 
 - **Docs generalized.** All committed docs scrubbed of internal IPs, NAS paths,
   MACs, ssh host, tunnel domain, and absolute user paths (→ placeholders); the
-  PIA-VPN-coexistence guidance generalized to the portable security point (the
+  VPN/infra-coexistence guidance generalized to the portable security point (the
   helper stays isolated on its own network, never touching unrelated services on
   its host). The two pure author-deployment runbooks (`docs/OPERATIONS.md`,
   `ONN-BOXES.md`) moved to gitignored `docs/ops-local/` with committed signpost
