@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Video defaults + PGA scroll + ticker speed + manual reconnect + sectioned picker (2026-06-11)
+
+Six operator changes from using the wall (built A–F; E checkpointed).
+- **A — new 2×2 default lineup:** reordered `LineupSelector.PREFERRED` so the default 2×2 fills **TL LiveNOW from FOX, TR Fox Weather, BL BBC News, BR CBS Sports HQ**. Explicit per-slot overrides still win; everything stays in the picker. Verified on-panel.
+- **B — PGA leaderboard top-10, scrolling:** the leaderboard card shows the **top 10** with position (`1. Theegala -6`) and scrolls horizontally via the existing page marquee when it overflows. Verified in the API (10 lines).
+- **C — slower flip + speed sliders:** the page-flip default is calmer (base dwell **6500→9000ms**), and a new **Ticker** settings section has two D-pad sliders — **Scroll speed** and **Flip speed** (40–200%, default 100%, live-applied + persisted; `TickerStrip` scales velocity linearly and dwell inversely). Verified on-panel.
+- **D — manual video reconnect:** `StreamPlayer.reconnect()` (fresh player + manifest, resets recovery state) exposed two ways — a **"Reconnect"** row in the per-tile controls, and a **"Refresh all video"** row in settings — driven from `WallScreen` via a nonce → `VideoGrid`/`StreamPlayerManager`. Honest play-what-works on the result. Verified on-panel (the rows render).
+- **F — channel picker sectioned by category:** the channel list picker groups channels under **Sports / US News / Global News / Business / Weather / General** headers (`ChannelCategory` taxonomy), live-first within each, honest live/offline tags, opens on the slot's current channel, scroll-follows-focus. Verified on-panel (SPORTS/US NEWS/GLOBAL NEWS sections with the right channels).
+- **E — news-feed genre/source two-level toggles: CHECKPOINTED** for a fresh session (the bigger taxonomy — a genre→source tree with check-box toggles, reconciled with the sports-leagues pool). Not started; the shared category naming from F is the foundation.
+- Tests per part (lineup order, PGA top-10/position, ticker-speed clamp, `ChannelCategory`/`channelToFocus`). Full suites green. 0 fatals on `.92`. Same release key. `.182`/`.158` untouched. unrelated host services untouched. Panel-fit untouched.
+
 ## Menu focus fixes + Rows×Cols grid + channel list picker (2026-06-11)
 
 Four issues from the operator using the new menu — two focus bugs (the core) + two UI enhancements.
