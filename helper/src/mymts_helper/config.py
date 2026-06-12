@@ -11,6 +11,16 @@ import os
 from dataclasses import dataclass
 
 
+def _default_data_dir() -> str:
+    """DB location when DATA_DIR is unset. Containers mount a writable /data
+    volume; a local run (clean clone / demo) has no writable /data, so fall back
+    to a writable per-user dir so the helper boots with zero config."""
+    if os.path.isdir("/data") and os.access("/data", os.W_OK):
+        return "/data"
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "mymts-helper")
+
+
 @dataclass(frozen=True)
 class Config:
     phantom_mode: bool
@@ -68,10 +78,11 @@ class Config:
             log_level=os.environ.get("LOG_LEVEL", "info").lower(),
             build_sha=os.environ.get("BUILD_SHA", "dev"),
             build_version=os.environ.get("BUILD_VERSION", "0.0.0-dev"),
-            # /data is the conventional bind-mount point for stateful
-            # containers in the operator's NAS layout. Falls back to a
-            # local path for `uv run python -m mymts_helper`.
-            data_dir=os.environ.get("DATA_DIR", "/data"),
+            # Where the sqlite db lives. A container mounts a writable /data
+            # volume; a local `uv run` (a clean clone / demo) has no writable
+            # /data, so we auto-fall-back to a per-user dir — no config needed
+            # to boot from a fresh clone. DATA_DIR overrides either way.
+            data_dir=os.environ.get("DATA_DIR") or _default_data_dir(),
             feed_poll_interval_seconds=int(
                 os.environ.get("FEED_POLL_INTERVAL_SECONDS", "300")
             ),
