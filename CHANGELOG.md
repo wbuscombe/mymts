@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Professionalization: portable docs + parameterized config + history scrub (2026-06-12)
+
+Made the repository **clean-in-itself** — generic, portable, and free of internal
+topology in both the working tree and git history.
+
+- **Docs generalized.** All committed docs scrubbed of internal IPs, NAS paths,
+  MACs, ssh host, tunnel domain, and absolute user paths (→ placeholders); the
+  PIA-VPN-coexistence guidance generalized to the portable security point (the
+  helper stays isolated on its own network, never touching unrelated services on
+  its host). The two pure author-deployment runbooks (`docs/OPERATIONS.md`,
+  `ONN-BOXES.md`) moved to gitignored `docs/ops-local/` with committed signpost
+  stubs; a new *audience-aware docs* standard added to the house guidelines.
+- **Functional config parameterized** (behaviour-preserving): the app's
+  `network_security_config.xml` TLS-pin host is now **generated at build time**
+  from the same local-config helper URL (no IP committed; reproduces the prior
+  pin exactly for the operator, demo-safe loopback default otherwise); deploy/
+  probe scripts + the NAS compose now source operator values from gitignored
+  local config with generic placeholder defaults. Operator's real values live
+  only in gitignored `local.properties` + `scripts/deploy.local.env`.
+- **Git history rewritten (one-time, authorized).** `git filter-repo`
+  (`--replace-text` + `--replace-message`) purged the same specifics from all 94
+  commits' contents **and** messages. Verified: 0 operator-specifics in history,
+  current content byte-identical, no secret ever committed (the public helper
+  cert is the only cert), 94 commits + DAG preserved. A full mirror backup was
+  taken first. **Existing clones must re-clone** — see `ONBOARDING.md`.
+
 ## Video defaults + PGA scroll + ticker speed + manual reconnect + sectioned picker (2026-06-11)
 
 Six operator changes from using the wall (built A–F; E checkpointed).

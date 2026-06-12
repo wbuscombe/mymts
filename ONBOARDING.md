@@ -10,6 +10,14 @@ or referenced; you run your own local copy on mock data.
 > `ONBOARD-02-LOCAL-HELPER.md` (fuller, real public data). They're written for
 > *your* Claude to follow on *your* machine.
 
+> **⚠️ Cloned before 2026-06-12?** The git history was rewritten once on that
+> date (a one-time cleanup of internal addresses from old commits). Your old
+> clone has diverged and **`git pull` will not reconcile**. Re-clone fresh:
+> `git clone https://github.com/wbuscombe/mymts.git`. If you have local work on
+> the old clone, save it as a patch first (`git diff > /tmp/mywork.patch`) and
+> re-apply it on the fresh clone. This is a one-time event; normal pulls work
+> from here on.
+
 ## What MyMTS is (1 line)
 A native **Android TV** ambient news wall (Kotlin / Compose for TV / Media3) +
 a minimal **Python/FastAPI helper** that aggregates feeds and resolves live
