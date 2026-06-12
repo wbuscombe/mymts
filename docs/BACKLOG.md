@@ -25,6 +25,16 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
+## Liven up the ticker league/sport marker (readability-first)
+
+**What:** Each ticker league block has a green anchor/marker box (the pinned left-edge "curtain") with the league/sport name. Make it more visually interesting **without** sacrificing legibility — the text must stay prominent + readable, and it must stay subtle, not loud (it's an ambient glance-wall). Options to explore:
+- **(a) League/sport LOGO** in or replacing the green box. *Caveat:* per-league logo assets add sourcing/licensing/legibility complexity, and ESPN actually **removed** logos in their BottomLine redesign for legibility — so logos may not be the answer.
+- **(b) Per-league/sport ACCENT COLOR** for the marker — cheap, effective, legible; likely the best first move.
+- **(c) A subtle sport GLYPH/icon** (⚾ 🏀 🏈 / a tasteful icon set) alongside the text.
+- **(d)** Some other tasteful treatment.
+
+**Constraint:** readability + prominence of the text is paramount; liven it up subtly, not over-the-top. Open-ended creative item — pick the livelier-but-still-clean approach when it's built. (Operator: *"get a little creative while not making it too loud and over the top, text still prominent and readable."*) Touches `PageMarker` in `TickerStrip.kt` (+ the per-sport `card` payload if a glyph/color is driven by sport kind). Do not regress the curtain's clip/pin behavior or the locked panel-fit.
+
 ## ~~Sports ticker — leagues staged for bespoke cards~~ — DONE (2026-06-11)
 
 **All four shipped.** UFC (`fight`), PGA (`leaderboard`), Tennis (`match`), F1 (`race`) now have bespoke ticker cards on a shared per-sport `card` payload — built, deployed, and verified on the panel. See `docs/findings/21` (as-built shapes) + CHANGELOG (2026-06-11 individual-sports cards). They're active toggles in the picker now (no longer "Coming soon"). *(The original staging note is kept below for history.)*

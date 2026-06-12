@@ -19,7 +19,7 @@ Proof-of-closure per the playbook. Status: **FIXED** (proving artifact landed) �
 
 | ID | Status | Proving artifact |
 |---|---|---|
-| DEPLOY-2 (P1) | **FIXED** | `scripts/lib-adb.sh` (`adb_install_verified`: push + byte-verify + retry + `pm install` + `lastUpdateTime`) used by all deploy scripts incl. the rollback; `scripts/test_adb_invariant.sh` (8/8 green) proves truncation→reject. *Live `.92` verify pending — operator-run.* |
+| DEPLOY-2 (P1) | **FIXED + CONFIRMED ON HARDWARE** | `scripts/lib-adb.sh` (`adb_install_verified`: push + byte-verify + retry + `pm install` + `lastUpdateTime`) used by all deploy scripts incl. the rollback; `scripts/test_adb_invariant.sh` (8/8 green) proves truncation→reject. **Proven on `.92` 2026-06-12** (operator hand-deploy): byte-verify `1918505 == 1918505`, `pm install` Success (key intact), `lastUpdateTime` advanced. Health-gate hardened to fail-open on the flaky transport (no false-rollback). |
 | DEPLOY-1 | **FIXED** | `deploy-app.sh build_release` runs `:app:clean`. |
 | DEPLOY-3 | **FIXED** (untested-without-NAS) | `deploy-helper.sh` tags `mymts-helper:last-good` before `up -d` + auto-reverts on failed `/health`; volume untouched. Operator validates on next deploy. |
 | DEPLOY-4 / ONB-3 | **FIXED** | `.github/workflows/ci.yml` (pytest + poller tests + schema check + adb gate + phantom smoke + app JVM tests), first run green. CI claims flipped truthful. |

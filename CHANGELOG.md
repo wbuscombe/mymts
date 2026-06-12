@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Ticker end-of-crawl dwell + in-flight deploy cleanup (2026-06-12)
+
+- **Ticker legibility (app):** the sports ticker now **holds at the fully-revealed right edge** of a league crawl before flipping to the next category, so the rightmost content is readable. `PageRow`'s continuous marquee became a controlled single-pass reveal + a ~0.75s end-hold (capped via `revealDurationMs` so the hold always fits before the flip); the page-flip dwell, the pinned marker curtain, and the stale/paused behavior are unchanged. New `RevealDurationTest` pins the capped-duration logic. *Ships on the next `.92` deploy; visual confirmation on the panel is the operator's step.*
+- **Banked the in-flight deploy hardening:** the health-gate now tolerates the flaky `.92` transport — it retries the logcat read (30s, was 10s), catches the read timeout instead of crashing, and **fails OPEN** (installed-but-unverified, no false-rollback) when the transport is unreadable; reserves rollback for positive crash evidence; adds `--skip-health-gate` and `--skip-build`. `deploy-app.sh` also refuses a placeholder/wrong-box device (the `.182` incident) and the gitignored `deploy.local.env` default was corrected `.182`→`.92`.
+- **DEPLOY-2 confirmed on real hardware:** the operator hand-deployed current MyMTS to `.92` via the invariant (byte-verify `1918505 == 1918505`, `pm install` Success — **signing key intact**, `lastUpdateTime` advanced). The adb invariant is now proven end-to-end; `.92` runs current MyMTS.
+- **Backlog:** logged a creative *"liven up the ticker league/sport marker"* item (per-league accent color / sport glyph / logo-caveat — readability-first).
+
 ## Remediation: adb deploy invariant + CI + poller/settings tests (2026-06-12)
 
 Campaign 2b — the code + CI + tests remediation from the 2026-06 adversarial review, conforming to `AGENTS.md`.
