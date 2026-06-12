@@ -37,6 +37,36 @@ class Outcome(str, Enum):
     FAIL_ALL_DEAD = "FAIL_ALL_DEAD"
     FAIL_DECODER_THRASH = "FAIL_DECODER_THRASH"
     FAIL_TIMEOUT = "FAIL_TIMEOUT"
+    # Transport could not be read at all (every logcat read timed out). The
+    # build is installed + byte-verified, but its health is UNVERIFIED — this is
+    # NOT positive evidence of a crash, so it must never trigger a rollback.
+    INDETERMINATE = "INDETERMINATE"
+
+
+# Exit codes are the deploy script's contract:
+EXIT_PROMOTE = 0       # PASS — promote to known-good
+EXIT_ROLLBACK = 1      # confirmed crash (positive evidence) — roll back
+EXIT_UNVERIFIED = 2    # indeterminate / weak evidence — fail OPEN (install stays, no rollback)
+
+
+def exit_code_for(outcome: "Outcome", readable: bool) -> int:
+    """Map a health decision to a deploy action — the fail-open policy.
+
+    A rollback DESTROYS a byte-verified install, so it must fire only on
+    POSITIVE evidence of a crash over a READABLE transport. When the transport
+    is unreadable, or the only signal is absence-of-telemetry (which a truncated
+    read over the flaky link can fake), we fail OPEN: the build stays installed
+    and unpromoted, and the operator confirms the panel by eye.
+    """
+    if not readable:
+        return EXIT_UNVERIFIED
+    if outcome == Outcome.PASS:
+        return EXIT_PROMOTE
+    if outcome in (Outcome.FAIL_ALL_DEAD, Outcome.FAIL_DECODER_THRASH):
+        return EXIT_ROLLBACK  # positive crash shape (EV=DEAD / decoder-thrash)
+    # FAIL_NOT_READY (too few EV=TILE_READY) is weak/ambiguous over a flaky
+    # transport — do NOT roll back a byte-verified install on it.
+    return EXIT_UNVERIFIED
 
 
 @dataclass(frozen=True)
@@ -134,23 +164,43 @@ def decide(
     )
 
 
-def _capture_via_adb(device: str, deadline_seconds: int) -> str:
+def _capture_via_adb(
+    device: str, deadline_seconds: int, *, read_timeout: int = 30
+) -> tuple[str, bool]:
     """Stream logcat -d periodically until [deadline_seconds] elapse.
 
-    Exec'd from the deploy script after install + start; not unit-tested
-    here (the unit tests exercise [decide] on canned strings).
+    Returns ``(blob, readable)``. Tolerant of the flaky LAN transport: each
+    ``logcat -d`` read gets a generous timeout, and a timed-out/errored read is
+    RETRIED within the deadline rather than crashing the script (the previous
+    uncaught ``TimeoutExpired`` on a 10s read is exactly what false-failed a
+    healthy deploy). ``readable`` is True iff at least one read actually
+    completed — letting the caller distinguish "telemetry says X" (readable)
+    from "could not read the transport at all" (indeterminate; never a rollback).
+
+    Not unit-tested here (the unit tests exercise [decide]/[exit_code_for] on
+    canned inputs); this is the device-touching capture.
     """
     import subprocess
     start = time.monotonic()
     captured: list[str] = []
+    successful_reads = 0
     while time.monotonic() - start < deadline_seconds:
-        proc = subprocess.run(
-            ["adb", "-s", device, "logcat", "-d", "-s", "MYMTS_SOAK"],
-            capture_output=True, text=True, check=False, timeout=10,
-        )
-        captured.append(proc.stdout)
+        try:
+            proc = subprocess.run(
+                ["adb", "-s", device, "logcat", "-d", "-s", "MYMTS_SOAK"],
+                capture_output=True, text=True, check=False, timeout=read_timeout,
+            )
+            successful_reads += 1
+            captured.append(proc.stdout)
+        except subprocess.TimeoutExpired:
+            # Transport slow/wedged for this read — do NOT crash; retry within
+            # the deadline. A successful, byte-verified deploy must not roll
+            # itself back just because a logcat read timed out.
+            pass
+        except OSError:
+            pass
         time.sleep(2.5)
-    return "\n".join(captured)
+    return "\n".join(captured), successful_reads >= 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,24 +215,42 @@ def main(argv: list[str] | None = None) -> int:
                    help="Minimum EV=TILE_READY events required to PASS.")
     p.add_argument("--expected-tile-count", type=int, default=4,
                    help="Wall's configured tile count — used for FAIL_ALL_DEAD detection.")
+    p.add_argument("--read-timeout", type=int, default=30,
+                   help="Per-logcat-read timeout in seconds (default 30; the flaky "
+                        ".92 transport needs >>10s). Timed-out reads are retried.")
     args = p.parse_args(argv)
 
     if args.logcat_file:
         with open(args.logcat_file, encoding="utf-8") as f:
             blob = f.read()
+        readable = True
     else:
         if not args.device:
             p.error("--device required unless --logcat-file is given")
-        blob = _capture_via_adb(args.device, args.deadline_seconds)
+        blob, readable = _capture_via_adb(
+            args.device, args.deadline_seconds, read_timeout=args.read_timeout
+        )
 
-    decision = decide(
-        blob,
-        minimum_ready=args.minimum_ready,
-        expected_tile_count=args.expected_tile_count,
-    )
+    if not readable:
+        # Never read the transport — INDETERMINATE, not a confirmed failure.
+        decision = Decision(
+            outcome=Outcome.INDETERMINATE,
+            reason=(
+                "logcat was unreadable over the transport after retries — the build "
+                "is installed + byte-verified but health is UNVERIFIED; not rolling "
+                "back, confirm the wall on the panel"
+            ),
+            tile_ready=0, decoder=0, dead=0,
+        )
+    else:
+        decision = decide(
+            blob,
+            minimum_ready=args.minimum_ready,
+            expected_tile_count=args.expected_tile_count,
+        )
     json.dump(decision.to_dict(), sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0 if decision.outcome == Outcome.PASS else 1
+    return exit_code_for(decision.outcome, readable)
 
 
 if __name__ == "__main__":

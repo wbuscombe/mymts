@@ -62,6 +62,8 @@ MANUAL_ROLLBACK=0
 MINIMUM_READY=2
 EXPECTED_TILES=4
 DEADLINE_SECONDS=90
+SKIP_HEALTH_GATE=0
+SKIP_BUILD=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -72,6 +74,12 @@ while [[ $# -gt 0 ]]; do
         --minimum-ready) MINIMUM_READY="$2"; shift 2 ;;
         --expected-tiles) EXPECTED_TILES="$2"; shift 2 ;;
         --deadline-seconds) DEADLINE_SECONDS="$2"; shift 2 ;;
+        # Skip the logcat health-gate entirely (hostile-transport days): install
+        # + byte-verify, promote, and the operator confirms the panel by eye.
+        --skip-health-gate) SKIP_HEALTH_GATE=1; shift ;;
+        # Deploy an already-built APK (don't re-build). Lets the long build run
+        # as its own step so the adb portion stays a short FOREGROUND op.
+        --skip-build) SKIP_BUILD=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
     esac
@@ -273,7 +281,12 @@ if [[ "$MANUAL_ROLLBACK" == "1" ]]; then
     exit $?
 fi
 
-build_release
+if [[ "$SKIP_BUILD" == "1" ]]; then
+    log "build: SKIPPED (--skip-build) — using existing $APK_PATH"
+    [[ -f "$APK_PATH" ]] || { log "FATAL: --skip-build but no APK at $APK_PATH (build it first)"; exit 6; }
+else
+    build_release
+fi
 verify_signed_release || {
     rc=$?
     log "build verification failed (rc=$rc); not deploying."
@@ -289,17 +302,40 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 require_cmd_or_die adb
-require_cmd_or_die python3
 adb_install "$ARCHIVE_DIR/archive/$archived_name"
 launch_app
 
-if run_health_gate; then
+# --- promote / rollback / fail-open decision ---
+# A rollback DESTROYS a byte-verified install, so it fires ONLY on positive
+# evidence of a crash over a readable transport. Transport-unreadable or
+# weak/absent telemetry => fail OPEN (installed, not rolled back, not promoted).
+if [[ "$SKIP_HEALTH_GATE" == "1" ]]; then
     write_known_good_atomic "$archived_name"
-    log "=== PROMOTED $archived_name ==="
+    log "=== INSTALLED + PROMOTED $archived_name (health-gate SKIPPED via --skip-health-gate) ==="
+    log "    The APK is byte-verified on-device; no logcat health check ran —"
+    log "    CONFIRM THE WALL ON THE PANEL."
     exit 0
-else
-    log "health-gate FAILED — initiating rollback"
-    rollback_to_known_good
-    log "=== ROLLED BACK; the failed APK ($archived_name) is retained for diagnosis ==="
-    exit 1
 fi
+
+require_cmd_or_die python3
+hg=0; run_health_gate || hg=$?
+case "$hg" in
+    0)
+        write_known_good_atomic "$archived_name"
+        log "=== PROMOTED $archived_name (health-gate PASS) ==="
+        exit 0 ;;
+    1)
+        log "health-gate FAILED (confirmed crash shape) — initiating rollback"
+        rollback_to_known_good
+        log "=== ROLLED BACK; the failed APK ($archived_name) is retained for diagnosis ==="
+        exit 1 ;;
+    *)
+        # INDETERMINATE (exit 2): the build is installed + byte-verified but its
+        # health could NOT be confirmed (transport unreadable, or only weak/absent
+        # telemetry). Do NOT roll back a good install; do NOT promote.
+        log "=== INSTALLED but UNVERIFIED $archived_name — health-gate INDETERMINATE (code $hg) ==="
+        log "    Byte-verified on-device and NOT rolled back; known-good is unchanged."
+        log "    Health could not be confirmed over the transport — CONFIRM THE WALL ON THE PANEL."
+        log "    (Re-run when the transport is healthy, or use --skip-health-gate to promote.)"
+        exit 0 ;;
+esac

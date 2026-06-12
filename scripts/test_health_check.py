@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import pytest
 
-from health_check import Outcome, decide
+from health_check import Outcome, decide, exit_code_for
 
 
 def make_logcat(*, ready: int = 0, decoder: int = 0, dead: int = 0) -> str:
@@ -149,3 +149,31 @@ def test_decision_matrix(ready: int, decoder: int, dead: int,
         expected_tile_count=4,
     )
     assert d.outcome == expected, f"ready={ready} decoder={decoder} dead={dead}: {d.outcome}"
+
+
+# ---- exit_code_for: the fail-open promote / rollback / unverified policy ----
+# 0 = promote, 1 = rollback (confirmed crash), 2 = unverified (fail open).
+
+def test_exit_code_pass_promotes() -> None:
+    assert exit_code_for(Outcome.PASS, readable=True) == 0
+
+
+def test_exit_code_confirmed_crash_rolls_back() -> None:
+    # Positive crash evidence over a READABLE transport -> rollback is correct.
+    assert exit_code_for(Outcome.FAIL_ALL_DEAD, readable=True) == 1
+    assert exit_code_for(Outcome.FAIL_DECODER_THRASH, readable=True) == 1
+
+
+def test_exit_code_unreadable_transport_never_rolls_back() -> None:
+    # The false-fail that bit us: transport unreadable must be INDETERMINATE
+    # (fail open, code 2), NEVER a rollback — even if a (truncated/empty) blob
+    # would otherwise classify as a crash.
+    assert exit_code_for(Outcome.INDETERMINATE, readable=False) == 2
+    assert exit_code_for(Outcome.FAIL_ALL_DEAD, readable=False) == 2
+    assert exit_code_for(Outcome.PASS, readable=False) == 2
+
+
+def test_exit_code_not_ready_over_readable_is_unverified_not_rollback() -> None:
+    # Too-few-tiles is weak/ambiguous over a flaky transport (a truncated read
+    # can fake it) — do NOT destroy a byte-verified install; fail open to 2.
+    assert exit_code_for(Outcome.FAIL_NOT_READY, readable=True) == 2
