@@ -34,9 +34,25 @@ Set `PHANTOM_MODE=1`. Phantom mode preloads deterministic fixtures — feed item
 - `pyproject.toml` is the single source of truth; deps are pinned to exact versions.
 - HEALTHCHECK uses `/health` so a stuck process is detectable by Docker + the operator's monitoring.
 
+## API endpoints (LAN-only)
+
+All JSON responses carry `schema_version` (additive-only). Served on the helper's LAN address; never publicly exposed.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | liveness + feeds/channels freshness snapshot |
+| `GET /api/feed` · `GET /api/feed/sources` | newest-first plain-text feed items · source inventory |
+| `GET /api/channels` | channel lineup (`current_url` only when `status==live`) |
+| `GET /api/ticker/markets` · `GET /api/ticker/sports` | real-or-SAMPLE markets · sports + per-sport cards |
+| `GET /api/playlist.m3u` | the **`default`** profile (every live channel) as an M3U playlist |
+| `GET /api/playlist/{name}.m3u` | a named **profile** (ordered channel subset); 404 if unknown |
+| `GET /app/` | the LAN web client (static; only when `WEB_CLIENT_DIR` is set) |
+
+The M3U endpoints point at each channel's **resolved upstream URL** — the helper resolves/shields but never proxies the video (no-proxy). Only live channels are listed. Profiles are a built-in `default` plus optional operator-defined named profiles from `PROFILES_FILE` (see [`profiles.example.json`](profiles.example.json)), read once at startup — operator data kept out of git, *not* the TV's mutable lineup (that stays on-device).
+
 ## What the helper does NOT do
 
-- Hold the operator's lineup/presets/sources. Those live on-device in the TV app.
+- Hold the operator's **mutable** lineup/presets. Those live on-device in the TV app (`LineupStore`). *(The optional `PROFILES_FILE` is static, read-only-at-startup channel-selection config for the playlist endpoint — not the TV's mutable state.)*
 - Expose any public HTTP surface. It is internal-to-the-NAS.
 - Touch any unrelated container on the host. Standing rule.
 - Log secrets, internal IPs, or absolute paths beyond `/app`.

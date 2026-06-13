@@ -32,6 +32,8 @@ from .feeds.seeder import seed_from_file as seed_feeds_from_file
 from .fetcher import Resolver
 from .health import FreshnessSnapshotter, HealthState
 from .log import configure_logging
+from .playlist.api import get_router as playlist_router
+from .playlist.profiles import load_profiles
 from .ticker.api import get_router as ticker_router
 from .ticker.pollers import MarketsPoller, SportsPoller
 
@@ -91,6 +93,12 @@ def create_app(
         log.info("feed_sources_seeded_total", extra={"count": seeded_feeds})
     finally:
         conn.close()
+
+    # Playlist profiles (built-in `default` + any operator-defined named
+    # profiles from cfg.profiles_file). Loaded once at startup; the loader
+    # is tolerant (a bad file degrades to default-only) so the wall boots.
+    profiles = load_profiles(cfg.profiles_file)
+    log.info("playlist_profiles_loaded", extra={"count": len(profiles)})
 
     # Resolver precedence: explicit override (test) > phantom mode > default.
     if resolver is not None:
@@ -167,6 +175,7 @@ def create_app(
 
     app.include_router(feed_router(db_path))
     app.include_router(channels_router(db_path))
+    app.include_router(playlist_router(db_path, profiles))
     app.include_router(ticker_router(markets_poller, sports_poller))
 
     # LAN web client (optional, off by default). When WEB_CLIENT_DIR is

@@ -1030,3 +1030,27 @@ On the dedicated box's 720p panel, two things surfaced. **(1) Panel fit.** The b
 - yt-dlp channel resolution (`channels.kind = 'youtube'`) — a future migration extends the CHECK constraint when the yt-dlp sidecar pattern lands.
 - Operator-driven add/remove of channels and RSS sources via API — Stage 5 (settings UI). For Stage 2, `seed.json` is the operator-curated list; the helper upserts on every boot so edits flow in without a redeploy.
 - Buffer-sizing changes for naturally-bursty streams like dw-news-en — flagged in `docs/findings/02-player-state-machine.md §"Buffer-sizing trade-off"`, decision deferred to Part C under real 6-tile load.
+
+---
+
+## 23. Playlist / M3U endpoint + profile abstraction (2026-06-13 — the cross-platform-profiles fork, foundation)
+
+The helper exposes the resolved channel lineup as a standard **M3U playlist**, so a generic player — VLC on an Apple TV in another room — can consume MyMTS's channels directly. This is the deliberate, scoped *start* of the cross-platform-profiles fork (BACKLOG item H): a multi-profile backend with VLC as one client. Foundation, not a finished multi-tenant system.
+
+**Endpoints** (`helper/src/mymts_helper/playlist/`):
+- `GET /api/playlist.m3u` — the built-in `default` profile (every channel **live now**).
+- `GET /api/playlist/{name}.m3u` — a named profile (an ordered channel subset); unknown name → 404.
+
+Both return `audio/x-mpegurl`: `#EXTM3U`, then per channel `#EXTINF:-1 tvg-id="<slug>" tvg-name="<label>",<label>` followed by the channel's resolved upstream URL.
+
+**The helper stays the resolver/shield — no video proxy.** Each entry points at the channel's probed `current_url` (the URL the TV plays), NOT a helper-relayed path; the helper does not enter the video bytestream (the no-proxy decision). The M3U is a *channel list*, not a gateway — so the SSRF/egress boundary and the "native app is the full-fidelity client" framing stay intact. No new outbound fetch (it reads the snapshot the prober already maintains). Note VLC is a more capable client than the LAN web grid — it plays plain-`http://` HLS — so `browser_playable` (a browser mixed-content hint) is *not* used to filter the M3U; the playlist equals the native wall's resolvable set.
+
+**Honest degradation (C3).** Only `status==live` channels are emitted — the same gate `/api/channels` uses (`current_url` is masked unless live). A channel that doesn't resolve — even one a profile names — is dropped, never listed as a working endpoint; a fully-down lineup is a valid, empty `#EXTM3U`, never a fabricated list. Rendering collapses CR/LF and strips quotes from labels so a label can't inject a playlist line (the DATA-2 "one bad row must not break the batch" lesson, applied at the output edge).
+
+**Profiles** (`playlist/profiles.py`). A `Profile` is `(name, slugs)`: `slugs is None` ⇒ "every live channel" (the built-in `default`); otherwise an explicit, ordered allow-list. The registry is the built-in `default` plus optional operator-defined named profiles loaded from a JSON file at `PROFILES_FILE` (`helper/profiles.example.json` documents the shape) — read **once at startup**, operator data kept out of git, the loader tolerant (a bad/again-bad file degrades to default-only so the wall still boots; an invalid entry is skipped; a file entry named `default` is ignored — the built-in wins). The endpoint stays **stateless**: it returns what is live *now*, narrowed/ordered by the requested profile.
+
+**This is not the TV's lineup.** The profiles file is a small, optional, read-only-at-startup operator config (like `seed.json`), distinct from the TV app's mutable on-device `LineupStore`. Per-client server-side prefs (audio/caption/layout), identity, and cross-device **sync** — the full item-H question — stay deferred; this lays the backend shape (named profile → channel selection → playlist) to build on, and is deliberately stateless so it does not prejudge that decision.
+
+**Posture.** LAN-only, like the rest of the helper — one more route on the existing listener, no new public surface, no new dependency. The remote/public web client remains a separate, deferred security item; this endpoint does not touch it.
+
+**Operator validation** (post-deploy): `curl https://<helper>:8443/api/playlist.m3u` returns valid M3U; load that URL in VLC, then VLC-on-Apple-TV (add a network stream) → a clean-resolving channel plays. See `docs/findings/22-playlist-profiles.md`.

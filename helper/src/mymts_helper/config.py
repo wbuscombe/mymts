@@ -78,6 +78,12 @@ class Config:
     # served content is the credential-free LAN web client (see
     # `web/README.md`); it is never exposed beyond the LAN.
     web_client_dir: str | None = None
+    # Playlist profiles (2026-06-13). Optional path to a JSON file of named
+    # channel profiles for the /api/playlist/{name}.m3u endpoint (see
+    # `profiles.example.json`). Unset → only the built-in `default` profile
+    # (every live channel). Operator data, kept out of git — like the cert
+    # paths above, only the path comes from the environment.
+    profiles_file: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -125,6 +131,7 @@ class Config:
             ssl_keyfile=_opt_str("SSL_KEYFILE"),
             ssl_certfile=_opt_str("SSL_CERTFILE"),
             web_client_dir=web_dir,
+            profiles_file=_opt_str("PROFILES_FILE"),
         )
 
     def has_https(self) -> bool:

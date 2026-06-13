@@ -1,0 +1,13 @@
+{
+  "_comment": "Example playlist profiles. Copy to a file OUTSIDE git (e.g. under docs/ops-local/) and point PROFILES_FILE at it. A profile is a named, ordered selection of channel slugs the /api/playlist/{name}.m3u endpoint serves; slugs are the channel `slug` values from channels/seed.json. The built-in `default` profile (every live channel) always exists and cannot be overridden here. Only channels that resolve (status==live) at request time are emitted.",
+  "profiles": [
+    {
+      "name": "office-wall",
+      "slugs": ["cbs-sports-hq", "bbc-news", "bloomberg-tv", "al-jazeera-en"]
+    },
+    {
+      "name": "bedroom-appletv",
+      "slugs": ["bbc-news", "dw-news-en", "france24-en", "nasa-tv"]
+    }
+  ]
+}

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Playlist / M3U endpoint + profile foundation (2026-06-13, Campaign 3 HALF 2)
+
+The helper now exposes the resolved channel lineup as a standard **M3U playlist** a generic player (VLC, incl. VLC-on-Apple-TV) can load directly — the groundwork for the cross-platform-profiles fork (BACKLOG item H), with the helper staying the resolver/shield (no video proxy):
+- **`GET /api/playlist.m3u`** — the built-in `default` profile (every channel **live right now**), as `#EXTM3U` + `#EXTINF` entries (`tvg-id`=slug, `tvg-name`=label) pointing at each channel's **resolved upstream `current_url`**. The helper never proxies the bytes (the no-proxy decision); the M3U is a channel list, not a gateway.
+- **`GET /api/playlist/{name}.m3u`** — a named **profile**: an ordered channel subset a given display should see (office wall vs. a bedroom Apple TV). Unknown profile → 404.
+- **Profiles** = a built-in `default` (all live) plus optional operator-defined named profiles loaded from a JSON file (`PROFILES_FILE`, see `helper/profiles.example.json`) — read **once at startup**, operator data kept out of git, loader tolerant (a bad/again-bad file degrades to default-only so the wall boots). This is *not* the TV's mutable on-device lineup (that stays in `LineupStore`); per-client server-side prefs / identity / sync stay deferred per item H. The endpoint is stateless (returns what's live now).
+- **Honest degradation (C3):** only `status==live` channels are listed (the same gate the TV + web clients use); a slug that isn't live — even one a profile names — is dropped, never faked. A fully-down lineup yields a valid, empty `#EXTM3U`, not a fabricated list. M3U output collapses CR/LF + strips quotes so a channel label can't inject a playlist line.
+- **LAN-only, no new public surface, no new dependency, no new egress** (reads the snapshot the prober already maintains). Tests: **26 new** (`test_playlist_m3u` / `test_playlist_profiles` / `test_playlist_api` — incl. the live-vs-unavailable env gate + the no-proxy property); full helper suite **253 green**, new code ruff-clean.
+
+Goes live when the helper is redeployed at the NAS (`docker compose build --pull && up -d`; `/health` `build_sha` verified). Operator validation: `curl https://<helper>:8443/api/playlist.m3u` → valid M3U, then load that URL in VLC (and VLC-on-Apple-TV → add network stream) and confirm a clean-resolving channel plays. See `docs/findings/22-playlist-profiles.md`, `ARCHITECTURE.md §23`.
+
 ## Web client parity — per-sport cards, news, settings, schema guard (2026-06-12, Campaign 3 HALF 1)
 
 The LAN web client (served at `/app`) reaches feature parity with the native wall (`web/` only; consumes the existing helper endpoints):

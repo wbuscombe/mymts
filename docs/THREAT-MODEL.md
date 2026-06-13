@@ -456,6 +456,18 @@ The prior release key (used for the abandoned `.182` MyMTS dev install) was not 
 - **Signing identity going forward:** cert SHA-256 `7acc6315…c24ca8ca`, `CN=MyMTS, O=3SL Studios, C=US`. Installs on `.92` are signed with it; the old-key identity is dead (its archived APKs can't update-over the new key — expected, the `.182` install is abandoned). No cross-box signing-identity dependency exists (`.92` had no prior MyMTS).
 - **Kiosk surface unchanged:** the kiosk foreground service / boot receiver were already threat-modelled (opt-in, SPECIAL_USE FGS, no new network surface). The boot-time wall-foreground gap (BAL-blocked `startActivity`) and its candidate fix (HOME-launcher) are a UX/availability matter, not a new trust-boundary surface — the helper/network posture is untouched. **unrelated host services never touched.**
 
+## Playlist / M3U endpoint + profiles — read-only LAN surface, no proxy (2026-06-13, Campaign 3 HALF 2)
+
+**Claim:** the new `/api/playlist.m3u` (+ `/api/playlist/{name}.m3u`) endpoints add **no new attack surface** beyond the existing LAN-only helper, open no egress, and hold every lock.
+
+- **No new public surface / no proxy.** Two GET routes on the existing helper listener, LAN-only like the rest. The M3U points at each channel's already-resolved upstream `current_url` — the same data `/api/channels` exposes on the LAN — and the helper does **not** enter the video bytestream (no proxy). No new outbound fetch, no new host, no relay of bytes; the SSRF-safe fetcher / resolver-shield boundary is untouched (it reads the channel snapshot the prober already maintains).
+- **Read-only, input-minimal.** The only request input is the `{name}` path segment, used solely as a dict key into the in-memory profile registry (404 on miss) — no SQL, no filesystem path, no shell from it. The profiles config file is operator-provided, parsed at startup with tolerant validation (names + slugs checked against the channel slug rule; invalid entries skipped; malformed file → default-only so the wall boots); it holds no secret.
+- **Honest by construction (C3).** Only `status==live` channels are listed — the same gate `/api/channels` uses; a non-resolving channel (even one a profile names) is dropped, never emitted as a working endpoint, and a down lineup is a valid empty `#EXTM3U`, never a fabricated list. M3U rendering collapses CR/LF and strips quotes from labels so an operator/upstream-shaped label cannot inject a playlist line (output-edge hardening, the DATA-2 lesson).
+- **State posture.** The profiles file is optional, static, read-only-at-startup operator config (like `seed.json`) — *not* the TV's mutable on-device lineup, and not per-client mutable server state. Helper-hosted per-client prefs/identity/sync (the full item-H fork) stay deferred; this endpoint is stateless (returns what's live now).
+- **Unchanged:** non-root / read-only / cap-drop container posture, https-only egress, no new dependency, the native-app-is-full-fidelity framing, the remote/public web-client deferral (separate security item — not touched here).
+
+**Traces to:** **C3** (honest live-only / empty-not-faked), **A1/A2** (output sanitization, minimal input, no new egress), the SSRF/egress boundary (no proxy, no new fetch), the LAN-only separate-client posture (no new public surface).
+
 ## Stage gates that touch this file
 
 - **Stage 1:** review threats applicable to the spike's outbound surface.
