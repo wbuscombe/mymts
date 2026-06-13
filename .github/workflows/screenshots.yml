@@ -1,0 +1,54 @@
+name: Screenshots (demo web wall)
+
+# On-demand capture of the DEMO (phantom-mode) web wall → a downloadable artifact.
+# Manual-dispatch only: this boots a browser + downloads Chromium, so it is NOT run
+# on every push, and it deliberately does NOT auto-commit binaries to history — the
+# committed gallery in docs/screenshots/web/ is refreshed by a human running the
+# capture (locally or by downloading this artifact). Secret-free: phantom mode serves
+# mock data with zero NAS / zero real upstreams, same as the CI smoke test.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: capture demo web wall → artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Sync helper deps (locked)
+        working-directory: helper
+        run: uv sync --extra dev
+
+      - name: Install capture tooling (Playwright, pinned)
+        working-directory: tools/screenshots
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Boot helper (phantom) + capture
+        run: |
+          set -euo pipefail
+          (cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper) &
+          HELPER_PID=$!
+          trap 'kill "$HELPER_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8091/health >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8091/health >/dev/null
+          HELPER_URL=http://127.0.0.1:8091 node tools/screenshots/capture.mjs
+
+      # actions/upload-artifact@v4 — bump to the Node-24 major when one ships, to stay
+      # aligned with the rest of the workflows (this one is dispatch-only, so any node20
+      # deprecation here is low-impact until then).
+      - name: Upload gallery artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-screenshots
+          path: docs/screenshots/web/*.png
+          if-no-files-found: error

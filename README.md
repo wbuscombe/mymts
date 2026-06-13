@@ -1,86 +1,196 @@
-# MyMTS
+# MyMTS — your own always-on news & video wall
 
-> Ambient news video wall — a native Android TV app for the Onn 4K box, paired with a minimal NAS-side helper. Your channels, your wall, on-by-default, calm from the couch.
+> A self-hosted, ambient **news + live-video wall** for the TV — a private alternative to
+> *monitor-the-situation.com*, built around one non-negotiable principle: **it can never become
+> a path into the home network.**
 
-**Status:** Built — Android TV app + Python helper + LAN web client are implemented and in use (markets/sports/weather, the configurable wall, the menu). See [`CHANGELOG.md`](CHANGELOG.md).
+A native Android TV app, a hardened NAS-side helper, and a LAN web client. Your channels, your
+sources, on-by-default, calm from the couch — and a 60-second demo you can run with zero secrets.
 
-## Quickstart (clone → running locally, no secrets)
+![The MyMTS wall — live video grid, agnostic news feed, scrolling ticker](docs/screenshots/web/wall-overview.png)
+
+<sub>↑ the **LAN web client** in demo mode: a live video grid (real HLS playing in the playable
+tiles, honest offline tiles otherwise), an agnostic news feed, and a markets ticker —
+SAMPLE-labeled because the demo serves no live data (that honesty is the whole point).</sub>
+
+[![CI](https://github.com/wbuscombe/mymts/actions/workflows/ci.yml/badge.svg)](https://github.com/wbuscombe/mymts/actions/workflows/ci.yml)
+&nbsp;·&nbsp; native Android TV (Compose + Media3) &nbsp;·&nbsp; Python/FastAPI helper &nbsp;·&nbsp; LAN web client &nbsp;·&nbsp; MIT
+
+---
+
+## Try it in 60 seconds (no secrets, no NAS)
+
+The helper has a **demo / phantom mode** that serves mock data with **zero network egress** —
+no secrets, no NAS, nothing real to leak. Clone, boot it, open the web wall:
 
 ```bash
-# 1. Helper in demo mode — mock data, zero network egress, no NAS/secrets:
 cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper
-#    → http://localhost:8091  (web client at /app)
+#   → open http://localhost:8091/app   (the LAN web wall, mock data)
+```
 
-# 2. TV app (Android TV emulator running), pointed at the local helper:
+That's the whole thing — the ticker, the feed, the video grid, the settings, the channel
+picker, all live in your browser against fixture data. Want it on a real TV emulator too?
+
+```bash
 ./gradlew :app:installDebug
 adb shell am start -n com.mymts/.MainActivity --es helper "http://10.0.2.2:8091"
 ```
 
-Full walkthrough (prerequisites, the fuller real-public-data path, troubleshooting):
-[`ONBOARDING.md`](ONBOARDING.md). Prefer your AI assistant to set it up? Feed it
-[`docs/onboarding/ONBOARD-01-SETUP.md`](docs/onboarding/ONBOARD-01-SETUP.md).
 Tests: `cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest`.
+Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBOARDING.md`](ONBOARDING.md).
 
 ---
 
-## What this is
+## What it does
 
-MyMTS is a self-hosted, personal alternative to monitor-the-situation.com, built around one principle: **it can never become a path into the home network**. It is *ambient first* (running on a TV in the background), *occasionally active* (the operator picks up the remote when something is happening), and *built for the couch*, not the desktop.
+### 📺 A live video wall
+A configurable grid (independent **rows × columns**, 1–9 tiles) of public live-TV HLS streams,
+played in the **native player** (Media3/ExoPlayer on the TV; vendored `hls.js` on the web). Click
+a tile to pick its channel from the honest lineup — **live · plays here / live · on the TV wall
+only / offline** — never a black box pretending to be live.
 
-It is a **native Android TV application** (Kotlin + Jetpack Compose for TV + Media3/ExoPlayer) paired with a **minimal NAS-side helper service** that does only the two jobs the TV must not — aggregating news sources and resolving live-stream addresses. No browser engine is in the critical path.
+![Channel picker with honest live / TV-only / offline status](docs/screenshots/web/channel-picker.png)
 
-For *why* native — and what the previous web-app round taught us — see [`docs/foundation/04-TECHNICAL-APPROACH.md`](docs/foundation/04-TECHNICAL-APPROACH.md).
+### 📰 An agnostic news feed
+One newest-first river across ~13 public RSS sources (BBC World, Al Jazeera, Guardian, NPR, the
+wire-service spread + ESPN sports-news), each headline tagged with its source and age. Rendered as
+**native text** — never a WebView, never HTML from an upstream — with per-source and recency
+filters. The helper strips markup and quarantines hostile input; the TV only ever sees plain text.
 
-## Read this first
+### 📈 A real ticker — markets, sports, news
+Three calm rotating modes:
 
-Before touching code or filing issues, read the foundation docs in order:
+| | |
+|---|---|
+| ![Markets ticker](docs/screenshots/web/ticker-markets.png) | **Markets** — live indices, FX, gold, oil, the 10-year yield (Yahoo Finance) and crypto (CoinGecko), keyless. |
+| ![Sports ticker cards](docs/screenshots/web/ticker-sports.png) | **Sports** — 8 team leagues (NFL/NCAAF/UFL/NBA/WNBA/NCAAB/MLB/NHL) as ESPN-style game cards, **plus bespoke per-sport cards for PGA, UFC, Tennis & F1** (leaderboard / fight / match / race). |
+| ![News ticker](docs/screenshots/web/ticker-news.png) | **News** — source-labeled headlines, inert plain text. |
 
-1. [`docs/foundation/01-VISION.md`](docs/foundation/01-VISION.md) — what MyMTS is. The fixed point.
-2. [`docs/foundation/02-TRUST-BAR.md`](docs/foundation/02-TRUST-BAR.md) — security, privacy, stability principles. Every one ranked and traceable.
-3. [`docs/foundation/03-OPERATIONAL-BAR.md`](docs/foundation/03-OPERATIONAL-BAR.md) — delivery, deployment, maintenance outcomes.
-4. [`docs/foundation/04-TECHNICAL-APPROACH.md`](docs/foundation/04-TECHNICAL-APPROACH.md) — the architecture decision and the mechanism map.
-5. [`docs/foundation/00-READING.md`](docs/foundation/00-READING.md) — engineer's anti-drift restatement, including the precedence order.
+<sub>The screenshots above are demo mode, so every quote carries the honest `SAMPLE` tag and the
+sports ticker shows team games only — the four individual-sport cards need live ESPN data and show
+up on the real wall (see the device gallery below).</sub>
 
-The engineering brief that operationalizes those is [`docs/BUILD-PROMPT.md`](docs/BUILD-PROMPT.md).
+### ⚙️ Settings — and they're TV↔web peers
+Grid size, feed width/text-size/recency, per-source toggles, sports-league toggles, ticker
+speed — configurable on the TV (D-pad) and in the browser (mouse), persisted per client. The
+TV-only panel-fit levers (fit scale / overscan / position) correct a physical panel and are
+honestly absent from the web.
+
+![The settings modal](docs/screenshots/web/settings.png)
+
+### 🟢 Honest degradation — a design value, not an afterthought
+This is the differentiator. **The wall never fakes liveness.** Sample data wears a `SAMPLE`
+pill; aged real data wears `STALE`; an unreachable channel is a quiet labeled **offline** tile;
+"no games" is a real state. `is_sample` defaults to *true* — the burden is on the live path to
+prove itself. You can always tell *current-and-calm* from *frozen-and-pretending*.
+
+### 📺→🍿 One backend, many clients
+The web client is a credential-free peer of the native app, and a **`/api/playlist.m3u`
+endpoint** exposes the live lineup as a standard playlist any player (VLC, an Apple TV) can load —
+the helper stays the resolver/shield and **never proxies the video bytes**.
+
+---
+
+## Architecture
+
+Three pieces, one clean boundary, no browser engine in the content path:
+
+```mermaid
+flowchart LR
+  subgraph LAN["home LAN · no inbound-internet surface"]
+    TV["📺 Android TV app<br/>Compose for TV + Media3<br/>the wall · native text · native player<br/>owns all operator state on-device"]
+    HELPER["🛡️ NAS helper<br/>FastAPI · hardened container<br/>resolver / shield · no proxy · no secrets held"]
+    WEB["🌐 LAN web client<br/>/app · credential-free · same-origin"]
+  end
+  SRC["public RSS · ESPN · Yahoo · CoinGecko"]
+  CDN["public HLS CDNs"]
+  SRC -->|"aggregate + resolve · SSRF-safe, egress-bounded"| HELPER
+  HELPER -->|"/api/feed · /api/ticker · /api/channels · /api/playlist.m3u"| TV
+  HELPER --> WEB
+  CDN -.->|"streams play directly — no proxy"| TV
+  CDN -.-> WEB
+```
+
+- **The TV app (the wall).** Native Android TV on an Onn 4K box. Renders the feed as native text,
+  plays video in the native player, owns the menu and all operator interaction, persists the
+  operator's lineup/settings **on-device**. Holds no credentials.
+- **The helper (back-of-house).** A minimal Python/FastAPI service in a **hardened Docker
+  container** (non-root, read-only rootfs, all caps dropped, `no-new-privileges`) with an
+  **SSRF-safe fetcher**. It does exactly two jobs — aggregate news and resolve stream addresses —
+  and *nothing else*. It never reaches into other services on its host.
+- **The LAN web client.** Served by the helper at `/app`, same-origin, credential-free,
+  CSP-locked, `hls.js` vendored (no CDN). A read-only viewer — playback, never an in-app reader.
+
+Full design + the *why-native-over-web* decision: [`ARCHITECTURE.md`](ARCHITECTURE.md) ·
+[`docs/foundation/`](docs/foundation/).
+
+---
+
+## This isn't a toy
+
+A homelab project, held to real engineering standards:
+
+- **Adversarially reviewed** (June 2026) — five parallel deep readers across failure dimensions,
+  every finding independently re-verified by a skeptic before it counted; **zero P0**, and the
+  honest-degradation discipline held end-to-end. See [`docs/adversarial-review-2026-06.md`](docs/adversarial-review-2026-06.md).
+- **A real CI gate** — every push runs the helper test suite, a cross-component `schema_version`
+  consistency check, the **adb deploy-invariant** gate, the web client tests, the app JVM unit
+  tests, and a **phantom zero-egress smoke test**. Green, secret-free, test/lint-only (a
+  release-signing job in CI is forbidden — the key never leaves the operator's machine).
+- **A deploy invariant that's been proven on hardware** — the app ships via `adb push` →
+  **byte-verify** → `pm install` → confirm `lastUpdateTime` (never a streamed install that can
+  truncate over a flaky link); the helper rebuilds its image and verifies the running
+  `build_sha`.
+- **Demo / phantom mode** — a tested **zero-outbound** contract for the helper, so anyone can run
+  the wall with mock data and no secrets (it's how the quickstart above works, and how the
+  screenshots are captured reproducibly in CI).
+
+The guardrails that keep all of this true are codified in [`AGENTS.md`](AGENTS.md) — read it first
+if you (or an AI agent) are going to touch the repo.
+
+---
+
+## Gallery
+
+**Web wall (automated, demo mode)** — regenerate any time with the Playwright tool in
+[`tools/screenshots/`](tools/screenshots/), or download the artifact from the **Screenshots**
+GitHub Action. See [`docs/screenshots/`](docs/screenshots/) for what each shot shows.
+
+**The real thing — native TV on the wall** (operator drop-in slots — these are labeled
+placeholders until the real captures land; see [`docs/screenshots/device/`](docs/screenshots/device/)):
+
+| | |
+|---|---|
+| ![Wall hero](docs/screenshots/device/wall-hero.png) | ![Ticker cards close-up](docs/screenshots/device/cards-closeup.png) |
+| ![In situ on the wall](docs/screenshots/device/office-in-situ.png) | *The live-data wall on the office Onn — markets ticking, the per-sport cards, real channels playing. Claude Code can't photograph the panel; the operator drops these in.* |
+
+---
+
+## Run it for real
+
+The quickstart above is demo mode. For the real wall — live public RSS + markets + sports,
+real channels, on an actual TV — follow [`ONBOARDING.md`](ONBOARDING.md). Prefer to hand it to
+your AI assistant? Point it at [`docs/onboarding/ONBOARD-01-SETUP.md`](docs/onboarding/ONBOARD-01-SETUP.md).
 
 ## Precedence (when principles tension)
 
 1. **Security** — never a path into the home network.
-2. **Shared-friend safety** — wins over the operator's convenience and own data.
-3. **Data durability** — wins over everything below.
-4. **Honest staleness** — wins over visual polish.
+2. **Shared-friend safety** — over the operator's own convenience and data.
+3. **Data durability** — over everything below.
+4. **Honest staleness** — over visual polish.
 5. **Feed-level resilience** — lowest; a dead tile is forgivable.
 
-Cross-cutting: **one-click-easy content**. Routine content changes never ride the deploy path.
+Cross-cutting: **one-click-easy content** — routine content changes never ride the deploy path.
 
-## Architecture (the short version)
+## Standards & hard constraints
 
-Two pieces, clean boundary:
+Conventional commits, semver + tagged releases, pinned dependencies + committed lockfiles, no
+secrets in code or logs, signed installs, single-command test runners. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md).
 
-- **The TV app (the wall).** Native Android TV, Onn 4K. Renders feed as native text, plays video in the native player, owns all operator interaction, persists operator content on-device.
-- **The helper (back-of-house).** Minimal NAS-side service. Aggregates news (concentrating all hostile-input handling) and resolves live-stream addresses (isolated, egress-bounded). Nothing else.
-
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full architecture + mechanism map.
-
-## Status
-
-**Built and in use.** The TV app (video wall + feed + ticker), the NAS helper (channels / feed / markets / sports / news), and the LAN web client are all implemented and running on the Onn 4K box. The original Stage 0–5 build plan is complete; operational hardening (the original Stage 6–7 — rollback, CI, alerting, docs) is ongoing — see [`docs/adversarial-review-2026-06.md`](docs/adversarial-review-2026-06.md) for the current backlog and [`CHANGELOG.md`](CHANGELOG.md) for history.
-
-## Setup
-
-See the **Quickstart** above to clone → run locally in demo mode (no secrets, no NAS). Full walkthrough: [`ONBOARDING.md`](ONBOARDING.md).
-
-## Standards
-
-Conventional commits (`feat/fix/docs/chore/test/security`), semver with tagged releases, MIT licensed, no secrets in code or logs, signed installs, pinned dependencies, single-command test runners (`cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest`). See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY-PRACTICES.md`](SECURITY-PRACTICES.md).
-
-**AI agents working on this repo: read [`AGENTS.md`](AGENTS.md) first** — it codifies the protected invariants, the never-without-approval list, and the deploy (adb) invariant.
-
-## Hard constraints
-
-- **Never touch unrelated services on the helper's host.** The helper runs isolated, on its own network, and never reaches into anything else sharing its host. Standing rule.
-- **No browser engine in the content path.** Feed content is native text; video is the native player.
-- **No third-party telemetry.** Nothing about what the operator watches leaves operator infrastructure.
+- **No browser engine in the content path.** Feed is native text; video is the native player.
+- **Never touch unrelated services on the helper's host.** It runs isolated, on its own network.
+- **No third-party telemetry.** Nothing about what the operator watches leaves their infrastructure.
 
 ## License
 

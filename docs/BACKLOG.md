@@ -25,6 +25,11 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
+## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
+
+**Done.** Automated **Playwright** capture of the demo (phantom-mode) web wall → `docs/screenshots/web/` (the wall, markets/sports/news ticker, settings, channel picker), a manual `workflow_dispatch` CI job that uploads the gallery as an **artifact** (no auto-committed binaries), a `docs/screenshots/device/` dir with **labeled placeholders + a filename spec** for the operator's native-TV hero shots, and the README rewritten into an honest showcase (hero shot, feature highlights w/ inline screenshots, mermaid architecture, the engineering story, the 60-second demo quickstart). Topology-clean, claims true-to-shipped, secret-free (demo helper only). See CHANGELOG (2026-06-13, Campaign 4), `tools/screenshots/`, `docs/screenshots/`.
+**Remaining = operator manual step (not blocking):** capture the **native-TV hero shots** (the real wall on the office Onn — `wall-hero.png` / `cards-closeup.png` / `office-in-situ.png` per `docs/screenshots/device/README.md`) and drop them in to complete the gallery. The live-data wall is also where the bespoke per-sport cards (PGA/UFC/Tennis/F1) show — the demo serves team games + SAMPLE data only.
+
 ## Liven up the ticker league/sport marker (readability-first)
 
 **What:** Each ticker league block has a green anchor/marker box (the pinned left-edge "curtain") with the league/sport name. Make it more visually interesting **without** sacrificing legibility — the text must stay prominent + readable, and it must stay subtle, not loud (it's an ambient glance-wall). Options to explore:

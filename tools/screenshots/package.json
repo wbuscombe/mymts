@@ -1,0 +1,13 @@
+{
+  "name": "mymts-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless Playwright capture of the MyMTS demo (phantom-mode) web wall for the docs gallery. Runs against the secret-free demo helper only — no NAS, no real data.",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

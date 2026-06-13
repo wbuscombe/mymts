@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Screenshot gallery (automated web capture) + victory-lap README (2026-06-13, Campaign 4)
+
+The showcase pass — a reproducible screenshot pipeline, a gallery, and a README rewrite:
+- **Automated web-wall capture** (`tools/screenshots/`): a pinned **Playwright** (1.60.0, lockfile committed) script that boots the LAN web wall in **demo/phantom mode** (mock data, no NAS, no secrets — runs anywhere) and captures the feature surface — the wall, the markets/sports/news ticker, the settings modal, the honest channel picker — to `docs/screenshots/web/`. Deterministic framing (fixed viewport, ticker frozen at its left edge, wait-for-render). A second script regenerates the device-shot placeholders.
+- **CI capture job** (`.github/workflows/screenshots.yml`, manual `workflow_dispatch`): boots phantom, captures, and uploads the gallery as a downloadable **artifact** — chosen over auto-committing binaries on every push (the gallery *can* be regenerated reproducibly; a bot doesn't spam commits). Secret-free, same phantom boot as the CI smoke test.
+- **Gallery** (`docs/screenshots/`): the automated `web/` shots (committed, demo data) + a `device/` dir with **labeled placeholders + a filename spec** for the operator's manual native-TV hero shots (the real wall on the office Onn — only the operator can capture those). The README references both, so it's complete-shaped now and gets richer when the hero shots land.
+- **Victory-lap README**: the plain technical README rewritten into an honest showcase — hero shot, feature highlights with inline screenshots, a concise three-component architecture (+ mermaid diagram), the engineering story (adversarial review, the green CI gate, the hardware-proven adb invariant, honest-degradation, phantom mode), and the 60-second demo-mode quickstart. Claims kept true-to-shipped; topology-clean (demo/placeholder values only).
+
+Honest demo note: phantom mode serves SAMPLE markets/sports + a fixture feed and does not exercise the four bespoke individual-sport cards (PGA/UFC/Tennis/F1 need live ESPN data) — the web shots show that honestly; the device hero shots are the live-data view. No app/NAS/real-data deploy; capture runs against the secret-free demo helper only.
+
 ## chore(ci): bump GitHub Actions to Node-24 runtime majors (2026-06-13)
 
 GitHub forces JavaScript actions off the Node 20 runtime onto Node 24 by **2026-06-16**; the pinned actions declared `node20` and would start warning/breaking. Bumped each to its current major that runs on Node 24 (`ci.yml` version strings only — no job logic, matrix, or the advisory-ruff design changed):
