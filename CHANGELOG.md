@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix: NBC news source now uses the English feed (was serving Spanish) (2026-06-13)
+
+The "NBC News" feed source was returning Spanish-language stories. **Diagnosed first:** the configured URL `https://feeds.nbcnews.com/nbcnews/public/news` (NBC's generic *top-stories* aggregator) serves a **mixed** feed — English NBC headlines interleaved with **Telemundo** Spanish-language content (World Cup "Vive el Mundial" items) — despite a misleading `<language>en-US</language>` tag (so the feed-level language signal is unreliable here). Not a parsing bug; a wrong/over-broad source URL.
+- **Fix (source-level, not a fragile filter):** swapped the NBC source to the scoped English topic feed **`https://feeds.nbcnews.com/nbcnews/public/us-news`** ("NBC News U.S. News"), keeping NBC as the general US-broadcast-news slot (parallel to CBS News). Verified English **before** committing (direct fetch: 0 Spanish-marker titles) **and** end-to-end via a live non-phantom poll — `/api/feed` returned 25 NBC items, all English, 0 Spanish.
+- **Whack-a-mole check:** content-scanned all other general-news sources for hidden non-English pollution — all clean English; no other mislabeled/wrong-language source.
+- **Regression-guarded:** `test_feeds_seeder.py` now asserts the NBC source points at the English `us-news` topic feed and never the mixed `/public/news` top-stories endpoint (static config, no network — not flaky). Full helper suite green.
+
+Helper-only change. Goes live on the operator's helper redeploy (`docker compose build --pull && up -d`, verify `/health`, then `/api/feed` shows NBC in English). No app/NAS-topology change.
+
 ## Screenshot gallery (automated web capture) + victory-lap README (2026-06-13, Campaign 4)
 
 The showcase pass — a reproducible screenshot pipeline, a gallery, and a README rewrite:

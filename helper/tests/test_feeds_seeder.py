@@ -155,3 +155,19 @@ def test_shipped_seed_seeds_every_source(conn) -> None:
     labels = {s.label for s in store.list_sources(conn)}
     for original in ("BBC World", "Al Jazeera", "Guardian World", "NPR World"):
         assert original in labels, f"expansion dropped original source: {original}"
+
+
+def test_nbc_source_uses_the_english_topic_feed_not_the_mixed_top_stories() -> None:
+    """NBC's generic top-stories feed (`/nbcnews/public/news`) aggregates
+    Telemundo Spanish-language content (e.g. World Cup "Vive el Mundial"
+    items) despite a lying `<language>en-US` tag — the operator wants English
+    only. The NBC source must point at the scoped English topic feed, never
+    that mixed top-stories endpoint. Static-config guard (no network)."""
+    entries = _load_shipped_seed()
+    nbc = [e for e in entries if e["label"] == "NBC News"]
+    assert len(nbc) == 1, "expected exactly one 'NBC News' source"
+    url = nbc[0]["url"]
+    assert url == "https://feeds.nbcnews.com/nbcnews/public/us-news"
+    # the Spanish-polluted top-stories aggregator must not creep back in
+    assert not url.endswith("/public/news"), "reverted to the mixed top-stories feed"
+    assert "telemundo" not in url.lower()
