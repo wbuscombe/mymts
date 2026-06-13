@@ -120,9 +120,18 @@ PREV_SHA="$(ssh "$HOST" "docker exec mymts-helper curl -fsSk https://127.0.0.1:8
 ssh "$HOST" "img=\$(docker inspect --format '{{.Image}}' mymts-helper 2>/dev/null || true); if [[ -n \"\$img\" ]]; then docker tag \"\$img\" mymts-helper:last-good && echo '    tagged mymts-helper:last-good (prev build_sha=$PREV_SHA)'; else echo '    (no running helper to snapshot — first deploy?)'; fi"
 
 echo "==> writing/refreshing .env (build identity + defaults)"
+# MYMTS_HELPER_REMOTE_PATH MUST be in the .env: the compose file bind-mounts
+# the TLS certs (`${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_secrets`) and
+# the web client (`.../_web`) using this var. `docker compose` runs on the NAS
+# over ssh, where this var is NOT in the shell env — so without it in .env, the
+# mounts silently fall back to the `/srv/mymts-helper` DEFAULT, docker creates
+# an empty dir there, and the helper crash-loops on a missing cert
+# (`load_cert_chain: FileNotFoundError`). Write the real path so the mounts
+# resolve to the actual deploy dir.
 ssh "$HOST" "cat > '$REMOTE_PATH/.env'" <<EOF
 BUILD_SHA=$BUILD_SHA
 BUILD_VERSION=$BUILD_VERSION
+MYMTS_HELPER_REMOTE_PATH=$REMOTE_PATH
 PHANTOM_MODE=0
 LOG_LEVEL=info
 FEED_POLL_INTERVAL_SECONDS=300

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(deploy): write MYMTS_HELPER_REMOTE_PATH into the NAS .env (helper was crash-looping on a missing TLS cert) (2026-06-13)
+
+Caught during a live helper redeploy. The compose bind-mounts the TLS certs and the web client via `${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_secrets` (and `/_web`), but `deploy-helper.sh` wrote a `.env` that **omitted** `MYMTS_HELPER_REMOTE_PATH`, and that var isn't exported into the remote `docker compose` shell over ssh — so the mounts silently fell back to the `/srv/mymts-helper` **default**, docker auto-created an empty `_secrets` there, and uvicorn crash-looped on `load_cert_chain: FileNotFoundError`. (The deploy's auto-rollback hit the same empty cert dir, so it couldn't recover either.) **Fix:** the script now writes `MYMTS_HELPER_REMOTE_PATH` into the `.env` so the bind-mounts resolve to the real deploy dir. Diagnosed via `docker inspect` (mount source was the wrong `/srv/...` path) + the container logs; the helper was restored immediately by writing the var into `.env` and `up -d`. Deploy-script-only change; no helper code touched. PIA/VPN never touched.
+
 ## fix: NBC news source now uses the English feed (was serving Spanish) (2026-06-13)
 
 The "NBC News" feed source was returning Spanish-language stories. **Diagnosed first:** the configured URL `https://feeds.nbcnews.com/nbcnews/public/news` (NBC's generic *top-stories* aggregator) serves a **mixed** feed — English NBC headlines interleaved with **Telemundo** Spanish-language content (World Cup "Vive el Mundial" items) — despite a misleading `<language>en-US</language>` tag (so the feed-level language signal is unreliable here). Not a parsing bug; a wrong/over-broad source URL.
