@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## chore(ci): bump GitHub Actions to Node-24 runtime majors (2026-06-13)
+
+GitHub forces JavaScript actions off the Node 20 runtime onto Node 24 by **2026-06-16**; the pinned actions declared `node20` and would start warning/breaking. Bumped each to its current major that runs on Node 24 (`ci.yml` version strings only — no job logic, matrix, or the advisory-ruff design changed):
+- `actions/checkout` **v4 → v5** (pure Node 20→24 runtime bump; no input/behavior change).
+- `astral-sh/setup-uv` **v3 → v7** (first major on Node 24; v7 still publishes a moving major tag, matching the repo's tag-pin style — v8 dropped them). New default: `enable-cache: auto` caches uv deps on hosted runners (keyed by the lockfile — reproducible, faster CI; opt out with `enable-cache: false` if ever needed).
+- `actions/setup-java` **v4 → v5** (Node 24; `distribution: temurin` / `java-version: '17'` byte-identical — no `with:` change).
+- `android-actions/setup-android` **v3 → v4** (Node 24; input names unchanged; default cmdline-tools advances to 20.0 — a forward SDK bump, pinnable via `cmdline-tools-version` if needed).
+
+No `with:` migration was required. The push re-runs CI to confirm the blocking gates stay green and the Node-20 deprecation warnings are cleared.
+
 ## Playlist / M3U endpoint + profile foundation (2026-06-13, Campaign 3 HALF 2)
 
 The helper now exposes the resolved channel lineup as a standard **M3U playlist** a generic player (VLC, incl. VLC-on-Apple-TV) can load directly — the groundwork for the cross-platform-profiles fork (BACKLOG item H), with the helper staying the resolver/shield (no video proxy):
