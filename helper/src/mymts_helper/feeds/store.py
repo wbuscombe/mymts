@@ -69,6 +69,20 @@ def upsert_source(conn: sqlite3.Connection, *, url: str, label: str) -> int:
     return int(row["id"])
 
 
+def delete_sources_not_in(conn: sqlite3.Connection, keep_urls: set[str]) -> int:
+    """Remove sources whose URL is not in `keep_urls` (their feed_items go too,
+    via `ON DELETE CASCADE`). Reconciles the DB to the seed file: seed.json is
+    the source of truth for the feed list (there is no add-source API), so a
+    source removed from the seed — or repointed to a new URL — must not linger
+    in the persistent DB still being polled. Returns the count deleted.
+    """
+    rows = conn.execute("SELECT id, url FROM sources").fetchall()
+    stale = [r["id"] for r in rows if r["url"] not in keep_urls]
+    for sid in stale:
+        conn.execute("DELETE FROM sources WHERE id=?", (sid,))
+    return len(stale)
+
+
 def record_fetch_success(conn: sqlite3.Connection, source_id: int) -> None:
     now = _utcnow_iso()
     conn.execute(

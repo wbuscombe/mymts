@@ -66,6 +66,23 @@ def seed_from_file(conn: sqlite3.Connection, path: Path) -> int:
             continue
         seeded += 1
 
+    # Reconcile: seed.json is the source of truth for the feed list (there is
+    # no add-source API). Prune any DB source no longer in the seed — a source
+    # whose URL was CHANGED in the seed otherwise leaves the OLD url orphaned in
+    # the persistent DB, still polled, still serving its old content (this is
+    # how the NBC source kept serving Spanish after its URL was corrected to the
+    # English feed). Hard guard: never prune when the seed yielded no valid URLs
+    # (a broken/empty seed must not wipe the table).
+    seed_urls = {
+        str(e["url"])
+        for e in entries
+        if isinstance(e, dict) and isinstance(e.get("url"), str) and e["url"]
+    }
+    if seed_urls:
+        pruned = store.delete_sources_not_in(conn, seed_urls)
+        if pruned:
+            log.info("feed_sources_pruned", extra={"count": pruned})
+
     conn.commit()
     log.info("feed_sources_seeded", extra={"count": seeded})
     return seeded

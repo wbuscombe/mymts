@@ -69,6 +69,65 @@ def test_relabel_via_seed_takes_effect(conn, tmp_path: Path) -> None:
     assert rows[0].label == "Example v2"
 
 
+def test_seed_prunes_repointed_source_and_its_items(conn, tmp_path: Path) -> None:
+    """seed.json is authoritative: changing a source's URL prunes the OLD url
+    (and its items, via cascade) instead of leaving it orphaned + still polled.
+    This is the NBC regression — the old Spanish-serving feed must not linger."""
+    from mymts_helper.feeds.parser import ParsedItem
+
+    f = _write_seed(
+        tmp_path,
+        [
+            {"url": "https://feeds.nbcnews.com/nbcnews/public/news", "label": "NBC News"},
+            {"url": "https://ok.example/rss", "label": "Keep"},
+        ],
+    )
+    seeder.seed_from_file(conn, f)
+    old_id = next(
+        s.id for s in store.list_sources(conn)
+        if s.url == "https://feeds.nbcnews.com/nbcnews/public/news"
+    )
+    store.insert_items(
+        conn,
+        old_id,
+        [ParsedItem(
+            guid="g1", title="¡Vive el Mundial!", summary=None, link=None, published_at=None,
+        )],
+    )
+    conn.commit()
+    assert store.total_items(conn) == 1
+
+    # Repoint NBC to the English feed — the old url + its item must be gone.
+    f.write_text(
+        json.dumps(
+            [
+                {"url": "https://feeds.nbcnews.com/nbcnews/public/us-news", "label": "NBC News"},
+                {"url": "https://ok.example/rss", "label": "Keep"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    seeder.seed_from_file(conn, f)
+
+    urls = {s.url for s in store.list_sources(conn)}
+    assert urls == {
+        "https://feeds.nbcnews.com/nbcnews/public/us-news",
+        "https://ok.example/rss",
+    }
+    assert "https://feeds.nbcnews.com/nbcnews/public/news" not in urls
+    assert store.total_items(conn) == 0  # the orphaned (Spanish) item cascaded away
+
+
+def test_empty_or_broken_seed_does_not_wipe_existing_sources(conn, tmp_path: Path) -> None:
+    """Safety guard: a seed that yields no valid URLs must NOT prune the table
+    to zero — better to keep the prior sources than to blank the wall."""
+    f = _write_seed(tmp_path, [{"url": "https://keep.example/rss", "label": "Keep"}])
+    seeder.seed_from_file(conn, f)
+    f.write_text(json.dumps([]), encoding="utf-8")
+    assert seeder.seed_from_file(conn, f) == 0
+    assert {s.url for s in store.list_sources(conn)} == {"https://keep.example/rss"}
+
+
 def test_invalid_json_raises_seeder_error(conn, tmp_path: Path) -> None:
     f = tmp_path / "seed.json"
     f.write_text("{ this is not json", encoding="utf-8")
