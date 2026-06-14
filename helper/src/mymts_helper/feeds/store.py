@@ -11,6 +11,7 @@ import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from urllib.parse import urlsplit, urlunsplit
 
 from .parser import ParsedItem
 
@@ -69,15 +70,58 @@ def upsert_source(conn: sqlite3.Connection, *, url: str, label: str) -> int:
     return int(row["id"])
 
 
+def _match_key(url: str) -> str:
+    """A CONSERVATIVE, semantics-preserving key for COMPARING two source URLs
+    — never for storage or serving (the stored/polled/served URL stays the
+    operator's exact string).
+
+    Applies ONLY rules that RFC 3986 makes safe (so a trivially-different
+    repoint isn't seen as an orphan): strip surrounding whitespace, lowercase
+    the SCHEME and HOST (both case-insensitive), and treat a single trailing
+    `/` on the path as equivalent. Everything else — PATH content/case, QUERY,
+    FRAGMENT, PORT, USERINFO, and http-vs-https — is preserved EXACTLY, so
+    genuinely-distinct endpoints NEVER collapse (a missed match merely re-fetches
+    a cache; a wrong match would silently drop a real source). Falls back to the
+    stripped string if the URL won't parse, so the prune can never crash.
+    """
+    s = url.strip()
+    try:
+        parts = urlsplit(s)
+        host = (parts.hostname or "").lower()
+        userinfo = ""
+        if parts.username is not None:
+            userinfo = parts.username
+            if parts.password is not None:
+                userinfo += ":" + parts.password
+            userinfo += "@"
+        port = f":{parts.port}" if parts.port is not None else ""
+        path = parts.path
+        if len(path) > 1 and path.endswith("/"):
+            path = path[:-1]
+        return urlunsplit((parts.scheme.lower(), f"{userinfo}{host}{port}", path,
+                           parts.query, parts.fragment))
+    except ValueError:
+        # e.g. a non-numeric port makes .port raise — don't normalize, compare
+        # the stripped string (conservative: a missed match, never a wrong one).
+        return s
+
+
 def delete_sources_not_in(conn: sqlite3.Connection, keep_urls: set[str]) -> int:
     """Remove sources whose URL is not in `keep_urls` (their feed_items go too,
     via `ON DELETE CASCADE`). Reconciles the DB to the seed file: seed.json is
     the source of truth for the feed list (there is no add-source API), so a
     source removed from the seed — or repointed to a new URL — must not linger
     in the persistent DB still being polled. Returns the count deleted.
+
+    Matching uses `_match_key` (CONSERVATIVE normalization) so a still-wanted
+    source that differs from its seed URL only cosmetically (trailing slash,
+    scheme/host case) isn't pruned as a false orphan — while genuinely-distinct
+    URLs stay distinct. The stored URL is never rewritten; normalization is for
+    the comparison only.
     """
+    keep_keys = {_match_key(u) for u in keep_urls}
     rows = conn.execute("SELECT id, url FROM sources").fetchall()
-    stale = [r["id"] for r in rows if r["url"] not in keep_urls]
+    stale = [r["id"] for r in rows if _match_key(r["url"]) not in keep_keys]
     for sid in stale:
         conn.execute("DELETE FROM sources WHERE id=?", (sid,))
     return len(stale)

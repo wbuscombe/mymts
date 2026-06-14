@@ -85,10 +85,12 @@ def load_profiles(path: str | Path | None) -> dict[str, Profile]:
         return profiles
     try:
         payload = json.loads(p.read_text())
-    except (OSError, ValueError) as e:
-        # ValueError covers json.JSONDecodeError AND UnicodeDecodeError (a
-        # non-UTF-8 file is an ordinary operator mistake) — fail closed to
-        # default-only so the wall always boots, never crashes on a bad file.
+    except (OSError, ValueError, RecursionError) as e:
+        # Cover every way a bad FILE can fail load+parse so the wall ALWAYS
+        # boots (the loader's contract): OSError (IO), ValueError (covers
+        # json.JSONDecodeError AND a non-UTF-8 UnicodeDecodeError), and
+        # RecursionError (a pathologically deep JSON — a RuntimeError subclass,
+        # so it would otherwise escape a ValueError-only handler and crash boot).
         log.warning("profiles_file_invalid", extra={"path": str(p), "reason": str(e)})
         return profiles
     entries = payload.get("profiles") if isinstance(payload, dict) else payload

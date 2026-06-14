@@ -19,6 +19,11 @@
 
 **Verdict: the new code is as solid as the reports claimed.** Zero P0/P1/P2. The three P3s are *defensive-completeness* nits — each requires a self-inflicted, near-implausible trigger (no attacker/network path exists anywhere in the new surface), and the worst-case impact is re-fetchable RSS cache, not durable data. **The destructive seeder prune is SAFE** (definitive read below).
 
+> ### Remediation status — all three P3s FIXED (2026-06-13, TDD)
+> - **F1 — FIXED.** `load_profiles` now catches `RecursionError` (broadened to `(OSError, ValueError, RecursionError)`) → a pathologically-deep profiles file fails closed to default-only, honoring the "always boots" contract. Proof: `test_deeply_nested_file_fails_closed_not_crash` (fails pre-fix with `RecursionError`, passes post-fix).
+> - **F2 — FIXED.** The seeder URL check now uses `url.strip()` (validation + the prune keep-set), so a whitespace-only URL is rejected and an all-whitespace seed correctly triggers the no-wipe guard. Proof: `test_whitespace_only_url_is_rejected_not_a_source`, `test_all_whitespace_urls_trigger_the_no_wipe_guard`.
+> - **F3 — FIXED (conservative).** `delete_sources_not_in` now matches via `store._match_key` — strips whitespace, lowercases scheme + host, collapses a single trailing path slash; PATH/query/fragment/port/userinfo and http-vs-https preserved exactly; falls back to the stripped string on a parse error; the **stored URL is never rewritten** (comparison only). Proof: `test_prune_treats_cosmetic_url_variants_as_the_same` + the guardrail test `test_prune_keeps_genuinely_distinct_urls_distinct` (different path/query/host, `www`/bare, path-case, http-vs-https all stay distinct — no over-merge). Existing repoint-prune + shipped-seed reconcile tests stay green. Helper-only; rides the next helper redeploy.
+
 ---
 
 ## The architect's #1 question — is the destructive seeder prune (`8ce1242`) safe? **YES.**

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix: remediate the 3 P3 findings from the adversarial re-review — F1 + F2 + F3 (2026-06-13)
+
+The new-code re-review (`docs/adversarial-review-2026-06-new-code.md`) came back clean (0 P0/P1/P2) with three P3 defensive-completeness items; all three fixed, each TDD (failing test first):
+- **F1 — profile loader fails closed on `RecursionError`.** `load_profiles` caught `(OSError, ValueError)` but not `RecursionError` (a `RuntimeError` subclass a pathologically-deep profiles file raises during parse) → boot crash, violating the loader's "always boots" contract. Broadened to `(OSError, ValueError, RecursionError)`.
+- **F2 — seeder rejects whitespace-only URLs.** The URL check used bare truthiness, so `"   "` passed and could slip into the prune keep-set, weakening the empty/all-invalid guard. Now uses `url.strip()` (validation + keep-set) so a whitespace-only seed correctly triggers the no-wipe guard.
+- **F3 — conservative URL-match normalization in the prune.** The reconcile matched DB↔seed sources by exact string, so a trailing-slash / scheme-or-host-case difference orphaned-then-pruned a still-wanted source. `delete_sources_not_in` now compares via `_match_key` (strip whitespace; lowercase scheme + host; collapse a single trailing path slash) — and ONLY those RFC-safe rules: path content/case, query, fragment, port, userinfo, and http-vs-https are preserved exactly, so genuinely-distinct URLs never merge (a missed match merely re-fetches a cache; a wrong match would drop a real source). The stored/served URL is never rewritten — normalization is for comparison only.
+
+5 new tests (incl. the F3 guardrail test proving distinct URLs stay distinct); full helper suite green. Helper-only — rides the next helper redeploy. The re-review doc's triage is updated to FIXED.
+
 ## fix(feeds): seeder prunes sources no longer in the seed — completes the NBC English fix (2026-06-13)
 
 Found while verifying the NBC fix on the live helper: NBC was *still* serving Spanish after the URL swap, because the feed seeder was **additive-only** (upsert-by-URL, never prunes). Changing NBC's seed URL (`/public/news` → `/public/us-news`) added the English source but left the **old Spanish-serving `/public/news` source orphaned in the persistent DB**, still polled — so the feed carried both. **Fix:** the seeder now **reconciles** — seed.json is the source of truth for the feed list (there is no add-source API), so any DB source whose URL isn't in the seed is pruned (its `feed_items` cascade away), with a hard guard against pruning when the seed yields no valid URLs (a broken/empty seed must never blank the wall). Regression-guarded by two tests (repointed-URL prune + cascade; empty-seed no-wipe). On redeploy the orphaned NBC source is pruned on boot and the feed is English-only.

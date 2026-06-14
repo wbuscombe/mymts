@@ -103,6 +103,18 @@ def test_non_utf8_file_yields_default_only(tmp_path: Path) -> None:
     assert set(profiles) == {DEFAULT_PROFILE_NAME}
 
 
+def test_deeply_nested_file_fails_closed_not_crash(tmp_path: Path) -> None:
+    # F1: a pathologically deep JSON raises RecursionError during parse — a
+    # RuntimeError subclass that escapes a (OSError, ValueError) handler. The
+    # loader must STILL fail closed (default-only) and never crash boot, per its
+    # documented "the wall must boot even with a bad/again-bad config" contract.
+    p = tmp_path / "profiles.json"
+    depth = 100_000
+    p.write_text("[" * depth + "]" * depth)
+    profiles = load_profiles(p)
+    assert set(profiles) == {DEFAULT_PROFILE_NAME}
+
+
 # ---- select_channels --------------------------------------------------------
 
 

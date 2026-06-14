@@ -128,6 +128,76 @@ def test_empty_or_broken_seed_does_not_wipe_existing_sources(conn, tmp_path: Pat
     assert {s.url for s in store.list_sources(conn)} == {"https://keep.example/rss"}
 
 
+# ---- F2: whitespace-only URLs are rejected (and feed the no-wipe guard) ------
+
+
+def test_whitespace_only_url_is_rejected_not_a_source(conn, tmp_path: Path) -> None:
+    """F2: a whitespace-only URL is truthy but not a real URL — it must be
+    rejected, never stored as a source."""
+    f = _write_seed(
+        tmp_path,
+        [
+            {"url": "   ", "label": "blank-ws"},
+            {"url": "https://ok.example/rss", "label": "ok"},
+        ],
+    )
+    assert seeder.seed_from_file(conn, f) == 1  # only the real one
+    assert {s.url for s in store.list_sources(conn)} == {"https://ok.example/rss"}
+
+
+def test_all_whitespace_urls_trigger_the_no_wipe_guard(conn, tmp_path: Path) -> None:
+    """F2: a seed of ONLY whitespace URLs is all-invalid → the empty-seed guard
+    must fire (NOT prune the real sources). Without the .strip() fix, '   ' is
+    truthy, enters seed_urls, the guard passes, and every real source is wiped."""
+    seeder.seed_from_file(
+        conn,
+        _write_seed(
+            tmp_path,
+            [
+                {"url": "https://a.example/rss", "label": "A"},
+                {"url": "https://b.example/rss", "label": "B"},
+            ],
+        ),
+    )
+    f = _write_seed(tmp_path, [{"url": "   ", "label": "ws"}, {"url": "\t\n ", "label": "ws2"}])
+    assert seeder.seed_from_file(conn, f) == 0
+    assert {s.url for s in store.list_sources(conn)} == {
+        "https://a.example/rss",
+        "https://b.example/rss",
+    }
+
+
+# ---- F3: conservative URL-match normalization (cosmetic same, distinct kept) -
+
+
+def test_prune_treats_cosmetic_url_variants_as_the_same(conn, tmp_path: Path) -> None:
+    """F3: a DB source differing from a keep-URL ONLY by trailing slash and/or
+    scheme/host CASE is the same logical source — it must NOT be pruned."""
+    store.upsert_source(conn, url="https://News.Example.COM/Feed/", label="News")
+    conn.commit()
+    # keep set has the canonical (host-lowercased, no trailing slash) form.
+    deleted = store.delete_sources_not_in(conn, {"https://news.example.com/Feed"})
+    assert deleted == 0
+    assert {s.url for s in store.list_sources(conn)} == {"https://News.Example.COM/Feed/"}
+
+
+def test_prune_keeps_genuinely_distinct_urls_distinct(conn, tmp_path: Path) -> None:
+    """F3 GUARDRAIL (the important one): the normalization must NOT merge
+    genuinely-different URLs — a different path, query, or http-vs-https are all
+    distinct endpoints and must be pruned when absent from the keep set."""
+    store.upsert_source(conn, url="https://x.example/a", label="A")
+    store.upsert_source(conn, url="https://x.example/b", label="B")  # different path
+    store.upsert_source(conn, url="https://x.example/a?lang=es", label="Q")  # different query
+    store.upsert_source(conn, url="http://x.example/a", label="HTTP")  # http != https
+    store.upsert_source(conn, url="https://www.x.example/a", label="WWW")  # www != bare
+    store.upsert_source(conn, url="https://x.example/A", label="CASE")  # path case matters
+    conn.commit()
+    deleted = store.delete_sources_not_in(conn, {"https://x.example/a"})
+    # ONLY the exact-canonical "a" survives; every distinct variant is pruned.
+    assert {s.url for s in store.list_sources(conn)} == {"https://x.example/a"}
+    assert deleted == 5
+
+
 def test_invalid_json_raises_seeder_error(conn, tmp_path: Path) -> None:
     f = tmp_path / "seed.json"
     f.write_text("{ this is not json", encoding="utf-8")

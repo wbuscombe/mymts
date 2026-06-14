@@ -50,7 +50,10 @@ def seed_from_file(conn: sqlite3.Connection, path: Path) -> int:
             raise SeederError(f"feed_seed_entry_{i}_not_object")
         url = entry.get("url")
         label = entry.get("label")
-        if not isinstance(url, str) or not url:
+        # Reject whitespace-only URLs: `"   "` is truthy, so a bare `not url`
+        # check would treat it as a real source — and (worse) let it slip into
+        # the prune keep-set, weakening the empty/all-invalid guard below.
+        if not isinstance(url, str) or not url.strip():
             log.warning("feed_seed_skip_invalid_url", extra={"index": i})
             continue
         if not isinstance(label, str) or not label:
@@ -76,7 +79,7 @@ def seed_from_file(conn: sqlite3.Connection, path: Path) -> int:
     seed_urls = {
         str(e["url"])
         for e in entries
-        if isinstance(e, dict) and isinstance(e.get("url"), str) and e["url"]
+        if isinstance(e, dict) and isinstance(e.get("url"), str) and e["url"].strip()
     }
     if seed_urls:
         pruned = store.delete_sources_not_in(conn, seed_urls)
