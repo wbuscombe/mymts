@@ -333,6 +333,52 @@ export function sourceLabel(item) {
   return (item && item.source && item.source.trim()) ? item.source : "Unknown source";
 }
 
+// ----- feed story detail / expand (A1 honest, inert) -----
+
+/**
+ * Gate a feed item's `link` for use as a click-OUT to the source. ONLY
+ * http/https are allowed — a `javascript:`, `data:`, or other scheme is
+ * rejected (an href-injection / XSS vector). The link hands off to the
+ * operator's OWN browser; MyMTS never fetches or renders the article itself
+ * (the A1 closed door stays shut — this is a link-out, not an in-app reader).
+ * Pure; returns the URL string, or "" if unsafe/absent.
+ */
+export function safeHttpLink(url) {
+  const s = String(url ?? "").trim();
+  if (s === "") return "";
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    return "";
+  }
+  return (u.protocol === "https:" || u.protocol === "http:") ? s : "";
+}
+
+/**
+ * Build the detail-view model for a focused/expanded feed story — derived
+ * ONLY from the item's OWN fields (no fetch, no scrape). `title`/`summary` are
+ * the item's plain text, returned as strings the caller renders via
+ * `textContent` (never innerHTML — a hostile RSS title can't script). `link`
+ * is gated through `safeHttpLink`. Pure. Returns
+ * { source, title, summary, timestamp, link, hasLink }.
+ */
+export function feedDetailModel(item) {
+  const it = item ?? {};
+  const link = safeHttpLink(it.link);
+  return {
+    source: sourceLabel(it),
+    title: String(it.title ?? "").trim(),
+    summary: String(it.summary ?? "").trim(),
+    timestamp:
+      (it.published_at && String(it.published_at).trim()) ||
+      (it.fetched_at && String(it.fetched_at).trim()) ||
+      "",
+    link,
+    hasLink: link !== "",
+  };
+}
+
 // ----- video grid: cell-count layout (replaces freeform size drag) -----
 
 /** The video-cell counts the web grid offers (TV is capped at 4; the

@@ -51,11 +51,19 @@ only / offline** — never a black box pretending to be live.
 
 ![Channel picker with honest live / TV-only / offline status](docs/screenshots/web/channel-picker.png)
 
-### 📰 An agnostic news feed
+### 📰 An agnostic news feed — select a story to expand it
 One newest-first river across ~13 public RSS sources (BBC World, Al Jazeera, Guardian, NPR, the
 wire-service spread + ESPN sports-news), each headline tagged with its source and age. Rendered as
 **native text** — never a WebView, never HTML from an upstream — with per-source and recency
 filters. The helper strips markup and quarantines hostile input; the TV only ever sees plain text.
+
+**Select a headline** (click, or Enter/Space on the focused row — keyboard/remote-friendly) to
+**expand** it into a focused detail view: the item's own source, time, title and summary, plus a
+*Read at source ↗* link-out. Closing the loop on the closed door — MyMTS shows the feed's **own
+inert summary** and hands off to your browser for the full article; it never fetches or renders the
+article HTML itself, and the link is gated to `http(s)` only (no `javascript:`/`data:` href).
+
+![A news story expanded into its detail view](docs/screenshots/web/feed-story-expanded.png)
 
 ### 📈 A real ticker — markets, sports, news
 Three calm rotating modes:

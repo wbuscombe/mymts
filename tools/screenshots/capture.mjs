@@ -138,6 +138,35 @@ async function main() {
     console.log("skipped channel-picker.png:", e.message);
   }
 
+  // 7. News-story expand — highlight a headline, then select it to expand the
+  // detail view (the Campaign 4.1 feature). Best-effort: if the demo feed is
+  // empty, skip rather than fail.
+  try {
+    await page.keyboard.press("Escape").catch(() => {}); // dismiss any open modal (e.g. picker)
+    await page.waitForTimeout(200);
+    const story = page.locator("#feed .feed-row").first();
+    await story.waitFor({ state: "visible", timeout: 5000 });
+    await story.scrollIntoViewIfNeeded().catch(() => {});
+    // highlighted state — hover the first headline (accent bar + tint); a feed-
+    // pane crop frames the selection clearly.
+    await story.hover();
+    await page.waitForTimeout(250);
+    await page.locator("section.feed-pane").screenshot({
+      path: path.join(OUT_DIR, "feed-story-highlighted.png"),
+    });
+    console.log("captured feed-story-highlighted.png");
+    // expanded state — select it; the detail modal shows the item's own fields
+    // (source / time / title / summary) + the link-out.
+    await story.click();
+    await page.waitForSelector("#story-modal:not(.hidden)", { timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(OUT_DIR, "feed-story-expanded.png") });
+    console.log("captured feed-story-expanded.png");
+    await page.keyboard.press("Escape").catch(() => {});
+  } catch (e) {
+    console.log("skipped news-expand shots:", e.message);
+  }
+
   await browser.close();
   console.log("done →", OUT_DIR);
 }

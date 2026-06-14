@@ -22,6 +22,8 @@ screenshots show exactly that.
 | `ticker-news.png` | News in the ticker (the 3rd mode) — source-labeled headline cards. |
 | `settings.png` | The settings modal — grid rows×cols, feed width/size/recency, source toggles, ticker speed, sports-league toggles. |
 | `channel-picker.png` | The channel picker — the real channel lineup with the honest **live / on-the-TV-wall-only / offline** legend. |
+| `feed-story-highlighted.png` | A feed headline **selected** (accent-bar highlight) — the highlight→select interaction, keyboard/remote-friendly. |
+| `feed-story-expanded.png` | The **news-story detail** (expand) — the item's own source / time / title / summary (inert plain text) + a "Read at source ↗" link-out. MyMTS never fetches the article itself (A1). |
 
 **Honest note on the demo:** phantom mode does **not** exercise the four bespoke
 individual-sport cards (PGA / UFC / Tennis / F1) — those need live ESPN data, so the demo

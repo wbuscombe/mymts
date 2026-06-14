@@ -17,6 +17,7 @@ import {
   FEED_RECENCY_OPTIONS, feedRecencyOption, filterFeedRecency,
   clampTickerSpeedPct, tickerScrollPxPerSec,
   normalizeViewPrefs, serializeViewPrefs,
+  feedDetailModel,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -311,6 +312,10 @@ function renderFeed(rawItems) {
   // next to each headline (the original Onn-box style), not in a section.
   for (const item of items) {
     const row = node("article", "feed-row");
+    // Selectable: focusable + click / Enter / Space → expand the story.
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `Open story: ${item.title || "untitled"}`);
     const meta = node("div", "feed-meta");
     meta.appendChild(node("span", "feed-source", sourceLabel(item)));
     const t = relativeTime(item.published_at || item.fetched_at);
@@ -318,8 +323,43 @@ function renderFeed(rawItems) {
     row.appendChild(meta);
     row.appendChild(node("h3", "feed-title", item.title || ""));
     if (item.summary && item.summary.trim()) row.appendChild(node("p", "feed-summary", item.summary));
+    row.addEventListener("click", () => openStory(item));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openStory(item); }
+    });
     root.appendChild(row);
   }
+}
+
+// ----- news-story detail (expand a focused headline) -----
+let lastStoryTrigger = null;   // restore focus here on close (keyboard a11y)
+
+/** Expand a feed story into the detail modal — the item's OWN fields only,
+ *  written via textContent (inert; no innerHTML of feed text), with an
+ *  http(s)-gated link-OUT to the source (never an in-app fetch — A1). */
+function openStory(item) {
+  const m = feedDetailModel(item);
+  el("story-source").textContent = m.source;
+  el("story-time").textContent = relativeTime(m.timestamp) || "";
+  el("story-title").textContent = m.title || "(untitled)";
+  el("story-summary").textContent = m.summary;
+  const link = el("story-link");
+  if (m.hasLink) {
+    link.href = m.link;            // safeHttpLink-gated: only http(s)
+    link.classList.remove("hidden");
+  } else {
+    link.removeAttribute("href");
+    link.classList.add("hidden");
+  }
+  lastStoryTrigger = document.activeElement;
+  el("story-modal").classList.remove("hidden");
+  el("story-close").focus();
+}
+
+function closeStory() {
+  closeModal("story-modal");
+  if (lastStoryTrigger && typeof lastStoryTrigger.focus === "function") lastStoryTrigger.focus();
+  lastStoryTrigger = null;
 }
 
 // ----- video grid (cell-count, click-to-pick channels) -----
@@ -597,6 +637,17 @@ function wireSettings() {
   el("settings-modal").addEventListener("click", (e) => { if (e.target === el("settings-modal")) closeModal("settings-modal"); });
   el("picker-close").addEventListener("click", () => closeModal("picker-modal"));
   el("picker-modal").addEventListener("click", (e) => { if (e.target === el("picker-modal")) closeModal("picker-modal"); });
+  el("story-close").addEventListener("click", () => closeStory());
+  el("story-modal").addEventListener("click", (e) => { if (e.target === el("story-modal")) closeStory(); });
+
+  // Esc closes whichever modal is open (the story modal restores focus to the
+  // headline it was opened from — keyboard/remote accessibility for the wall).
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!el("story-modal").classList.contains("hidden")) closeStory();
+    else if (!el("settings-modal").classList.contains("hidden")) closeModal("settings-modal");
+    else if (!el("picker-modal").classList.contains("hidden")) closeModal("picker-modal");
+  });
 
   // Grid rows × cols (native parity — independent dims, each 1–3). A dims
   // change rebuilds the grid; per-slot assignments survive for slots that

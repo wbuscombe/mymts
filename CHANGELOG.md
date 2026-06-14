@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): news-story expand + richer screenshot gallery (2026-06-13, Campaign 4.1)
+
+- **News-story expand (new feature).** Selecting a feed headline (click, or Enter/Space on the focused row — keyboard/remote-accessible) now **expands** it into a detail modal showing the item's OWN fields — source, time, title, summary — as **inert plain text** (`textContent`, never `innerHTML`), plus a *Read at source ↗* **link-out**. A1 closed door held: MyMTS shows the feed's own summary and hands off to the browser for the article; it never fetches or renders the article HTML, and the link is gated to `http(s)` only (`safeHttpLink` rejects `javascript:`/`data:` — no href-XSS). Esc / ✕ / scrim close, with focus restored to the originating headline. CSP/same-origin/no-proxy posture unchanged (no new fetch, no CDN). Pure logic (`feedDetailModel`, `safeHttpLink`) is unit-tested (`node --test`, 52 green incl. the link-gating + escaped-field tests).
+- **Richer capture gallery.** The Playwright pipeline now also captures the news-expand states — `feed-story-highlighted.png` (the selection highlight) and `feed-story-expanded.png` (the detail view) — alongside the refreshed wall / three ticker modes (markets / team-sports / news) / settings / channel-picker shots. Deterministic framing preserved; still demo/phantom-only (no secrets/NAS) and `workflow_dispatch` artifact (no auto-commit-on-push).
+- **Refreshed device-shot spec.** `docs/screenshots/device/README.md` now spells out the **live-data** states the demo can't serve — the bespoke per-sport cards (PGA/UFC/Tennis/F1, live ESPN), real market quotes, real channels playing — as the operator's camera/screencap hero shots (with the per-sport breakout filename option).
+
+Phase-end gallery refresh per the new workspace standard (professionalize.md §5/§6 — regenerate when user-visible UI changed). Helper/web/tooling only — rides the next helper redeploy. Operator's manual step: the live-data device hero shots per the refreshed spec.
+
 ## fix: remediate the 3 P3 findings from the adversarial re-review — F1 + F2 + F3 (2026-06-13)
 
 The new-code re-review (`docs/adversarial-review-2026-06-new-code.md`) came back clean (0 P0/P1/P2) with three P3 defensive-completeness items; all three fixed, each TDD (failing test first):

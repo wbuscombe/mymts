@@ -49,6 +49,8 @@ import {
   DEFAULT_VIEW_PREFS,
   normalizeViewPrefs,
   serializeViewPrefs,
+  safeHttpLink,
+  feedDetailModel,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -678,4 +680,45 @@ test("PERSISTENCE: a tampered/garbage blob normalizes to safe honest defaults", 
   assert.deepEqual(serializeViewPrefs(normalizeViewPrefs(null)), DEFAULT_VIEW_PREFS);
   assert.equal(normalizeViewPrefs({ hidden: "BBC" }).hidden.length, 0);   // non-array denylist → empty
   assert.equal(normalizeViewPrefs({ hiddenLeagues: 5 }).hiddenLeagues.length, 0);
+});
+
+// ----- feed story detail / expand (Campaign 4.1) -----
+
+test("safeHttpLink: only http(s) link-outs allowed; javascript:/data:/junk rejected", () => {
+  assert.equal(safeHttpLink("https://x.test/a"), "https://x.test/a");
+  assert.equal(safeHttpLink("http://x.test/a"), "http://x.test/a");
+  assert.equal(safeHttpLink("  https://x.test/a  "), "https://x.test/a");  // trimmed
+  assert.equal(safeHttpLink("javascript:alert(1)"), "");   // XSS vector → rejected
+  assert.equal(safeHttpLink("data:text/html,<script>"), "");
+  assert.equal(safeHttpLink("ftp://x/y"), "");
+  assert.equal(safeHttpLink(""), "");
+  assert.equal(safeHttpLink(null), "");
+  assert.equal(safeHttpLink("not a url"), "");
+});
+
+test("feedDetailModel: the item's OWN fields, link gated, safe defaults", () => {
+  const m = feedDetailModel({
+    source: "BBC", title: "Title", summary: "Summary text",
+    published_at: "2026-06-13T12:00:00Z", link: "https://bbc.test/a",
+  });
+  assert.equal(m.source, "BBC");
+  assert.equal(m.title, "Title");
+  assert.equal(m.summary, "Summary text");
+  assert.equal(m.timestamp, "2026-06-13T12:00:00Z");
+  assert.equal(m.link, "https://bbc.test/a");
+  assert.equal(m.hasLink, true);
+  // missing link → no link-out
+  assert.equal(feedDetailModel({ title: "X" }).hasLink, false);
+  // unsafe link → no link-out (never exposed as a clickable href)
+  assert.equal(feedDetailModel({ link: "javascript:alert(1)" }).hasLink, false);
+  // null item → safe empty model (Unknown source bucket, no link)
+  const e = feedDetailModel(null);
+  assert.equal(e.title, "");
+  assert.equal(e.hasLink, false);
+  assert.equal(e.source, "Unknown source");
+  // title/summary returned as STRINGS (caller renders via textContent — no HTML exec)
+  assert.equal(typeof feedDetailModel({ title: 123 }).title, "string");
+  // fetched_at is the timestamp fallback when published_at is absent
+  assert.equal(feedDetailModel({ fetched_at: "2026-06-13T11:00:00Z" }).timestamp,
+    "2026-06-13T11:00:00Z");
 });

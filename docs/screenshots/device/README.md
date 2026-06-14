@@ -9,13 +9,25 @@ The files here are **labeled placeholders**. Replace each one with your real cap
 **keeping the same filename**, and it appears automatically in the top-level
 [`README.md`](../../../README.md) gallery.
 
-## The three shots the README expects
+## The shots the README expects
 
 | File | What to capture |
 |---|---|
-| `wall-hero.png` | The **full wall** on the TV — feed + video grid + ticker, ideally with live channels playing and the ticker mid-stride. The money shot. |
-| `cards-closeup.png` | A **close-up of the ticker** on live data — real markets and, ideally, the bespoke per-sport cards (PGA / UFC / Tennis / F1) that the demo can't show (they need live ESPN data). |
+| `wall-hero.png` | The **full wall** on the TV — feed + video grid + ticker, with live channels playing and the ticker mid-stride. The money shot. |
+| `cards-closeup.png` | A **close-up of the ticker on LIVE data** — real market quotes **and the bespoke per-sport cards (PGA leaderboard / UFC fight / Tennis match / F1 race)**. These are the headline live-data states the automated demo gallery **cannot** show. |
 | `office-in-situ.png` | The TV **on the wall, in the room** — a phone photo showing it running ambient. The "it's actually mounted and on" shot. |
+
+> Optional per-sport breakouts: if you want individual cards, add `ticker-pga-live.png` / `ticker-ufc-live.png` / `ticker-tennis-live.png` / `ticker-f1-live.png` (or a combined `ticker-sports-live.png`) and reference them in the top README. Same live-data, same drop-in rule.
+
+## Why these are device/live shots (the demo can't produce them)
+
+The automated `../web/` gallery runs against **demo/phantom mode**, which serves clearly-labeled **SAMPLE** markets, three **team** games (MLB/NBA/NHL), and a fixture feed — deliberately no live upstreams. So the demo gallery covers the **structure** (the menu, the three ticker modes, the news-expand interaction, the honest SAMPLE pills), but it **cannot** show:
+
+- the **bespoke per-sport cards** (PGA/UFC/Tennis/F1) — they only render on **live ESPN data**;
+- **real market quotes** (live, no SAMPLE pill);
+- **real channels actually playing** in the grid.
+
+Those are exactly the live-data credibility shots above — yours to capture on the real wall.
 
 ## How to capture
 

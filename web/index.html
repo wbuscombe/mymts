@@ -110,6 +110,24 @@
     </div>
   </div>
 
+  <!-- News-story detail — opened by selecting a feed headline (click, or
+       Enter/Space on the focused row). Shows the feed item's OWN fields
+       (title + summary + source + time), inert plain text (A1). "Read at
+       source" is a link-OUT to the operator's browser — MyMTS never fetches
+       or renders the article itself. -->
+  <div class="modal-scrim hidden" id="story-modal">
+    <div class="modal story-modal" role="dialog" aria-modal="true" aria-labelledby="story-title">
+      <div class="modal-head"><span class="story-source" id="story-source"></span><button class="x" id="story-close" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div class="story-time" id="story-time"></div>
+        <h2 class="story-title" id="story-title"></h2>
+        <p class="story-summary" id="story-summary"></p>
+        <a class="story-link hidden" id="story-link" target="_blank" rel="noopener noreferrer">Read at source ↗</a>
+        <p class="note">Opens the source in your browser — MyMTS shows the feed's own summary (inert text) and never fetches or renders the article itself. Esc or ✕ to close.</p>
+      </div>
+    </div>
+  </div>
+
   <script src="vendor/hls.min.js"></script>
   <script type="module" src="js/app.mjs"></script>
 </body>
