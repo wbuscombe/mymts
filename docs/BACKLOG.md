@@ -101,17 +101,16 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 **Why-not-now:** Layout configurability needs a settings surface to be operator-visible; that surface is Stage 5. Hard-coding a width is the right v0.1 alpha shape per the polish-pass prompt.
 **Reconsider when:** Stage 5 (settings) lands — pane-width controls are the natural place to expose it.
 
-## Configurable / scalable panes (feed · grid · ticker) as a first-class layout system
+## Configurable / scalable panes (feed · grid · ticker) — PARTIAL (presets shipped; free-form pane resize still open)
 
-**What:** Let the operator resize/scale the three panes (news feed, video grid, ticker) — starting with configurable feed width (grid currently adapts to a fixed feed width), generalizing to a user-driven layout where pane proportions are adjustable.
-**Why-not-now:** Vision §6 (bulletproof core, one-click-easy content) and current staging — Stage 3 ships a fixed layout; the in-app settings system that would expose layout controls is Stage 5. The near-term piece (grid adapts to a fixed feed width) is already done this pass; full configurability is the generalization.
-**Reconsider when:** Stage 5 (settings/menu) lands — pane-layout controls are a natural fit for that surface. Note the linkage to the per-device-profile idea (different output setups may want different default proportions).
+**Shipped (2026-06-14):** the near-term pieces landed — configurable **feed width** (presets) + **feed font**, the grid **autofits** the space beside the feed and is operator-configurable (rows × cols, 1–3 each), grid **side** is switchable, and a **global UI scale** + panel-fit levers resize the whole wall. See entry **C** (DONE) above + the panel-fit DONE entry.
+**Still open (the generalization):** a first-class, **user-driven layout where the operator freely adjusts the proportions of all three panes** (drag-style resize, beyond the feed-width presets + the fixed ticker height).
+**Why-not-now:** the preset-level controls cover the immediate need; free-form pane-proportion editing is a larger layout-system effort, not a tweak.
+**Reconsider when:** the operator wants drag-resizable panes beyond the current presets. Note the per-device-profile linkage (different output setups may want different default proportions).
 
-## In-app menu / settings section (WyzeGrid-style)
+## ~~In-app menu / settings section (WyzeGrid-style)~~ — DONE (Stage 5, struck 2026-06-14)
 
-**What:** The in-app settings/menu surface — WyzeGrid-pattern side panel (focusable rows, popup pickers, D-pad nav) for lineup, presets, pane layout, display options, diagnostics.
-**Why-not-now:** This is **already planned as Stage 5** — logging it here only so the roadmap is visible in one place. Not a deferred-indefinitely item; it's the next major stage after Stage 3.
-**Reconsider when:** Stage 5 (it IS Stage 5). Cross-reference `04-TECHNICAL-APPROACH.md` and the foundation docs for the WyzeGrid-pattern intent.
+**Done.** The in-app settings/menu surface shipped (Stage 5 + the menu-overhaul chapter): a focusable overlay with D-pad nav for lineup/channel control (the channel picker), the sectioned settings (Display & Fit / Layout & Feed / Sports), display options + the panel-fit levers, the league picker, and the whole-wall controls. See `ui/menu/` (`MenuOverlay` / `SettingsOverlay`), the sports-selection-menu DONE entry above, `ARCHITECTURE.md`, CHANGELOG. *(In-menu "diagnostics" was not pursued as a discrete panel — the helper's `/health` + JSON metrics cover diagnostics out-of-band.)*
 
 ## Browser / PWA client (SEPARATE CLIENT, not a mode of the native app) — LAN version BUILT 2026-06-06; REMOTE deferred
 
@@ -213,11 +212,10 @@ The robust "true kiosk home" mechanism: `adb shell dpm set-device-owner <pkg>/<D
 
 Batch of feedback the operator surfaced after actually using the wall on `.182`. Logged here so nothing evaporates; **deliberately deferred from the current session** — these are next-roadmap items, not in-flight work. Caveats below preserved verbatim where flagged because they prevent re-litigating settled foundation decisions and set honest expectations on what's feasible vs. paywalled vs. a separate scoped effort.
 
-## A. Whole-wall D-pad navigation + menu overhaul (BIG — likely the next major chapter)
+## ~~A. Whole-wall D-pad navigation + menu overhaul~~ — DONE (2026-06-14)
 
-**What:** The wall isn't fully navigable from the couch. Operator can't D-pad into the feed to focus/select an article, can't focus a video cell to act on it; the menu "feels clunky" and "needs to be more robust / more human-friendly." Make the *whole wall* navigable: focus moves between feed items, video cells, ticker, and menu — everything reachable and actionable via D-pad.
-**Why-not-now:** Stage 5 deliberately scoped the menu to channel/lineup control and deferred the full focus/navigation system. This feedback says that deferral has come due. It's a substantial chapter, not a tweak.
-**Reconsider when:** Next major build after the current session's items land. This is the lead candidate for the next big push.
+**Done.** The whole-wall D-pad navigation shipped as a single pure focus model — `ui/nav/WallFocusModel.kt` + `WallFocus.kt`, **49 invariant tests** (`WallFocusModelTest`), zero runtime focus traps; focus moves across feed items, video cells, the ticker, and the menu (see `docs/findings/07-navigation-chapter.md`). The **menu overhaul** shipped alongside — the settings menu grouped into sections (Display & Fit / Layout & Feed / Sports) with focus-following scroll + the league picker (see the sports-selection-menu DONE entry above + CHANGELOG). News-expand made feed headlines **selectable** (focus → expand the safe plain-text summary, A1-respecting). The "next major chapter / clunky menu" framing is retired.
+**Operator residual (not blocking):** the at-the-box remote D-pad *feel-test* is the operator's confirmation when next at the box (`docs/OPERATIONS.md` "navigation chapter feel-test") — the navigation graph itself is locked + tested.
 
 ## B. Feed UX — list view, live/offline sections, selectable items
 
@@ -226,11 +224,9 @@ Batch of feedback the operator surfaced after actually using the wall on `.182`.
 **⚠️ CAVEAT (preserve — closed-door item):** "Selecting an article" must NOT mean opening/reading the full article *in-app*. In-app article reading was ruled out in `04-TECHNICAL-APPROACH.md §5` / foundation as a security+scope dead-end (the reader-pane cross-device-auth problem). "Select" can mean focus / expand the safe summary / mark — NOT a full in-app web reader. Revisiting that is a deliberate foundation-level decision, not a feature tweak.
 **Reconsider when:** With the navigation chapter (A) — the list/sections part can also go in a "UX & config" push.
 
-## C. Layout / sizing configurability
+## ~~C. Layout / sizing configurability~~ — DONE (2026-06-14)
 
-**What:** Configurable side for the video grid (left/right of feed); video grid scales to display size + the space beside the feed; overall app resolution/sizing configurable; feed width AND font configurable.
-**Why-not-now:** This is the existing "configurable panes" backlog item plus app-level sizing/resolution. Grid already autofits its region (Stage 3 polish pass) — clarify with operator what's missing vs. what exists. App-resolution-adaptiveness matters MORE once MyMTS is on its real box driving an actual TV (the in-transit hardware) vs. the small dev panel currently attached to `.182`.
-**Reconsider when:** "UX & config" push; some (feed width/font) are low-effort and could come sooner.
+**Done.** Every named sub-item shipped, in `WallSettings` + the settings menu: grid **side** (`feedSide` Left/Right, with the focus model inverting LEFT/RIGHT to match), the grid **scales to its measured region** (the measured-area → cells refactor — it autofits the space beside the feed at any rows × cols), **global app sizing** (`UiScale` Compact/Default/Roomy + the panel-fit `Overscan` inset / Position offset / Fit-scale levers for the real TV), and **feed width + font** (`FeedWidth` / `FeedFontScale`). All D-pad-cyclable + persisted (`LineupStore`). See the panel-fit DONE entry below + `ARCHITECTURE.md`, CHANGELOG. *(The further generalization — free-form resize of all three panes — is the "Configurable / scalable panes" entry above, still open.)*
 
 ## ~~D. Ticker — alternate markets + curated sports scores/news~~ — DONE (ticker real-data chapter, 2026-06-05)
 
@@ -277,11 +273,11 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 **Why-not-now:** WGN America largely defunct as a national entity; local WGN Chicago may still have streams.
 **Reconsider when:** Channel-resolution pass — check current availability.
 
-## F. Feed source quality — more reputable sources
+## F. Feed source quality — more reputable sources — SUBSTANTIALLY DONE (2026-06-14)
 
-**What:** Add reputable feed sources — AP, Reuters, CNN, etc. Research what `monitor-the-situation.com` uses as a reference (the visual + editorial reference for this whole project).
-**Why-not-now:** Clean, high-value, low-effort — just more RSS sources in the helper seed (current: BBC World, Al Jazeera, Guardian World, NPR World). Held only to keep the current session focused.
-**Reconsider when:** Soon — pairs naturally with any helper/seed work. Research MTS's source list as input.
+**Shipped (the expansion):** the feed grew from the original 4 to **13 reputable news sources** with a deliberately balanced spread — BBC World, Al Jazeera, Guardian World, NPR World, PBS NewsHour, Christian Science Monitor, CBS News, NBC News, Politico, Bloomberg Markets, The Dispatch, National Review, Reason (plus the 8 ESPN sports-news leagues). Seeded in `helper/.../feeds/seed.json`, parsed defensively as A1 plain text. The stale "current: 4 sources" line is retired.
+**Still open (small remainder):** the specific **wire services** (AP / Reuters) aren't in the set yet, and the "research what `monitor-the-situation.com` uses as its source list" input task is unaddressed.
+**Reconsider when:** any helper/seed work — add the wire services and reconcile against the MTS reference list if the operator wants closer editorial parity.
 
 ## Ground News as a feed source — NOT pursued (security + no API); use more public RSS instead
 
