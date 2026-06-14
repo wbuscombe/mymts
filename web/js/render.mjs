@@ -547,6 +547,68 @@ export function browserPlayability(channel) {
   return "maybe";
 }
 
+// ----- in-browser video auto-recovery (retry transient, give up on hopeless) -----
+//
+// An always-on wall can't leave a tile dead until a manual reload. We retry the
+// RETRYABLE failures on a backoff and HONESTLY stop on the genuinely-unplayable
+// ones — looping forever on a stream the browser fundamentally can't play
+// (DRM / unsupported codec / native-ExoPlayer-only) is its own bad behaviour
+// (wasted cycles, flicker, never succeeds). These are pure so the classification
+// + backoff are unit-tested against the real hls.js/native failure signals.
+
+export const VIDEO_MAX_RETRIES = 4;       // bounded — then fall to the honest state
+export const VIDEO_BACKOFF_BASE_MS = 2000;
+export const VIDEO_BACKOFF_MAX_MS = 30000;
+
+/**
+ * Classify a video failure signal into RETRYABLE (transient — worth a backoff
+ * retry) vs genuinely UNPLAYABLE-in-browser (native-ExoPlayer territory — never
+ * retry). `kind` is the hls.js ErrorType ("networkError"/"mediaError"/
+ * "keySystemError"/"muxError"/"otherError"), or "native" (a <video> error code
+ * in `details`), or "stall" (the watchdog), or "no-hls-support". `details` is the
+ * hls.js ErrorDetails or the native error-code name. Returns { retryable, reason }.
+ */
+export function classifyVideoFailure(kind, details = "") {
+  const k = String(kind || "");
+  const d = String(details || "").toLowerCase();
+  // --- genuinely unplayable in a browser (do NOT retry) ---
+  if (k === "no-hls-support") return { retryable: false, reason: "no-browser-hls" };
+  if (k === "keySystemError" || d.includes("key")) return { retryable: false, reason: "drm" };
+  if (d.includes("incompatiblecodecs") || d.includes("incompatible_codecs")) {
+    return { retryable: false, reason: "codec" };
+  }
+  if (k === "muxError") return { retryable: false, reason: "remux" };
+  if (k === "native" && d.includes("src_not_supported")) {
+    return { retryable: false, reason: "unsupported-source" };
+  }
+  // --- transient (retry on a backoff) ---
+  if (k === "networkError" || k === "mediaError" || k === "stall" || k === "native") {
+    return { retryable: true, reason: k };
+  }
+  // Unknown failure → conservatively retryable, but still BOUNDED by the cap
+  // (videoRetryDecision) so an unknown-but-hopeless stream can't loop forever.
+  return { retryable: true, reason: k || "unknown" };
+}
+
+/** Exponential backoff (ms) for attempt N (0-indexed), capped. */
+export function videoBackoffMs(attempt, base = VIDEO_BACKOFF_BASE_MS, max = VIDEO_BACKOFF_MAX_MS) {
+  const n = Math.max(0, Math.floor(Number(attempt) || 0));
+  return Math.min(max, base * 2 ** n);
+}
+
+/**
+ * Decide what to do after a failure: retry (with a delay) or give up to the
+ * honest persistent state. NEVER retries a non-retryable failure (the crux);
+ * NEVER retries past `maxRetries` (so a flaky stream can't loop forever).
+ * Returns { retry, delayMs?, reason }.
+ */
+export function videoRetryDecision(attempt, classification, maxRetries = VIDEO_MAX_RETRIES) {
+  const c = classification || { retryable: false, reason: "unknown" };
+  if (!c.retryable) return { retry: false, reason: c.reason };
+  if (Math.floor(Number(attempt) || 0) >= maxRetries) return { retry: false, reason: "exhausted" };
+  return { retry: true, delayMs: videoBackoffMs(attempt), reason: c.reason };
+}
+
 // ----- feed source filter (browser-local view pref, mirrors the wall) -----
 
 /**

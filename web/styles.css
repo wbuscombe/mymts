@@ -149,6 +149,15 @@ body { display: flex; flex-direction: column; }
 .tile-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: #00000066; }
 .tile-play .glyph { font-size: 30px; color: #fff; }
+/* auto-reconnect: honest "Reconnecting…" while a transient failure backs off */
+.tile-state.reconnecting .big { color: var(--stale); animation: tile-spin 1.4s linear infinite; }
+@keyframes tile-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tile-state.reconnecting .big { animation: none; } }
+/* per-tile manual reconnect button on a dead tile (keyboard-accessible) */
+.tile-refresh { position: absolute; right: 6px; bottom: 6px; font-size: 12px; line-height: 1;
+  color: var(--label); background: #000000bb; border: 1px solid var(--line); border-radius: 3px;
+  padding: 2px 7px; cursor: pointer; }
+.tile-refresh:hover, .tile-refresh:focus-visible { background: #ffffff22; color: #fff; }
 
 /* ---- settings + picker modals ---- */
 .modal-scrim { position: fixed; inset: 0; background: #000000cc; display: flex;

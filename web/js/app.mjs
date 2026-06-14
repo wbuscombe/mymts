@@ -18,6 +18,7 @@ import {
   clampTickerSpeedPct, tickerScrollPxPerSec,
   normalizeViewPrefs, serializeViewPrefs,
   feedDetailModel,
+  classifyVideoFailure, videoRetryDecision,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -392,8 +393,15 @@ function autoFillDefaults() {
   savePrefs();
 }
 
+/** Cancel a cell's pending auto-reconnect timer (idempotent). Called before
+ *  any teardown/re-render so a backoff timer can never fire against a cell
+ *  that's been replaced — otherwise a torn-down tile could resurrect itself. */
+function clearCellRetry(cell) {
+  if (cell && cell.retryTimer) { clearTimeout(cell.retryTimer); cell.retryTimer = null; }
+}
+
 function teardownCells() {
-  for (const c of cells) { try { c.teardown && c.teardown(); } catch {} }
+  for (const c of cells) { clearCellRetry(c); try { c.teardown && c.teardown(); } catch {} }
   cells = [];
 }
 
@@ -423,8 +431,10 @@ function renderGrid() {
     const bp = ch ? browserPlayability(ch) : "none";
     const key = `${slug || "∅"}|${bp}|${ch ? channelStatus(ch).label : "∅"}`;
     if (key === cell.key) continue;   // unchanged — leave the cell (and its video) alone
+    clearCellRetry(cell);
     if (cell.teardown) { try { cell.teardown(); } catch {} cell.teardown = null; }
     cell.key = key;
+    cell.videoAttempt = 0;            // new channel/state → fresh retry budget
     renderCell(cell, slug, ch, bp);
   }
 }
@@ -437,6 +447,7 @@ function changeChip(cell) {
 function renderCell(cell, slug, ch, bp) {
   const tile = cell.el;
   tile.replaceChildren();
+  cell.isVideo = false;                 // only the playback branch sets this true
   tile.onclick = () => openPicker(cell.index);
 
   if (!slug || !ch) {
@@ -467,8 +478,16 @@ function renderCell(cell, slug, ch, bp) {
   }
 
   // bp is "yes" or "maybe" → attempt playback. The runtime result is the
-  // ground truth: if it can't load (dead/CORS/mixed), we flip to the honest
-  // "on the TV wall" state — never a black box shown as live.
+  // ground truth: if it can't load (dead/CORS/mixed), we either reconnect (a
+  // transient blip) or flip to the honest "on the TV wall" state — never a
+  // black box shown as live, and never an infinite retry on a hopeless stream.
+  cell.isVideo = true;
+  // Per-attach generation token: late events from a torn-down/superseded
+  // handle (e.g. one that fires during the backoff window) are ignored, so a
+  // stray "live" can't cancel a pending reconnect or mutate a detached tile.
+  cell.gen = (cell.gen || 0) + 1;
+  const myGen = cell.gen;
+
   const video = document.createElement("video");
   video.muted = true; video.playsInline = true; video.autoplay = true;
   // Yellow "connecting" during the manifest-fetch/buffer window — honest, not
@@ -481,8 +500,11 @@ function renderCell(cell, slug, ch, bp) {
   let playOverlay = null;
   const clearOverlay = () => { if (playOverlay) { playOverlay.remove(); playOverlay = null; } };
 
-  const handle = attachStream(video, ch.current_url, (state) => {
+  const handle = attachStream(video, ch.current_url, (state, detail) => {
+    if (myGen !== cell.gen) return;   // stale handle from a prior attach — ignore
     if (state === "live") {
+      cell.videoAttempt = 0;          // a clean (re)connect refills the retry budget
+      clearCellRetry(cell);
       dot.className = "tile-dot dot-live"; video.style.visibility = ""; clearOverlay();
       tile.onclick = () => openPicker(cell.index);
     } else if (state === "needgesture") {
@@ -494,26 +516,111 @@ function renderCell(cell, slug, ch, bp) {
         tile.appendChild(playOverlay);
       }
       tile.onclick = (e) => { e.stopPropagation(); handle.play(); };
-    } else { // "error" — honest, never faked-live
-      clearOverlay();
-      lab.remove();                                   // avoid showing the name twice
-      tile.querySelector(".tile-change")?.remove();
-      video.style.display = "none";
-      // The helper believed this stream was HTTPS-clean (bp yes/maybe) yet it
-      // failed in-browser — likely CORS / geo / transient / dead, NOT a
-      // confirmed mixed-content block. Don't over-claim it's live on the TV;
-      // the confident "on the TV wall" copy is reserved for the bp==="no"
-      // case where the helper actually confirmed live + browser-incompatible.
-      dot.className = "tile-dot dot-offline";
-      const s = node("div", "tile-state");
-      s.appendChild(node("div", "big", "○"));
-      s.appendChild(node("div", "head", label));
-      s.appendChild(node("div", "sub", "Couldn't play in browser — may be on the TV wall"));
-      tile.appendChild(s);
-      tile.onclick = () => openPicker(cell.index);
+    } else { // "stall" or "error" — a runtime failure. Classify, then decide.
+      // THE CRUX: classifyVideoFailure separates a transient failure (CDN
+      // blip / decode hiccup / freeze → worth a fresh attempt) from a
+      // genuinely-unplayable one (DRM / codec / no-HLS / unsupported source →
+      // a browser can NEVER play it, so retrying is pointless). videoRetry
+      // Decision then caps the transient retries so a flaky stream that never
+      // recovers still gives up to an honest state instead of looping forever.
+      const cls = classifyVideoFailure(detail && detail.kind, detail && detail.details);
+      const decision = videoRetryDecision(cell.videoAttempt, cls);
+      cell.gen++;                       // neutralize any further events from THIS (failed) handle
+      if (decision.retry) {
+        // Keep cell.teardown pointing at the now-neutralized handle so a grid
+        // rebuild DURING the backoff still tears it down (no leak); otherwise
+        // reattachCell tears it down when the timer fires, then re-renders.
+        showReconnecting(cell, label, cell.videoAttempt);
+        cell.retryTimer = setTimeout(() => {
+          cell.retryTimer = null;
+          cell.videoAttempt += 1;
+          reattachCell(cell);
+        }, decision.delayMs);
+      } else {
+        // Genuinely unplayable, OR transient retries exhausted → STOP. Tear the
+        // dead handle down off the event path; the tile then rests (honest)
+        // until a manual ↻ or a channel-status change — never an infinite retry.
+        const dead = handle.teardown; cell.teardown = null;
+        setTimeout(() => { try { dead(); } catch {} }, 0);
+        showDeadVideo(cell, label, decision.reason);
+      }
     }
   });
   cell.teardown = handle.teardown;
+}
+
+/** Honest "Reconnecting…" state while a transient failure backs off. Never
+ *  shown as live; the dot stays the neutral "checking" colour. */
+function showReconnecting(cell, label, attempt) {
+  const tile = cell.el;
+  tile.replaceChildren();
+  const s = node("div", "tile-state reconnecting");
+  s.appendChild(node("div", "big", "↻"));
+  s.appendChild(node("div", "head", label));
+  s.appendChild(node("div", "sub", `Reconnecting… (attempt ${attempt + 1})`));
+  tile.appendChild(s);
+  tile.appendChild(node("span", "tile-dot dot-unknown"));
+  tile.onclick = () => openPicker(cell.index);
+}
+
+/** Honest terminal state for a stream the browser couldn't play. Carries a
+ *  per-tile ↻ so the operator can force a fresh attempt (the helper may have
+ *  re-resolved the URL) without reloading the whole wall. */
+function showDeadVideo(cell, label, reason) {
+  const tile = cell.el;
+  tile.replaceChildren();
+  const s = node("div", "tile-state");
+  s.appendChild(node("div", "big", "○"));
+  s.appendChild(node("div", "head", label));
+  s.appendChild(node("div", "sub", deadReasonCopy(reason)));
+  tile.appendChild(s);
+  tile.appendChild(node("span", "tile-dot dot-offline"));
+  const refresh = node("button", "tile-refresh", "↻");
+  refresh.title = "Reconnect this tile";
+  refresh.setAttribute("aria-label", "Reconnect this tile");
+  refresh.onclick = (e) => { e.stopPropagation(); refreshCell(cell); };
+  tile.appendChild(refresh);
+  tile.onclick = () => openPicker(cell.index);
+}
+
+/** Honest, reason-specific copy. A browser-fundamental limitation (DRM / codec
+ *  / no-HLS) is stated plainly as "on the TV wall" (the helper confirmed the
+ *  stream HTTPS-clean for bp yes/maybe; ExoPlayer plays what the browser
+ *  can't). A retries-exhausted transient hedges with "may be". */
+function deadReasonCopy(reason) {
+  switch (reason) {
+    case "no-browser-hls":     return "Browser can't play HLS — on the TV wall";
+    case "drm":                return "Protected stream (DRM) — on the TV wall";
+    case "codec":              return "Codec not supported in browser — on the TV wall";
+    case "remux":              return "Can't be repackaged for the browser — on the TV wall";
+    case "unsupported-source": return "Browser can't play this source — on the TV wall";
+    case "exhausted":          return "Couldn't reconnect — may be on the TV wall";
+    default:                   return "Couldn't play in browser — may be on the TV wall";
+  }
+}
+
+/** Manual per-tile reconnect: reset the backoff budget and re-attach now. */
+function refreshCell(cell) {
+  if (!cell) return;
+  cell.videoAttempt = 0;
+  reattachCell(cell);
+}
+
+/** Whole-wall reconnect (header ↻): every video tile gets a fresh attempt —
+ *  recovers a silently-degraded tile too, not just the visibly-dead ones. */
+function refreshAllVideo() {
+  for (const cell of cells) { if (cell.isVideo) refreshCell(cell); }
+}
+
+/** Tear down a cell's current stream and re-render it from the live channel
+ *  snapshot (the helper may have re-resolved a fresh URL since it failed). */
+function reattachCell(cell) {
+  clearCellRetry(cell);
+  if (cell.teardown) { try { cell.teardown(); } catch {} cell.teardown = null; }
+  const slug = prefs.assignments[cell.index] || null;
+  const ch = slug ? channelsBySlug.get(slug) : null;
+  const bp = ch ? browserPlayability(ch) : "none";
+  renderCell(cell, slug, ch, bp);
 }
 
 // ----- channel picker (intuitive, mouse-driven) -----
@@ -632,6 +739,9 @@ function rebuildLeagueToggles() {
 function closeModal(id) { el(id).classList.add("hidden"); }
 
 function wireSettings() {
+  // Whole-wall reconnect — a keyboard-accessible <button>, so Enter/Space work
+  // for a remote/keyboard-driven wall, not just a mouse click.
+  el("refresh-all").addEventListener("click", refreshAllVideo);
   el("gear").addEventListener("click", () => el("settings-modal").classList.remove("hidden"));
   el("settings-close").addEventListener("click", () => closeModal("settings-modal"));
   el("settings-modal").addEventListener("click", (e) => { if (e.target === el("settings-modal")) closeModal("settings-modal"); });

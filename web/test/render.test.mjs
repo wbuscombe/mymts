@@ -51,6 +51,10 @@ import {
   serializeViewPrefs,
   safeHttpLink,
   feedDetailModel,
+  classifyVideoFailure,
+  videoBackoffMs,
+  videoRetryDecision,
+  VIDEO_MAX_RETRIES,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -721,4 +725,49 @@ test("feedDetailModel: the item's OWN fields, link gated, safe defaults", () => 
   // fetched_at is the timestamp fallback when published_at is absent
   assert.equal(feedDetailModel({ fetched_at: "2026-06-13T11:00:00Z" }).timestamp,
     "2026-06-13T11:00:00Z");
+});
+
+// ----- video auto-recovery: classify retryable vs genuinely-unplayable -----
+
+test("classifyVideoFailure: genuinely-unplayable-in-browser is NOT retryable (the crux)", () => {
+  assert.equal(classifyVideoFailure("keySystemError").retryable, false);            // DRM
+  assert.equal(classifyVideoFailure("muxError").retryable, false);                  // remux/codec
+  assert.equal(classifyVideoFailure("otherError", "manifestIncompatibleCodecsError").retryable, false);
+  assert.equal(classifyVideoFailure("native", "MEDIA_ERR_SRC_NOT_SUPPORTED").retryable, false);
+  assert.equal(classifyVideoFailure("no-hls-support").retryable, false);
+});
+
+test("classifyVideoFailure: transient failures ARE retryable", () => {
+  assert.equal(classifyVideoFailure("networkError").retryable, true);   // CDN blip
+  assert.equal(classifyVideoFailure("mediaError").retryable, true);     // buffer/decode
+  assert.equal(classifyVideoFailure("stall").retryable, true);          // froze mid-play
+  assert.equal(classifyVideoFailure("native", "MEDIA_ERR_NETWORK").retryable, true);
+  assert.equal(classifyVideoFailure("somethingNew").retryable, true);   // unknown → bounded retry
+});
+
+test("videoBackoffMs: exponential, capped, monotonic", () => {
+  assert.equal(videoBackoffMs(0), 2000);
+  assert.equal(videoBackoffMs(1), 4000);
+  assert.equal(videoBackoffMs(2), 8000);
+  assert.equal(videoBackoffMs(99), 30000);   // capped
+  assert.ok(videoBackoffMs(3) >= videoBackoffMs(2));
+});
+
+test("videoRetryDecision: never retries the unplayable (no infinite loop on a hopeless stream)", () => {
+  const drm = classifyVideoFailure("keySystemError");
+  assert.equal(videoRetryDecision(0, drm).retry, false);   // not even attempt 0
+  assert.equal(videoRetryDecision(0, classifyVideoFailure("no-hls-support")).retry, false);
+});
+
+test("videoRetryDecision: retries transient on a backoff, then GIVES UP (bounded)", () => {
+  const net = classifyVideoFailure("networkError");
+  // attempts 0..max-1 retry with an increasing delay
+  for (let a = 0; a < VIDEO_MAX_RETRIES; a++) {
+    const d = videoRetryDecision(a, net);
+    assert.equal(d.retry, true, `attempt ${a} should retry`);
+    assert.ok(d.delayMs > 0);
+  }
+  // at the cap it gives up to the honest state — NEVER loops forever
+  assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).retry, false);
+  assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).reason, "exhausted");
 });
