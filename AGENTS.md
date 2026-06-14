@@ -75,4 +75,4 @@ The **helper** deploy rebuilds the image (`docker compose build --pull && up -d`
 
 ---
 
-*See `docs/adversarial-review-2026-06.md` for the evidence behind each guardrail, and the house `professionalize.md` for the cross-project standard.*
+*See `docs/adversarial-review-2026-06.md` for the evidence behind each guardrail, and the house `professionalize.md` for the cross-project standard. `MAINTENANCE-CHARTER.md` is the continuous-quality platform — the ENFORCED CI checks + the RITUAL `docs/PHASE-END-CHECKLIST.md` an agent runs when closing a phase; add a check there whenever an audit finds a new gap class.*

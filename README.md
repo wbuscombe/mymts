@@ -142,9 +142,13 @@ A homelab project, held to real engineering standards:
   every finding independently re-verified by a skeptic before it counted; **zero P0**, and the
   honest-degradation discipline held end-to-end. See [`docs/adversarial-review-2026-06.md`](docs/adversarial-review-2026-06.md).
 - **A real CI gate** — every push runs the helper test suite, a cross-component `schema_version`
-  consistency check, the **adb deploy-invariant** gate, the web client tests, the app JVM unit
-  tests, and a **phantom zero-egress smoke test**. Green, secret-free, test/lint-only (a
-  release-signing job in CI is forbidden — the key never leaves the operator's machine).
+  consistency check, the **adb deploy-invariant** gate, the web client tests, a **docs-hygiene**
+  gate (no topology/personal-config leakage in public docs), the app JVM unit tests, and a
+  **phantom zero-egress smoke test**. Green, secret-free, test/lint-only (a release-signing job in
+  CI is forbidden — the key never leaves the operator's machine).
+- **A maintenance charter** — [`MAINTENANCE-CHARTER.md`](MAINTENANCE-CHARTER.md) turns each problem an
+  audit caught into a can't-slip-in-again check: an **enforced** CI layer + a **ritual** phase-end
+  checklist ([`docs/PHASE-END-CHECKLIST.md`](docs/PHASE-END-CHECKLIST.md)), built to grow.
 - **A deploy invariant that's been proven on hardware** — the app ships via `adb push` →
   **byte-verify** → `pm install` → confirm `lastUpdateTime` (never a streamed install that can
   truncate over a flaky link); the helper rebuilds its image and verifies the running

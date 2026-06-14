@@ -51,6 +51,15 @@ jobs:
       - name: Web client tests (node:test — render/cards/schema-guard/settings)
         run: node --test web/test/*.test.mjs
 
+      # ENFORCED docs-hygiene gate (MAINTENANCE-CHARTER.md) — BLOCKING (unlike the
+      # advisory ruff debt above): catches NEW topology / personal-config leakage
+      # in public docs. Fast grep, no secret. Allowlist covers the deliberate keeps.
+      - name: Docs-hygiene check (no topology / personal-config leakage)
+        run: node tools/docs-hygiene/check.mjs
+
+      - name: Docs-hygiene self-test (planted-leak fails / clean passes)
+        run: node --test tools/docs-hygiene/check.test.mjs
+
       - name: Phantom demo boots clean (no secrets, fresh-clone gate)
         working-directory: helper
         run: |
