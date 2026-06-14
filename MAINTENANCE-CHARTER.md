@@ -84,6 +84,32 @@ When an audit/review (or an incident) finds a **new class of gap**:
 
 ---
 
+## Candidate future checks (identified, not yet built)
+
+Checks that **would** earn a registry row but aren't built yet — recorded here so a real idea doesn't
+evaporate (a candidate isn't real until it's *written into the repo*, not just discussed in review).
+Each is `[ENFORCED]`-eligible (a grep); build it per the rules above — allowlist + self-test +
+zero-false-positives-first — when it's worth the wiring. None is implemented this pass.
+
+1. **Tilde-path pattern** *(prioritized — highest value).* A grep for home-relative paths that shouldn't
+   ship — `~/Dropbox/…`, a `~/code/_reference/…` checkout, and similar `~/…` references. These are
+   author-machine paths (and, in a secrets path, a hazard pointer). The current docs-hygiene abs-path
+   pattern only catches `/Users…` / `/home…` *absolutes*, so a `~/`-relative one slips through — this
+   closes a real leakage class the allowlist doesn't target by pattern.
+2. **Dead-link checker.** Verify internal doc links / referenced repo paths actually resolve, so docs
+   don't rot as files move or rename. (Already gestured at under the "docs-vs-reality" RITUAL — this
+   promotes it to a concrete, enumerated candidate.)
+3. **Real-domain backstop.** A grep for a real operator domain (e.g. a personal site / studio domain)
+   appearing in committed public content — defense-in-depth beyond the IP/MAC/path topology patterns,
+   catching a real hostname that dodges them. (Any deliberately-kept reference site already in the docs
+   would move to the allowlist when this is built.)
+
+*Honest provenance:* the tilde-path and real-domain candidates were identified in a review but had
+lived only in working discussion until now — writing them here is this charter's own feedback-loop
+discipline (record the candidate, don't just talk about it). Dead-link was already loosely noted.
+
+---
+
 ## Feedback loop
 
 This charter is revised by what actually catches things vs. what's noise:
