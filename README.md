@@ -170,7 +170,7 @@ placeholders until the real captures land; see [`docs/screenshots/device/`](docs
 | | |
 |---|---|
 | ![Wall hero](docs/screenshots/device/wall-hero.png) | ![Ticker cards close-up](docs/screenshots/device/cards-closeup.png) |
-| ![In situ on the wall](docs/screenshots/device/office-in-situ.png) | *The live-data wall on the office Onn — markets ticking, the per-sport cards, real channels playing. Claude Code can't photograph the panel; the operator drops these in.* |
+| ![In situ on a wall display](docs/screenshots/device/in-situ.png) | *The live-data wall running on a dedicated Android TV display — markets ticking, the per-sport cards, real channels playing. An automated tool can't photograph the panel; these are the operator's drop-in shots.* |
 
 ---
 

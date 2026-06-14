@@ -1,9 +1,9 @@
 # Native-TV hero shots — operator drop-in slots
 
-These are the **"this is the real thing running on my wall"** credibility shots — the
-native Android TV app on the office Onn 4K, driving a real TV. An automated tool can
-capture the LAN **web** wall (see [`../web/`](../web/)), but **only the operator can
-capture the native panel** — Claude Code can't see the TV.
+These are the **"this is the real thing running on a wall display"** credibility shots — the
+native Android TV app on a dedicated Android TV device, driving a real display. An automated
+tool can capture the LAN **web** wall (see [`../web/`](../web/)), but **only the operator can
+capture the native panel** — an automated tool can't see the TV.
 
 The files here are **labeled placeholders**. Replace each one with your real capture,
 **keeping the same filename**, and it appears automatically in the top-level
@@ -15,7 +15,7 @@ The files here are **labeled placeholders**. Replace each one with your real cap
 |---|---|
 | `wall-hero.png` | The **full wall** on the TV — feed + video grid + ticker, with live channels playing and the ticker mid-stride. The money shot. |
 | `cards-closeup.png` | A **close-up of the ticker on LIVE data** — real market quotes **and the bespoke per-sport cards (PGA leaderboard / UFC fight / Tennis match / F1 race)**. These are the headline live-data states the automated demo gallery **cannot** show. |
-| `office-in-situ.png` | The TV **on the wall, in the room** — a phone photo showing it running ambient. The "it's actually mounted and on" shot. |
+| `in-situ.png` | The display **mounted and running in place** — a photo showing it as an ambient wall. The "it's actually mounted and on" shot. |
 
 > Optional per-sport breakouts: if you want individual cards, add `ticker-pga-live.png` / `ticker-ufc-live.png` / `ticker-tennis-live.png` / `ticker-f1-live.png` (or a combined `ticker-sports-live.png`) and reference them in the top README. Same live-data, same drop-in rule.
 
@@ -31,7 +31,7 @@ Those are exactly the live-data credibility shots above — yours to capture on 
 
 ## How to capture
 
-- **A phone photo of the TV** — easiest for `wall-hero` and `office-in-situ` (gets the real panel + room).
+- **A phone photo of the display** — easiest for `wall-hero` and `in-situ` (gets the real panel in place).
 - **An on-device screencap** — pixel-perfect for `wall-hero` / `cards-closeup` (no bezel/glare):
   ```bash
   # from a machine paired to the box (the operator's deploy host):
@@ -43,7 +43,7 @@ Those are exactly the live-data credibility shots above — yours to capture on 
 
 - **Keep the filenames** above so the README picks them up (or update the paths in the top README if you prefer different names).
 - **Topology-clean:** the shot must not show any real LAN IP, hostname, or the operator's
-  domain (a wall/room photo is fine; if a settings/diagnostic overlay with an address is on
+  domain (a photo of the display is fine; if a settings/diagnostic overlay with an address is on
   screen, dismiss it first). Same audience-aware-docs rule as the rest of the repo.
 - PNG or JPG both fine — if you save as `.jpg`, just update the extension in the top README's
   image paths (3 lines) to match.

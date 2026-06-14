@@ -21,7 +21,7 @@
 
 ## Why this chapter happened
 
-**Operator feedback (2026-06-04 upstairs session, BACKLOG item B):** *"Feed is still a list, not individual-scroll. Very unintuitive and inefficient. Needs sections."*
+**Operator feedback (2026-06-04 hands-on session, BACKLOG item B):** *"Feed is still a list, not individual-scroll. Very unintuitive and inefficient. Needs sections."*
 
 The navigation chapter (Stage 7) made the feed focusable and expandable from the couch. The operator validated the D-pad navigation with a feel-test and flagged the feed's layout as the gap: the chronological river mixed all sources together ("What is BBC reporting?" required scrolling past NPR, Guardian, and Al Jazeera items). Item B called for sections — grouping items by source so the operator can quickly scan "what is X saying?" without wading through other sources. This chapter lands that layout shift, applying the same "honest staleness" (C3) idea per source instead of once for the whole feed.
 

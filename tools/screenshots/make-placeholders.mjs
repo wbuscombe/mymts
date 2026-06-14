@@ -1,7 +1,7 @@
 // Generate clean, labeled placeholder images for the operator's MANUAL
-// native-TV hero shots (the real wall on the office Onn). Claude Code can't
-// photograph the panel, so these stand in until the operator drops the real
-// captures over them (same filenames → the top-level README picks them up).
+// native-TV hero shots (the real wall on a dedicated Android TV display).
+// An automated tool can't photograph the panel, so these stand in until the
+// real captures are dropped over them (same filenames → the README picks them up).
 //
 //   Usage:  node make-placeholders.mjs
 
@@ -17,7 +17,7 @@ const SHOTS = [
   {
     file: "wall-hero.png",
     title: "Wall hero",
-    sub: "The full wall on the office Onn 4K driving a real TV — the money shot.",
+    sub: "The full wall running on a dedicated Android TV display — the money shot.",
   },
   {
     file: "cards-closeup.png",
@@ -25,9 +25,9 @@ const SHOTS = [
     sub: "Live markets + the bespoke per-sport cards (PGA / UFC / Tennis / F1) on real data.",
   },
   {
-    file: "office-in-situ.png",
+    file: "in-situ.png",
     title: "In situ",
-    sub: "The TV on the wall, running ambient in the room — the “this is the real thing” shot.",
+    sub: "Running as an ambient wall display — the “this is the real thing” shot.",
   },
 ];
 

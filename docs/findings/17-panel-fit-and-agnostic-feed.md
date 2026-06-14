@@ -6,7 +6,7 @@
 
 **The box output is correct.** `<LAN_IP>` reports `wm size 1280x720`, `wm density 213` (tvdpi), `dumpsys display → real 1280 x 720` — a clean 720p at a standard TV density. So it is **not** a resolution/density mismatch.
 
-**The clip is physical panel overscan.** The same app fit the WyzeGrid office box's 720p panel but clips on this box's panel → the difference is the panel, not the box. The panel (or its converter) cuts the outer ~edge of the frame; the box outputs a full 1280×720, the panel just doesn't show it all. `wm overscan` (the old software overscan-compensation command) was **removed in modern Android**, so there's no box-side software overscan knob — the robust, panel-agnostic fix is **app-side**.
+**The clip is physical panel overscan.** The same app fit the other (WyzeGrid) box's 720p panel but clips on this box's panel → the difference is the panel, not the box. The panel (or its converter) cuts the outer ~edge of the frame; the box outputs a full 1280×720, the panel just doesn't show it all. `wm overscan` (the old software overscan-compensation command) was **removed in modern Android**, so there's no box-side software overscan knob — the robust, panel-agnostic fix is **app-side**.
 
 ### The fix (app-side, two levers)
 

@@ -20,7 +20,7 @@
 
 ## Why this chapter happened
 
-**Operator feedback (2026-06-04 upstairs session, BACKLOG item F):** add reputable, balanced sources so the feed has more breadth — the sanctioned alternative to the ruled-out Ground News request.
+**Operator feedback (2026-06-04 hands-on session, BACKLOG item F):** add reputable, balanced sources so the feed has more breadth — the sanctioned alternative to the ruled-out Ground News request.
 
 The feed restructure (Stage 7) made sources visible and per-source freshness transparent; the configurable layout (Stage 8) let the operator tune how the feed reads. With the structure in place, the obvious next gap was content breadth: the original 4 sources lean center-left and international. This chapter fills that gap with a deliberately balanced set, each source verified through the helper's own defensive path — no third-party aggregator, no shortcuts.
 

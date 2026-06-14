@@ -5,8 +5,8 @@ The MyMTS gallery. Two kinds of shot:
 - [`web/`](web/) — **automated** captures of the LAN web wall (`/app/`), rendered headlessly
   against the **demo / phantom helper** (mock data, no NAS, no secrets) so they're
   reproducible and safe to commit. Regenerate them any time (see below).
-- [`device/`](device/) — the operator's **manual** native-TV hero shots (the real wall on the
-  office Onn). Currently labeled placeholders — see [`device/README.md`](device/README.md).
+- [`device/`](device/) — the operator's **manual** native-TV hero shots (the real wall on a
+  dedicated Android TV display). Currently labeled placeholders — see [`device/README.md`](device/README.md).
 
 ## `web/` — what each shot shows (demo mode)
 

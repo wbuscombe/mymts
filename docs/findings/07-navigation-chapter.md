@@ -20,7 +20,7 @@
 
 ## Why this chapter happened
 
-**Operator feedback (2026-06-04 upstairs session, item A):** *"The wall isn't fully navigable from the couch. I can't D-pad into the feed to focus an article, can't focus a video cell to act on it. The menu feels clunky."*
+**Operator feedback (2026-06-04 hands-on session, item A):** *"The wall isn't fully navigable from the couch. I can't D-pad into the feed to focus an article, can't focus a video cell to act on it. The menu feels clunky."*
 
 The wall at Stage 5 was passable from the couch for channel assignment (MENU + picker was usable), but the inner zones — feed items, grid cells, the ticker — had no navigation at all. The operator had to break the ambient-wall posture to do anything beyond "stare at live tiles." Stage 6 before this point would have added per-zone actions (audio, captions) without any way to *reach* the zones that matter from the couch. Item A flagged this as a load-bearing gap. This chapter lands the entire navigation graph so every zone can be reached and acted on without leaving the remote.
 

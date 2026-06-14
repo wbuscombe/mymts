@@ -22,7 +22,7 @@
 
 ## Why this chapter happened
 
-**Operator feedback (2026-06-04 upstairs session, BACKLOG item C):** *"Feed width and font should be configurable. Need configuration for side of video grid. Overall size of app needs some configurable resolution or sizing."*
+**Operator feedback (2026-06-04 hands-on session, BACKLOG item C):** *"Feed width and font should be configurable. Need configuration for side of video grid. Overall size of app needs some configurable resolution or sizing."*
 
 The feed restructure (Stage 8) made sources visible and freshness clear. The operator validated the layout and flagged three friction points in the same breath: text on a 55" TV at 10 feet was small for some, the feed's 28% width left room for adjustment, and the grid position wasn't flexible for different room layouts. The chapter prompt (§5) directed the engineer to surface the "overall sizing" ask as a vision question rather than guessing. Result: operator chose to defer global UI density to BACKLOG (revisit once the new box is on a real TV). The three per-piece settings (width, font, side) ship now; each is tuned with legibility and layout confidence in mind.
 
