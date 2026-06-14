@@ -44,10 +44,13 @@ Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBO
 ## What it does
 
 ### 📺 A live video wall
-A configurable grid (independent **rows × columns**, 1–9 tiles) of public live-TV HLS streams,
-played in the **native player** (Media3/ExoPlayer on the TV; vendored `hls.js` on the web). Click
-a tile to pick its channel from the honest lineup — **live · plays here / live · on the TV wall
-only / offline** — never a black box pretending to be live.
+A configurable grid (independent **rows × columns**, 1–9 tiles — native parity, the same on both
+screens) of public live-TV HLS streams, played in the **native player** (Media3/ExoPlayer on the
+TV; vendored `hls.js` on the web). Click a tile to pick its channel from the honest lineup —
+**live · plays here / live · on the TV wall only / offline** — never a black box pretending to be
+live. On the web, a tile that drops **self-heals**: a transient failure reconnects on a backoff,
+while a stream a browser genuinely can't play (DRM/codec) is honestly marked and **never retried
+forever** — with a per-tile and whole-wall ↻ to force a fresh attempt.
 
 ![Channel picker with honest live / TV-only / offline status](docs/screenshots/web/channel-picker.png)
 
@@ -80,7 +83,9 @@ up on the real wall (see the device gallery below).</sub>
 
 ### ⚙️ Settings — and they're TV↔web peers
 Grid size, feed width/text-size/recency, per-source toggles, sports-league toggles, ticker
-speed — configurable on the TV (D-pad) and in the browser (mouse), persisted per client. The
+speed, and **ticker motion** (continuous *crawl* or paged *flip* — both motions on both clients,
+each defaulting to its platform's established feel; the TV side ships with the next on-device
+release) — configurable on the TV (D-pad) and in the browser (mouse), persisted per client. The
 TV-only panel-fit levers (fit scale / overscan / position) correct a physical panel and are
 honestly absent from the web.
 
