@@ -102,6 +102,14 @@ data class WallSettings(
     // shorter dwell). Live-applied + persisted.
     val tickerScrollPct: Int = 100,
     val tickerFlipPct: Int = 100,
+    // Ticker MOTION (2026-06-13, cross-platform parity). The strip's motion is
+    // an explicit setting offered on BOTH platforms; only the per-platform
+    // DEFAULT differs. `Flip` is the TV wall's established paged vertical flip
+    // (paced by `tickerFlipPct`); `Crawl` is the web wall's continuous
+    // horizontal marquee (paced by `tickerScrollPct`). Default `Flip` preserves
+    // the TV's established feel; the web client mirrors this setting and
+    // defaults to `Crawl`. Live-applied + persisted.
+    val tickerMotion: TickerMotion = TickerMotion.Flip,
 ) {
     /** Total cells the wall shows — drives the slot resolver + the layout. */
     val gridCells: Int get() = gridRows * gridCols
@@ -127,6 +135,28 @@ const val TICKER_SPEED_STEP_PCT = 20
 /** Clamp a ticker-speed percentage into [TICKER_SPEED_MIN_PCT]..[TICKER_SPEED_MAX_PCT]. */
 internal fun clampTickerSpeedPct(value: Int): Int =
     value.coerceIn(TICKER_SPEED_MIN_PCT, TICKER_SPEED_MAX_PCT)
+
+/**
+ * Ticker MOTION — how the top-of-wall strip animates. A cross-platform setting
+ * (both modes exist on the native wall AND the web client); only the per-
+ * platform DEFAULT differs.
+ *   [Flip]  — one page at a time, vertically flipping to the next on a dwell
+ *             (the native wall's established motion; `tickerFlipPct` paces it).
+ *             The Android DEFAULT.
+ *   [Crawl] — a single continuous horizontal marquee of all the cards (the web
+ *             wall's established motion; `tickerScrollPct` paces it). The web
+ *             DEFAULT.
+ * The operator can switch either wall to the other motion.
+ */
+enum class TickerMotion(val displayName: String) {
+    Flip("Flip"),
+    Crawl("Crawl"),
+}
+
+/** Resolve a persisted ordinal back to a [TickerMotion]; an out-of-range/corrupt
+ *  ordinal falls back to the Android default ([TickerMotion.Flip]). */
+internal fun tickerMotionFromOrdinal(ordinal: Int): TickerMotion =
+    TickerMotion.values().getOrNull(ordinal) ?: TickerMotion.Flip
 
 /** Position-offset bounds (dp), real screen space, symmetric around 0. The
  *  range covers a typical overscan shift (~±5% of a 1280-wide panel); the

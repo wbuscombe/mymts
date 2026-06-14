@@ -19,6 +19,7 @@ import {
   normalizeViewPrefs, serializeViewPrefs,
   feedDetailModel,
   classifyVideoFailure, videoRetryDecision,
+  tickerFlipDwellMs,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -197,10 +198,18 @@ function buildTickerGroup(group) {
   return g;
 }
 
+// FLIP motion: a JS-driven dwell timer steps through the groups (the crawl uses
+// a CSS infinite animation instead). Cleared on every re-render so a mode
+// rotation / poll can't leave a second timer flipping a stale group set.
+let flipTimer = null;
+function clearFlip() { if (flipTimer) { clearInterval(flipTimer); flipTimer = null; } }
+
 function renderTicker() {
   const track = el("ticker-track");
   const cur = tickerModes[modeIdx];
   el("ticker-mode").textContent = cur ? cur.mode : "";
+  clearFlip();
+  track.classList.remove("flip");
   track.replaceChildren();
   el("ticker-note").textContent = "";
   setStale(false);
@@ -260,7 +269,16 @@ function renderTicker() {
   el("ticker-note").textContent = staleNote;
 
   const built = groups.map(buildTickerGroup);
-  // Duplicate ONLY the groups so the 0→-50% scroll loops seamlessly.
+
+  // FLIP motion (native-parity, opt-in): show one group at a time, flipping to
+  // the next on a calm dwell — never a continuous crawl. Same honest cards.
+  if (prefs.tickerMotion === "flip") {
+    renderTickerFlip(track, built);
+    return;
+  }
+
+  // CRAWL motion (web default): duplicate ONLY the groups so the 0→-50% scroll
+  // loops seamlessly.
   const all = [...built, ...built.map((b) => b.cloneNode(true))];
   all.forEach((b) => track.appendChild(b));
   requestAnimationFrame(() => {
@@ -272,6 +290,29 @@ function renderTicker() {
     const dur = Math.max(8, half / pxPerSec);
     track.style.animation = `ticker-scroll ${dur}s linear infinite`;
   });
+}
+
+/** FLIP motion: render the groups one at a time, vertically flipping to the
+ *  next on a calm dwell (mirrors the native paged flip). The dwell scales with
+ *  the same ticker-speed pref as the crawl. A single group just holds. */
+function renderTickerFlip(track, built) {
+  track.style.animation = "none";
+  track.classList.add("flip");
+  if (built.length === 0) return;
+  let i = 0;
+  const show = (idx) => {
+    const g = built[idx];
+    track.replaceChildren(g);
+    // Force the flip-in keyframe to restart on each swap (re-inserting an
+    // element doesn't always replay a stylesheet animation across browsers).
+    g.style.animation = "none";
+    void g.offsetWidth;          // reflow
+    g.style.animation = "";
+  };
+  show(0);
+  if (built.length > 1) {
+    flipTimer = setInterval(() => { i = (i + 1) % built.length; show(i); }, tickerFlipDwellMs(prefs.tickerScrollPct));
+  }
 }
 
 /** Toggle the envelope-level STALE chip pinned to the strip's right edge. */
@@ -796,6 +837,14 @@ function wireSettings() {
   feedRecency.addEventListener("change", () => {
     prefs.feedRecency = feedRecencyOption(feedRecency.value).id;
     savePrefs(); renderFeed(latestFeedItems);
+  });
+
+  // Ticker motion (cross-platform setting; web default "crawl"). Live-applied —
+  // switching re-renders the strip into the other motion immediately.
+  const tickerMotion = el("ticker-motion"); tickerMotion.value = prefs.tickerMotion;
+  tickerMotion.addEventListener("change", () => {
+    prefs.tickerMotion = tickerMotion.value === "flip" ? "flip" : "crawl";
+    savePrefs(); renderTicker();
   });
 
   // Ticker scroll speed (native tickerScrollPct parity). Live-applied.

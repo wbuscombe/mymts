@@ -402,7 +402,15 @@ export function gridLayout(cellCount) {
 
 /** Grid rows/cols are each clamped to this range (1–3 → up to a 3×3 = 9
  *  grid), mirroring the native GRID_DIM_MIN/MAX. The web's earlier
- *  cell-COUNT model is a derived view of this (count = rows × cols). */
+ *  cell-COUNT model is a derived view of this (count = rows × cols).
+ *
+ *  The 3-cap is a DELIBERATE design constraint, not a bug or a feed-width/CSS
+ *  limit (the CSS grid is `repeat(var(--grid-cols), 1fr)` — it would render 4+
+ *  columns fine). It is native parity: the web client mirrors the TV wall, and
+ *  the native wall caps each dim at 3 (legible/performant on a 1080p TV driven
+ *  by the constrained S905Y4). Raising it on web alone would break the "same
+ *  wall on both screens" contract. Do not widen without changing native too.
+ *  See ARCHITECTURE.md (native-vs-web). */
 export const GRID_DIM_MIN = 1;
 export const GRID_DIM_MAX = 3;
 
@@ -460,12 +468,40 @@ export function tickerScrollPxPerSec(basePxPerSec, pct) {
   return Math.max(1, basePxPerSec * (clamped / 100));
 }
 
+// ----- ticker motion mode (cross-platform: continuous crawl vs paged flip) ---
+
+/** The two ticker MOTIONS, offered on BOTH platforms (a single shared setting):
+ *   "crawl" — a continuous horizontal marquee of all the mode's cards (the
+ *             web wall's historical motion);
+ *   "flip"  — one card-group shown at a time, vertically flipping to the next
+ *             on a dwell (the native TV wall's historical motion).
+ *  The DEFAULT differs per platform (web = crawl, Android = flip) to preserve
+ *  each wall's established feel; the operator can switch either to the other. */
+export const TICKER_MOTIONS = ["crawl", "flip"];
+
+/** Coerce a stored/edited motion into a valid mode; unknown → the platform
+ *  default the caller passes (web passes "crawl"). Pure. */
+export function tickerMotionOption(value, fallback = "crawl") {
+  return TICKER_MOTIONS.includes(value) ? value : (TICKER_MOTIONS.includes(fallback) ? fallback : "crawl");
+}
+
+/** Base per-group dwell (ms) for the web FLIP motion at 100% speed — mirrors
+ *  the native BASE_DWELL_MS feel. The ticker-speed percent scales it: a higher
+ *  percent shortens the dwell (faster flips), clamped so a busy poll/extreme
+ *  pref can't drive it to zero. Pure. */
+export const TICKER_FLIP_BASE_DWELL_MS = 9000;
+export function tickerFlipDwellMs(pct, base = TICKER_FLIP_BASE_DWELL_MS, min = 2500) {
+  const clamped = clampTickerSpeedPct(pct);
+  return Math.max(min, Math.round(base * 100 / clamped));
+}
+
 // ----- view-prefs normalize / serialize (browser-local, pure + testable) -----
 
 /** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
 export const DEFAULT_VIEW_PREFS = {
   gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
   tickerNews: false, feedRecency: "all", tickerScrollPct: 100,
+  tickerMotion: "crawl",   // web default; Android defaults to "flip"
   hidden: [], hiddenLeagues: [], assignments: {},
 };
 
@@ -494,6 +530,7 @@ export function normalizeViewPrefs(raw) {
     tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
     tickerScrollPct: clampTickerSpeedPct(p.tickerScrollPct ?? DEFAULT_VIEW_PREFS.tickerScrollPct),
+    tickerMotion: tickerMotionOption(p.tickerMotion),   // unknown → web default "crawl"
     hidden: Array.isArray(p.hidden) ? p.hidden.map(String) : [],
     hiddenLeagues: Array.isArray(p.hiddenLeagues) ? p.hiddenLeagues.map(String) : [],
     assignments: (p.assignments && typeof p.assignments === "object") ? p.assignments : {},
@@ -513,6 +550,7 @@ export function serializeViewPrefs(prefs) {
     feedPct: p.feedPct, feedFont: p.feedFont,
     tickerNews: p.tickerNews, feedRecency: p.feedRecency,
     tickerScrollPct: p.tickerScrollPct,
+    tickerMotion: p.tickerMotion,
     hidden: p.hidden instanceof Set ? [...p.hidden] : p.hidden,
     hiddenLeagues: p.hiddenLeagues instanceof Set ? [...p.hiddenLeagues] : p.hiddenLeagues,
     assignments: p.assignments,

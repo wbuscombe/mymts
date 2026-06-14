@@ -944,6 +944,53 @@ A second hands-on pass refined the web client and corrected a video diagnosis.
 - **Click-to-pick channels.** A cell is a click target → a channel picker (`app.mjs::openPicker`) listing every channel with an honest badge (plays-in-browser / on-the-TV-wall-only / offline), browser-playable first, plus "Clear this cell". The tile labels its channel and shows a "click to change" chip; empty cells show "＋ Add channel".
 - **Mixed-content honesty (no proxy).** Diagnosis (finding 16) showed all 10 live channels are HTTPS-clean **and** CORS-allowed — so mixed content is *not* why tiles were blank for the current set. Reported truthfully. The suspected real cause — hls.js's `blob:` worker blocked by the locked CSP — is fixed with **`enableWorker:false`** (no CSP widening) plus a click-to-play autoplay fallback. The honest **play-what-works** system is built regardless: the helper classifies a per-channel `browser_playable` hint (`channels/prober.py::classify_browser_playable`, migration 002, on `/api/channels`) by scanning the master+variant bodies for `http://`; the client uses the tri-state `browserPlayability` hint **and** the runtime `<video>` load result (the ground truth, which also catches CORS/geo/dead) to flip a failing tile to the honest "on the TV wall" state. The helper never proxies video — it stays the resolver/shield; the **TV remains the full-fidelity client**.
 
+### Native vs web: why the TV is the full-fidelity client (Browser Client Refocus, 2026-06-13)
+
+The two clients are **not** peers, and the web client is honest about that. The
+native wall plays HLS with Media3/**ExoPlayer**, which has none of a browser's
+playback limits: no mixed-content block, no CORS gate on manifests, no missing
+codec/DRM support, no autoplay policy. The web client plays the *same* helper-
+resolved public URLs with vendored **hls.js** (or Safari's native HLS) inside a
+locked same-origin CSP — so a real subset of channels the TV plays cleanly
+simply **cannot** play in a browser. **The dead web tiles are the evidence of
+the boundary, not a bug to chase away.** The helper never proxies the video to
+erase the gap (that would make it a gateway, breaking the no-proxy / SSRF-shield
+posture) — so the TV stays the full-fidelity client by construction.
+
+The refocus made the web client *honest and self-healing about that boundary*
+instead of leaving dead tiles:
+
+- **Auto-recovery that knows why it failed (Part 1).** `render.mjs::classify
+  VideoFailure` (pure, unit-tested) splits a failure into **transient** (network
+  blip / decode hiccup / a new stall watchdog firing → worth a fresh attempt) vs
+  **genuinely-unplayable** (DRM / codec / no-browser-HLS / unsupported source → a
+  browser can never play it). `videoRetryDecision` retries the transient class on
+  an exponential backoff (2→4→8→16s, cap 30s) up to a bounded `VIDEO_MAX_RETRIES`,
+  then falls to the honest terminal state with reason `exhausted` — **never an
+  infinite retry on a hopeless stream.** A genuinely-unplayable failure is marked
+  immediately with reason-specific honest copy ("Protected stream (DRM) — on the
+  TV wall", etc.), never retried. Manual escape hatches: a per-tile ↻ and a
+  whole-wall ↻ (keyboard-accessible). DOM orchestration (`video.mjs`/`app.mjs`)
+  uses a per-attach generation guard so a late event from a superseded handle
+  can't resurrect a torn-down tile or cancel a pending reconnect.
+- **Grid cap is native parity, not a limit to lift (Part 2).** The web grid is
+  rows × cols, each clamped **1–3** (`GRID_DIM_MAX`, up to 3×3 = 9) — the *same*
+  clamp as the native `WallSettings`. This is a deliberate constraint mirroring
+  the TV wall (legible/performant on a 1080p panel driven by the constrained
+  S905Y4), **not** a feed-width or CSS limit (the CSS grid is `repeat(var(--grid-
+  cols), 1fr)` and would render more fine). Raising it on web alone would break
+  the "same wall on both screens" contract; it is documented in-product (the
+  settings note) and in code rather than widened. *(This supersedes the older
+  cell-count rework note above, which let the web "go past 4" under the retired
+  `gridSize` model.)*
+- **Ticker motion is one cross-platform setting (Part 3).** Both motions now
+  exist on **both** clients: the web wall's continuous **crawl** and the native
+  wall's paged **flip** (`TickerMotion` / web `tickerMotion` pref). Only the
+  per-platform **default** differs (web = crawl, native = flip), preserving each
+  wall's established feel; the operator can switch either. The web side ships;
+  the native side is **built + unit-tested but not yet deployed** — it rides the
+  next on-device (`.92`) release, the same as any native-wall change.
+
 ### Remote access is a deferred future chapter
 
 Exposing the web client beyond the LAN — a genuinely separate public

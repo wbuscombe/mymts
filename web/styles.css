@@ -30,6 +30,12 @@ body { display: flex; flex-direction: column; }
   white-space: nowrap; will-change: transform; animation: ticker-scroll linear infinite; }
 @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .ticker-bar:hover .ticker-track { animation-play-state: paused; }  /* hover to read */
+/* FLIP motion (native-parity, opt-in via the Ticker motion setting): the crawl
+   is OFF; one card-group shows at a time and vertically flips to the next. */
+.ticker-track.flip { animation: none !important; transform: none; }
+.ticker-track.flip > * { animation: ticker-flip-in 320ms ease-out; }
+@keyframes ticker-flip-in { from { transform: translateY(70%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ticker-track.flip > * { animation: none; } }
 
 /* A league/market run: the marker shows ONCE, then its cards follow. Each
    card is a discrete bordered cell — the native model where the card IS the

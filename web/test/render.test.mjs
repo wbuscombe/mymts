@@ -46,6 +46,9 @@ import {
   TICKER_SPEED_MAX_PCT,
   clampTickerSpeedPct,
   tickerScrollPxPerSec,
+  TICKER_MOTIONS,
+  tickerMotionOption,
+  tickerFlipDwellMs,
   DEFAULT_VIEW_PREFS,
   normalizeViewPrefs,
   serializeViewPrefs,
@@ -629,6 +632,7 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   assert.equal(d.tickerNews, false);            // load-bearing: OFF unless explicit true
   assert.equal(d.feedRecency, "all");
   assert.equal(d.tickerScrollPct, 100);
+  assert.equal(d.tickerMotion, "crawl");        // web default motion
   assert.deepEqual(d.hidden, []); assert.deepEqual(d.hiddenLeagues, []);
   assert.deepEqual(d.assignments, {});
   // Matches the exported default shape.
@@ -660,6 +664,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   const live = {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
+    tickerMotion: "flip",
     hidden: new Set(["BBC", "Reuters"]),
     hiddenLeagues: new Set(["NBA"]),
     assignments: { 0: "espn", 1: "tnt" },
@@ -670,6 +675,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   assert.deepEqual(reread, {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
+    tickerMotion: "flip",
     hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],
     assignments: { 0: "espn", 1: "tnt" },
   });
@@ -684,6 +690,32 @@ test("PERSISTENCE: a tampered/garbage blob normalizes to safe honest defaults", 
   assert.deepEqual(serializeViewPrefs(normalizeViewPrefs(null)), DEFAULT_VIEW_PREFS);
   assert.equal(normalizeViewPrefs({ hidden: "BBC" }).hidden.length, 0);   // non-array denylist → empty
   assert.equal(normalizeViewPrefs({ hiddenLeagues: 5 }).hiddenLeagues.length, 0);
+});
+
+// ----- ticker motion (cross-platform setting: crawl vs flip) -----
+
+test("tickerMotionOption: valid modes pass; unknown → the platform default", () => {
+  assert.deepEqual(TICKER_MOTIONS, ["crawl", "flip"]);
+  assert.equal(tickerMotionOption("crawl"), "crawl");
+  assert.equal(tickerMotionOption("flip"), "flip");
+  assert.equal(tickerMotionOption("bogus"), "crawl");        // web default
+  assert.equal(tickerMotionOption(undefined), "crawl");
+  assert.equal(tickerMotionOption("bogus", "flip"), "flip"); // Android passes its own default
+  assert.equal(tickerMotionOption(null, "nonsense"), "crawl"); // bad fallback → safe "crawl"
+});
+
+test("tickerMotionOption: normalizeViewPrefs defaults motion to crawl, keeps an explicit flip", () => {
+  assert.equal(normalizeViewPrefs({}).tickerMotion, "crawl");
+  assert.equal(normalizeViewPrefs({ tickerMotion: "flip" }).tickerMotion, "flip");
+  assert.equal(normalizeViewPrefs({ tickerMotion: "spin" }).tickerMotion, "crawl"); // tamper → safe
+});
+
+test("tickerFlipDwellMs: scales with speed pct, clamped, never zero", () => {
+  assert.equal(tickerFlipDwellMs(100), 9000);                 // base at 100%
+  assert.ok(tickerFlipDwellMs(200) < tickerFlipDwellMs(100)); // faster speed → shorter dwell
+  assert.ok(tickerFlipDwellMs(40) > tickerFlipDwellMs(100));  // slower speed → longer dwell
+  assert.ok(tickerFlipDwellMs(99999) >= 2500);                // floor holds against an extreme pref
+  assert.ok(tickerFlipDwellMs(-5) >= 2500);                   // non-finite/out-of-range → clamped, positive
 });
 
 // ----- feed story detail / expand (Campaign 4.1) -----

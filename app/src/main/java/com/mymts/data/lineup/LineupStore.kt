@@ -21,6 +21,8 @@ import com.mymts.data.settings.feedSideFromOrdinal
 import com.mymts.data.settings.feedWidthFromOrdinal
 import com.mymts.data.settings.overscanFromOrdinal
 import com.mymts.data.settings.uiScaleFromOrdinal
+import com.mymts.data.settings.TickerMotion
+import com.mymts.data.settings.tickerMotionFromOrdinal
 import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.clampOffsetDp
 import com.mymts.data.settings.FIT_SCALE_MAX_PCT
@@ -124,6 +126,7 @@ class LineupStore(context: Context) {
             .putInt(KEY_GRID_COLS, settings.gridCols)
             .putInt(KEY_TICKER_SCROLL, settings.tickerScrollPct)
             .putInt(KEY_TICKER_FLIP, settings.tickerFlipPct)
+            .putInt(KEY_TICKER_MOTION, settings.tickerMotion.ordinal)
             .apply()
     }
 
@@ -210,6 +213,13 @@ class LineupStore(context: Context) {
     fun nudgeTickerFlip(delta: Int) {
         val next = clampTickerSpeedPct(_wallSettings.value.tickerFlipPct + delta)
         updateWallSettings(_wallSettings.value.copy(tickerFlipPct = next))
+    }
+
+    /** Cycle the ticker MOTION (Flip ⇄ Crawl) — the cross-platform setting; the
+     *  wall re-renders into the chosen motion live. */
+    fun cycleTickerMotion() {
+        val next = TickerMotion.values().let { it[(_wallSettings.value.tickerMotion.ordinal + 1) % it.size] }
+        updateWallSettings(_wallSettings.value.copy(tickerMotion = next))
     }
 
     /** Advance the recency window (All → 1h → 6h → 24h → All). */
@@ -373,6 +383,7 @@ class LineupStore(context: Context) {
         private const val KEY_GRID_COLS = "wall_settings_grid_cols"
         private const val KEY_TICKER_SCROLL = "wall_settings_ticker_scroll_pct"
         private const val KEY_TICKER_FLIP = "wall_settings_ticker_flip_pct"
+        private const val KEY_TICKER_MOTION = "wall_settings_ticker_motion"
         private const val TAG = "MyMTS.LineupStore"
 
         /**
@@ -399,7 +410,8 @@ class LineupStore(context: Context) {
                 !contains(KEY_OFFSET_Y) && !contains(KEY_CALIBRATION) &&
                 !contains(KEY_FIT_SCALE) && !contains(KEY_FIT_STRETCH_Y) &&
                 !contains(KEY_GRID_ROWS) && !contains(KEY_GRID_COLS) &&
-                !contains(KEY_TICKER_SCROLL) && !contains(KEY_TICKER_FLIP)
+                !contains(KEY_TICKER_SCROLL) && !contains(KEY_TICKER_FLIP) &&
+                !contains(KEY_TICKER_MOTION)
             ) {
                 return WallSettings.Default
             }
@@ -427,6 +439,8 @@ class LineupStore(context: Context) {
                 // Clamp on read — a corrupt speed can't make the ticker unreadable.
                 tickerScrollPct = clampTickerSpeedPct(getInt(KEY_TICKER_SCROLL, 100)),
                 tickerFlipPct = clampTickerSpeedPct(getInt(KEY_TICKER_FLIP, 100)),
+                // Corrupt/out-of-range ordinal → the Android default (Flip).
+                tickerMotion = tickerMotionFromOrdinal(getInt(KEY_TICKER_MOTION, TickerMotion.Flip.ordinal)),
             )
         }
 

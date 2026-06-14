@@ -5,6 +5,7 @@ import com.mymts.data.settings.FIT_SCALE_MAX_PCT
 import com.mymts.data.settings.FIT_STRETCH_Y_MAX_PCT
 import com.mymts.data.settings.OFFSET_RANGE_DP
 import com.mymts.data.settings.Overscan
+import com.mymts.data.settings.TickerMotion
 import com.mymts.data.settings.UiScale
 import com.mymts.data.settings.WallSettings
 import org.junit.Assert.assertEquals
@@ -127,5 +128,26 @@ class LineupStoreWallSettingsResolveTest {
         assertEquals(Overscan.Medium, s.overscan)
         assertEquals(UiScale.Default, s.uiScale)
         assertEquals(FeedWidth.Default, s.feedWidth)
+        assertEquals(TickerMotion.Flip, s.tickerMotion)   // absent → native default
+    }
+
+    @Test fun `ticker motion is read from its own key (default Flip when absent)`() {
+        // getInt returns Crawl's ordinal ONLY for the ticker-motion key → proves
+        // the resolver wired motion to its own pref (not, say, the feed-side int).
+        val crawl = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { key, d -> if (key.contains("ticker_motion")) TickerMotion.Crawl.ordinal else d },
+            getStringSet = { emptySet() },
+            getBoolean = { _, d -> d },
+        )
+        assertEquals(TickerMotion.Crawl, crawl.tickerMotion)
+        // A corrupt/out-of-range stored ordinal falls back to the default (Flip).
+        val corrupt = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { key, d -> if (key.contains("ticker_motion")) 999 else d },
+            getStringSet = { emptySet() },
+            getBoolean = { _, d -> d },
+        )
+        assertEquals(TickerMotion.Flip, corrupt.tickerMotion)
     }
 }

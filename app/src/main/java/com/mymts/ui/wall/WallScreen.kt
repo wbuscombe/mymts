@@ -363,6 +363,7 @@ fun WallScreen(
                 paused = focus.tickerPaused,
                 scrollPct = wallSettings.tickerScrollPct,
                 flipPct = wallSettings.tickerFlipPct,
+                motion = wallSettings.tickerMotion,
             )
             Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
             // Compose three children — the feed pane, a thin divider,
@@ -514,6 +515,7 @@ fun WallScreen(
                 onNudgeGridCols = { delta -> lineupStore.nudgeGridCols(delta) },
                 onNudgeTickerScroll = { delta -> lineupStore.nudgeTickerScroll(delta) },
                 onNudgeTickerFlip = { delta -> lineupStore.nudgeTickerFlip(delta) },
+                onCycleTickerMotion = { lineupStore.cycleTickerMotion() },
                 onRefreshAllVideo = { requestReconnect(-1) },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
                 onCancel = { menu.dismissSelection() },

@@ -16,6 +16,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -38,12 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.data.settings.TickerMotion
 import com.mymts.data.ticker.SportCard
 import com.mymts.data.ticker.TickerEntry
 import com.mymts.data.ticker.TickerGame
@@ -51,18 +54,25 @@ import com.mymts.data.ticker.TickerSource
 import kotlinx.coroutines.delay
 
 /**
- * Top-of-wall ticker — a whole-ticker **paged flip** (2026-06-11).
+ * Top-of-wall ticker — a whole-ticker **paged flip** (2026-06-11), or a
+ * continuous horizontal **crawl** when the operator picks that motion
+ * (cross-platform parity, 2026-06-13).
  *
- * Every mode is a flip page with the SAME motion: the market quotes are one
- * carded page, each sports league is its own page (BottomLine game cards), news
- * is one page — and the strip flips between them all (markets → league blocks →
- * back) with a single hold-then-flip animation. A page wider than the panel
- * scrolls horizontally (a marquee); the flip happens between pages. Consistent
- * bordered-card visual language across markets + sports.
+ * FLIP (the default): every mode is a flip page with the SAME motion — the
+ * market quotes are one carded page, each sports league is its own page
+ * (BottomLine game cards), news is one page — and the strip flips between them
+ * all (markets → league blocks → back) with a single hold-then-flip animation.
+ * A page wider than the panel scrolls horizontally; the flip happens between
+ * pages.
  *
- * Honesty (C3): sample entries keep the SAMPLE pill (on market cards + game
- * cards); aged real data shows the STALE pill; a mode with nothing real falls
- * back to its honest line. Nothing is fabricated.
+ * CRAWL ([TickerMotion.Crawl], the web wall's motion offered here too): all the
+ * pages' cards are laid out in ONE row, each behind its inline marker, and the
+ * whole strip scrolls left continuously (a seamless marquee — a duplicated copy
+ * makes the one-copy-width loop seamless, the same trick the web client uses).
+ *
+ * Both motions share the bordered-card visual language. Honesty (C3): sample
+ * entries keep the SAMPLE pill, aged real data shows the STALE pill, a mode with
+ * nothing real falls back to its honest line. Nothing is fabricated.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -73,6 +83,7 @@ fun TickerStrip(
     paused: Boolean = false,
     scrollPct: Int = 100,
     flipPct: Int = 100,
+    motion: TickerMotion = TickerMotion.Flip,
 ) {
     val entries by source.state.collectAsState()
     val stale by source.stale.collectAsState()
@@ -90,11 +101,17 @@ fun TickerStrip(
         if (entries.isEmpty()) return@Box // C2: empty source = empty strip.
         val pages = remember(entries) { TickerPaging.pagesFor(entries) }
         if (pages.isEmpty()) return@Box
-        PagedTicker(
-            pages, stale = stale, paused = paused,
-            scrollPct = scrollPct, flipPct = flipPct,
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
+        when (motion) {
+            TickerMotion.Crawl -> CrawlTicker(
+                pages, stale = stale, paused = paused, scrollPct = scrollPct,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            TickerMotion.Flip -> PagedTicker(
+                pages, stale = stale, paused = paused,
+                scrollPct = scrollPct, flipPct = flipPct,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
     }
 }
 
@@ -187,6 +204,111 @@ private fun PagedTicker(
         modifier = modifier,
     ) { page ->
         PageRow(page, stale = stale, paused = paused, scrollPct = scrollPct, dwellMs = dwellMs)
+    }
+}
+
+/**
+ * Pure duration policy for the CRAWL motion: how long one copy of the
+ * concatenated content takes to scroll a full copy-width at the configured
+ * velocity. Returns ms (>=1 when there's width to scroll; 0 when there isn't).
+ * Pure — no Compose — so the pacing is unit-testable.
+ */
+internal fun crawlDurationMs(copyWidthPx: Int, velocityDpPerSec: Float, density: Float): Int {
+    if (copyWidthPx <= 0) return 0
+    val pxPerSec = (velocityDpPerSec * density).coerceAtLeast(1f)
+    return (copyWidthPx / pxPerSec * 1000f).toInt().coerceAtLeast(1)
+}
+
+/**
+ * CRAWL motion — all pages' cards laid out in ONE row (each behind its inline
+ * marker), scrolling left continuously. Two identical copies are laid out so a
+ * scroll of exactly ONE copy-width loops seamlessly (copy 2 lands where copy 1
+ * began — the web client's 0→-50% trick). The second copy is added only once
+ * we've measured that one copy overflows the strip; if it fits, the row holds
+ * static (nothing to crawl). Honest pills ride the cards unchanged.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CrawlTicker(
+    pages: List<TickerPaging.Page>,
+    stale: Boolean,
+    paused: Boolean,
+    scrollPct: Int,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current.density
+    val scrollState = rememberScrollState()
+    var copyWidthPx by remember(pages) { mutableIntStateOf(0) }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
+        val viewportPx = with(LocalDensity.current) { maxWidth.roundToPx() }
+        val overflow = copyWidthPx > 0 && copyWidthPx >= viewportPx
+        Row(
+            modifier = Modifier.fillMaxHeight().horizontalScroll(scrollState, enabled = false),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (paused) PausedChip()
+            CrawlContent(pages, modifier = Modifier.onGloballyPositioned { copyWidthPx = it.size.width })
+            if (overflow) CrawlContent(pages)   // second copy only when it will actually scroll
+        }
+        // Staleness flag pinned to the RIGHT edge (same as the flip motion).
+        if (stale) StaleChip(modifier = Modifier.align(Alignment.CenterEnd))
+    }
+
+    // Drive the continuous scroll: 0 → one copy-width, linearly, forever. Paused
+    // = no scroll. Re-keys on the measured width + speed so a live change applies.
+    LaunchedEffect(pages, scrollPct, paused, copyWidthPx) {
+        if (paused) { scrollState.scrollTo(0); return@LaunchedEffect }
+        val w = copyWidthPx
+        if (w <= 0) return@LaunchedEffect       // not laid out yet (re-runs when measured)
+        val velocityDp = (BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)).value
+        val durMs = crawlDurationMs(w, velocityDp, density)
+        while (true) {
+            scrollState.scrollTo(0)
+            // If one copy doesn't overflow, maxValue can't reach a full copy-
+            // width → nothing to crawl; idle and re-check (content/size may grow).
+            if (scrollState.maxValue < w) { delay(1000); continue }
+            scrollState.animateScrollTo(w, tween(durationMillis = durMs, easing = LinearEasing))
+        }
+    }
+}
+
+/** One copy of the crawl content: every page's inline marker followed by its
+ *  cards, concatenated in flip-order (markets → leagues → news). */
+@Composable
+private fun CrawlContent(pages: List<TickerPaging.Page>, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxHeight(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        pages.forEach { page ->
+            CrawlMarker(page.markerLabel)
+            when (page) {
+                is TickerPaging.Markets -> page.quotes.forEach { MarketCard(it) }
+                is TickerPaging.League -> page.block.games.forEach { SportsEntryCard(it) }
+                is TickerPaging.News -> page.items.forEach { NewsCard(it) }
+            }
+        }
+    }
+}
+
+/** Inline league/market/news marker for the crawl — a compact green bug (the
+ *  flip motion uses a full-height pinned curtain instead). */
+@Composable
+private fun CrawlMarker(label: String) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(WallColors.BadgeLive).padding(horizontal = 6.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = Color(0xFF000000),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+            maxLines = 1,
+        )
     }
 }
 

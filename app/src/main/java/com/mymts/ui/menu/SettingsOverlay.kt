@@ -101,6 +101,7 @@ fun SettingsOverlay(
     onNudgeGridCols: (Int) -> Unit,
     onNudgeTickerScroll: (Int) -> Unit,
     onNudgeTickerFlip: (Int) -> Unit,
+    onCycleTickerMotion: () -> Unit,
     onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
@@ -140,6 +141,7 @@ fun SettingsOverlay(
                 onNudgeGridCols = onNudgeGridCols,
                 onNudgeTickerScroll = onNudgeTickerScroll,
                 onNudgeTickerFlip = onNudgeTickerFlip,
+                onCycleTickerMotion = onCycleTickerMotion,
                 onRefreshAllVideo = onRefreshAllVideo,
                 onToggleCalibration = onToggleCalibration,
                 onCancel = onCancel,
@@ -169,6 +171,7 @@ private fun SettingsCard(
     onNudgeGridCols: (Int) -> Unit,
     onNudgeTickerScroll: (Int) -> Unit,
     onNudgeTickerFlip: (Int) -> Unit,
+    onCycleTickerMotion: () -> Unit,
     onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
     onCancel: () -> Unit,
@@ -313,6 +316,13 @@ private fun SettingsCard(
         // Scroll/flip speed sliders (D-pad LEFT/RIGHT steps the percent; the
         // wall updates live). Bounded so neither gets unreadably fast/slow.
         SectionHeader("Ticker")
+        // Motion (cross-platform setting): Flip is the wall's established paged
+        // flip; Crawl is the web wall's continuous marquee, offered here too.
+        SettingRow(
+            title = "Ticker motion",
+            valueLabel = settings.tickerMotion.displayName,
+            onCycle = onCycleTickerMotion,
+        )
         AdjustRow(
             title = "Scroll speed  ‹ slower · faster ›",
             valueLabel = "${settings.tickerScrollPct}%",

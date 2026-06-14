@@ -262,6 +262,20 @@ class WallSettingsTest {
         assertEquals(3, clampGridDim(3))
     }
 
+    @Test fun `ticker motion defaults to Flip (native wall feel) and ordinal round-trips`() {
+        // Android's established motion is the paged flip; the operator can switch
+        // to the web wall's crawl. The web client mirrors this setting (its
+        // default is the opposite, Crawl).
+        assertEquals(TickerMotion.Flip, WallSettings.Default.tickerMotion)
+        assertEquals(TickerMotion.Flip, tickerMotionFromOrdinal(TickerMotion.Flip.ordinal))
+        assertEquals(TickerMotion.Crawl, tickerMotionFromOrdinal(TickerMotion.Crawl.ordinal))
+        // A corrupt/out-of-range stored ordinal falls back to the default (Flip).
+        assertEquals(TickerMotion.Flip, tickerMotionFromOrdinal(99))
+        assertEquals(TickerMotion.Flip, tickerMotionFromOrdinal(-1))
+        // Two distinct motions exist (the setting is a real choice, both platforms).
+        assertNotEquals(WallSettings.Default, WallSettings.Default.copy(tickerMotion = TickerMotion.Crawl))
+    }
+
     @Test fun `vertical stretch defaults to 100 (none) and clamps to range`() {
         assertEquals(100, WallSettings.Default.fitStretchYPct)
         assertEquals(FIT_STRETCH_Y_MIN_PCT, WallSettings.Default.fitStretchYPct)
