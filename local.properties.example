@@ -1,0 +1,22 @@
+# local.properties — gitignored, per-machine. NONE of this is required for the
+# demo: the app defaults its helper host to http://localhost:8091, and Android
+# Studio writes `sdk.dir` for you. Copy a line below into your real
+# `local.properties` (gitignored) ONLY if you need to override a default.
+
+# Android SDK location. Android Studio auto-generates this on first open, so you
+# usually never set it by hand. If you build from the CLI without Studio, point
+# it at your SDK (or set the ANDROID_HOME / ANDROID_SDK_ROOT env var instead):
+# sdk.dir=/absolute/path/to/Android/sdk
+
+# Helper host the TV app talks to. Optional — defaults to http://localhost:8091
+# (a locally-run helper, the demo path). Set it to your helper's LAN URL to point
+# a device/emulator at a real helper. Resolution order: a -P gradle property >
+# this local.properties value > the localhost default. No topology is committed.
+#   - emulator → host's localhost is 10.0.2.2:  http://10.0.2.2:8091
+#   - real device on the same Wi-Fi:             http://<your-machine-LAN-ip>:8091
+#   - an HTTPS helper:                           https://<helper-host>:8443
+# MYMTS_HELPER_BASE_URL=http://10.0.2.2:8091
+
+# NOTE: release SIGNING is configured separately in app/keystore.properties
+# (see app/keystore.properties.example) — debug builds (installDebug, the
+# collaborator path) need no signing config and no entry here.

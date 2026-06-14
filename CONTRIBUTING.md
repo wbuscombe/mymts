@@ -1,10 +1,13 @@
 # Contributing
 
-> **Status (Stage 0):** Skeleton — the operator's standing standards captured here so they apply from the first commit. Stage-specific guidance (build commands, test commands) lands when the toolchain does.
+> **Status: active.** The toolchain is built and operational. The fastest way
+> from a clone to a running wall is [`ONBOARDING.md`](ONBOARDING.md) (demo mode,
+> no secrets). Build/test commands are below and in the README; CI enforces them
+> on every push (`.github/workflows/ci.yml`).
 
 ## Read this first
 
-Before you touch anything, read the foundation docs:
+The vision + trust posture (when in doubt, these win):
 
 1. `docs/foundation/01-VISION.md`
 2. `docs/foundation/02-TRUST-BAR.md`
@@ -12,13 +15,18 @@ Before you touch anything, read the foundation docs:
 4. `docs/foundation/04-TECHNICAL-APPROACH.md`
 5. `docs/foundation/00-READING.md` — anti-drift restatement + precedence order.
 
-Then the engineering brief: `docs/BUILD-PROMPT.md`.
+Then the engineering brief: `docs/BUILD-PROMPT.md`, and [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the pieces fit.
 
-When in doubt, the foundation docs win.
+The operational guardrails every contribution must honor (load-bearing — read them):
+
+- [`AGENTS.md`](AGENTS.md) — the protected invariants + the deploy-safety rules (e.g. the adb deploy invariant; never touch the unrelated VPN container on the host).
+- [`MAINTENANCE-CHARTER.md`](MAINTENANCE-CHARTER.md) — the continuous-quality platform: the **ENFORCED** `docs-hygiene` CI gate (no topology / personal-config leakage in public docs) + the **RITUAL** layer.
+- [`docs/PHASE-END-CHECKLIST.md`](docs/PHASE-END-CHECKLIST.md) — the judgment checks to run when closing a phase (docs-vs-reality, screenshots, fail-safe contracts, …).
 
 ## Commits
 
 - **Conventional commits.** Types: `feat`, `fix`, `docs`, `chore`, `test`, `security`, `refactor`, `perf`, `build`, `ci`.
+- Scope by the component you touched where it helps: `feat(helper): …`, `feat(web): …`, app changes usually unscoped. For a change spanning components, scope to the primary one and note the rest in the body.
 - One logical change per commit. The body explains *why*, not what (the diff explains what).
 - `BREAKING CHANGE:` footer required for any change that breaks the operator's stored data or the helper API contract.
 
@@ -31,8 +39,14 @@ When in doubt, the foundation docs win.
 ## Tests
 
 - TDD as the default. Critical paths and the trust-boundary behaviors **must** have tests.
-- Single-command test runner documented in README at each stage. No flaky or expected-to-fail tests in the suite.
-- Tests run green before any commit and before any release.
+- No flaky or expected-to-fail tests in the suite. Tests run green before any commit and before any release.
+- Run them locally before opening a PR (the same suites CI runs on every push):
+  ```bash
+  cd helper && uv run pytest          # helper: pytest + the zero-egress phantom contract
+  ./gradlew :app:testReleaseUnitTest  # native app: JVM unit tests
+  node --test web/test/*.test.mjs     # web client: pure render/honesty logic (no deps)
+  ```
+- The **web client** is served by the helper at `/app` (LAN-only, credential-free, same-origin); its honesty/render logic is unit-tested above and its DOM is verified against demo mode. See [`web/README.md`](web/README.md). The full walkthrough for running everything is [`ONBOARDING.md`](ONBOARDING.md).
 
 ## Code style
 

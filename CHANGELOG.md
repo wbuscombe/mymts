@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## docs: collaborator-readiness audit — CONTRIBUTING currency + complete config scaffolding (2026-06-14)
+
+A narrow, audit-first doc-currency pass scoped to **collaborator-readiness** (a new contributor is joining), not the full professionalization sweep. Audited four areas; fixed the two that were PARTIAL. No deploy, no code-behavior change.
+
+- **Feature doc-currency — PASS (no fix needed).** The six recently-shipped features (news-story expand, web video auto-recovery + manual refresh, the cross-platform ticker-motion setting, the M3U/playlist endpoint + profiles, the per-sport web cards, the schema guard) are all documented accurately in README / ARCHITECTURE / CHANGELOG, including the **honest** "web-shipped / Android-ticker-rides-the-next-.92-deploy" caveat (verified against the actual code, not the docs' self-description).
+- **Onboarding currency — fixed `CONTRIBUTING.md`.** It was stale: still labelled "Stage 0 — skeleton, build/test commands land when the toolchain does" (the toolchain landed long ago). Updated to **active**; added the real local test commands (`uv run pytest` · `./gradlew :app:testReleaseUnitTest` · `node --test web/test/*.test.mjs` — the same suites CI runs); added the **operational-guardrail pointers** a contributor must know (AGENTS.md invariants, the MAINTENANCE-CHARTER docs-hygiene gate, the phase-end checklist); added the **web client** (served at `/app`, how it's tested) and commit-scoping guidance. ONBOARDING.md + the `docs/onboarding/` prompts + the README quickstart were already accurate (confirmed).
+- **Config scaffolding — completed the templates.** `helper/.env.example` was missing **9** env vars `config.py` actually reads (`DATA_DIR`, the feed/channel/markets/sports poll intervals, `FEED_RETENTION_DAYS`, and the Stage-6 TLS trio `HTTPS_PORT`/`SSL_KEYFILE`/`SSL_CERTFILE`) — all OPTIONAL with safe defaults (the helper still boots from a fresh clone with no `.env`), now documented so every knob is discoverable. Added **`local.properties.example`** (the optional `MYMTS_HELPER_BASE_URL` helper-host override; clarifies `sdk.dir` is auto-managed by Android Studio and signing lives in `keystore.properties`). Added `MYMTS_ARCHIVE_DIR` to `scripts/deploy.local.env.example`. And a **new guard test** (`test_config_env_example.py`) asserts `.env.example` stays complete vs `config.py` — turning this audit-time catch into an enforced check so it can't drift again.
+- **Demo-boots-clean — PASS (verified live).** From a clean state the README quickstart (`cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper`) boots in ~1s with `phantom:true`, no secrets/NAS; `/health` + `/app/` respond; 21 channels; the vendored `hls.min.js` is served (offline-capable); the recent web features (news-expand, video-recovery refresh, ticker-motion) are live and introduced no fresh-clone dependency; `/api/playlist.m3u` returns valid M3U.
+
+Audit ran as a parallel multi-agent fan-out (the four areas); each finding verified against the actual code before fixing. docs-hygiene gate green. No deploy this pass (the helper redeploy that lights up the committed web features live is the next, separate step).
+
 ## feat: Browser Client Refocus — web video auto-recovery · ticker-motion parity · grid-cap + native-vs-web rationale (2026-06-14)
 
 A four-part pass making the LAN web client an honest, self-healing peer of the TV wall — and documenting *why* the two clients differ where they do.
