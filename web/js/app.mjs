@@ -614,13 +614,17 @@ function showDeadVideo(cell, label, reason) {
   s.appendChild(node("div", "big", "○"));
   s.appendChild(node("div", "head", label));
   s.appendChild(node("div", "sub", deadReasonCopy(reason)));
-  tile.appendChild(s);
-  tile.appendChild(node("span", "tile-dot dot-offline"));
+  // A large, centered ↻ directly UNDER the status text — an obvious "tap to
+  // retry" affordance. It lives INSIDE the centered .tile-state column (not the
+  // old bottom-right corner), so the stack reads ○ → name → status → ↻. This
+  // treatment is only on the no-video dead tiles, so it never covers playback.
   const refresh = node("button", "tile-refresh", "↻");
   refresh.title = "Reconnect this tile";
   refresh.setAttribute("aria-label", "Reconnect this tile");
   refresh.onclick = (e) => { e.stopPropagation(); refreshCell(cell); };
-  tile.appendChild(refresh);
+  s.appendChild(refresh);
+  tile.appendChild(s);
+  tile.appendChild(node("span", "tile-dot dot-offline"));
   tile.onclick = () => openPicker(cell.index);
 }
 

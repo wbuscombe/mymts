@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## style(web): enlarge + center the per-tile refresh button under the status on dead tiles (2026-06-14)
+
+Operator polish after using the LAN web wall. On a non-playable tile (the honest "Browser can't play this source — on the TV wall" state), the per-tile **↻** reconnect button was a small bottom-right-corner control — easy to miss. It's now **large (46 px circular, 30 px glyph) and centered directly under the status text**, so the stack reads ○ → channel name → status → ↻ — an obvious "tap to retry" target legible at 10 ft. Purely position + size (`web/js/app.mjs::showDeadVideo` moves the button into the centered `.tile-state` column; `web/styles.css` `.tile-refresh` goes from corner-absolute to in-flow centered); the reconnect **behavior** and hover/focus affordance are unchanged. Scope-guarded: the per-tile ↻ renders **only** on the no-video dead tiles, so it never covers playing video (playing/reconnecting tiles have no per-tile button — the whole-wall ↻ stays in the header). The given-up tile's ring glyph (○) was already static (not a spinner), so the honest-state glyph was left as-is. Web suite 60/60; browser-verified (centered in cell, ≥44 px, under the status); gallery refreshed. Web-static only — CSP / no-proxy / A1 / vendored-hls.js posture untouched.
+
 ## feat(tools): bulletproof scrcpy demo-recording capability (`make record-demo`) (2026-06-14)
 
 A standing repo capability to record a high-quality demo of the **live wall** — native framebuffer capture via [scrcpy](https://github.com/Genymobile/scrcpy) over the existing adb connection (free, no camera, no new hardware, no quality loss). scrcpy **READS the screen only** — no deploy, no app change.

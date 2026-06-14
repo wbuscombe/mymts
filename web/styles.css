@@ -159,11 +159,14 @@ body { display: flex; flex-direction: column; }
 .tile-state.reconnecting .big { color: var(--stale); animation: tile-spin 1.4s linear infinite; }
 @keyframes tile-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tile-state.reconnecting .big { animation: none; } }
-/* per-tile manual reconnect button on a dead tile (keyboard-accessible) */
-.tile-refresh { position: absolute; right: 6px; bottom: 6px; font-size: 12px; line-height: 1;
-  color: var(--label); background: #000000bb; border: 1px solid var(--line); border-radius: 3px;
-  padding: 2px 7px; cursor: pointer; }
-.tile-refresh:hover, .tile-refresh:focus-visible { background: #ffffff22; color: #fff; }
+/* Per-tile manual reconnect button on a dead/unavailable tile (keyboard-
+   accessible). Large + centered, sitting in the .tile-state column directly
+   under the status text — a clear "tap to retry" target readable at 10 ft. Only
+   the no-video dead tiles render it, so it never covers playing video. */
+.tile-refresh { margin-top: 4px; display: inline-flex; align-items: center; justify-content: center;
+  width: 46px; height: 46px; font-size: 30px; line-height: 1; color: var(--label);
+  background: #000000bb; border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
+.tile-refresh:hover, .tile-refresh:focus-visible { background: #ffffff22; color: #fff; border-color: var(--label); }
 
 /* ---- settings + picker modals ---- */
 .modal-scrim { position: fixed; inset: 0; background: #000000cc; display: flex;
