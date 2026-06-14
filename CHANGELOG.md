@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(tools): bulletproof scrcpy demo-recording capability (`make record-demo`) (2026-06-14)
+
+A standing repo capability to record a high-quality demo of the **live wall** — native framebuffer capture via [scrcpy](https://github.com/Genymobile/scrcpy) over the existing adb connection (free, no camera, no new hardware, no quality loss). scrcpy **READS the screen only** — no deploy, no app change.
+
+- **`tools/capture/record-demo.sh`** — one command (`make record-demo`) records the `.92` wall to `tools/capture/output/mymts-demo-<ts>.mkv`. The SCRIPT is bulletproof (fail-fast preflight, actionable errors); the walkthrough is the operator's (drive with the remote or the scrcpy window). Preflight guards: **scrcpy installed** (→ exact per-platform install command), **version ≥ 2.0** (→ upgrade guidance, so it never passes 2.x flags to an old scrcpy), **adb + device connected** (one foreground device-specific reconnect, then actionable failure), and **hard-targets the serial** via scrcpy `-s` from the gitignored `MYMTS_DEPLOY_DEVICE` (the wrong-box guard refuses the `192.0.2.*` placeholder — never falls through to `.182`/`.158`). Conforms to AGENTS.md: **never `kill-server`**, never backgrounds adb. High-quality defaults (H.264/16M/60fps, MKV so a Ctrl-C stop can't corrupt the file; `--h265`/`--mp4`/`--native`/`--audio` toggles). After each run it prints the **VERIFY reminder** — scrcpy captures the framebuffer, so a DRM/protected tile *could* record black; the free news streams are likely fine but the operator must check, not assume.
+- **`tools/capture/README.md`** — the shot list (a tight ~60–90s flow: wall → settings → channel picker → a showcase beat), drive-via-remote-or-computer, the Wi-Fi-vs-USB transport caveat (`RECORD_VIDEO_BUFFER` to smooth jitter; USB for rock-solid), and the verify-the-output step.
+- **`tools/capture/test-preflight.sh`** (`make test-capture`) — stubs scrcpy/adb to prove every guard fires + the happy path reaches the verify reminder, and lints for forbidden adb patterns (no `kill-server`, no backgrounded adb, `-s` hard-target present). Both scripts are **shellcheck-clean**. Recordings are **gitignored** (`tools/capture/output/`) — no binaries committed.
+- A thin root **`Makefile`** provides `make record-demo` / `make test-capture` (the "lazy one-command" entry points).
+
+Repo tooling only — no deploy, no app/`.92` change (scrcpy reads the screen). PIA untouched.
+
 ## docs: collaborator-readiness audit — CONTRIBUTING currency + complete config scaffolding (2026-06-14)
 
 A narrow, audit-first doc-currency pass scoped to **collaborator-readiness** (a new contributor is joining), not the full professionalization sweep. Audited four areas; fixed the two that were PARTIAL. No deploy, no code-behavior change.

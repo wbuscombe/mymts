@@ -17,6 +17,9 @@ item only if it genuinely doesn't apply this phase (and say so).
   mode to refresh `docs/screenshots/web/`.
 - [ ] Flag any **manual/hero shots** now stale (the live-data device shots a tool can't take) with
   their filename/spec for the operator — don't silently leave stale hero shots.
+- [ ] **Demo recording** (semi-manual — can't be fully enforced): if the wall's UI changed notably,
+  flag for the operator that the video demo may be stale — `make record-demo` re-records it (the
+  operator drives the walkthrough). See `tools/capture/`.
 - **Verify:** the committed gallery matches the current UI; the README's screenshot refs still resolve.
 
 ### 2. Docs-vs-reality — the docs describe what actually shipped

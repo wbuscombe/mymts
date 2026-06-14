@@ -181,6 +181,11 @@ placeholders until the real captures land; see [`docs/screenshots/device/`](docs
 | ![Wall hero](docs/screenshots/device/wall-hero.png) | ![Ticker cards close-up](docs/screenshots/device/cards-closeup.png) |
 | ![In situ on a wall display](docs/screenshots/device/in-situ.png) | *The live-data wall running on a dedicated Android TV display — markets ticking, the per-sport cards, real channels playing. An automated tool can't photograph the panel; these are the operator's drop-in shots.* |
 
+**Record a video demo** of the live wall with one command — `make record-demo` captures the
+device screen at native quality over adb (free, via [scrcpy](https://github.com/Genymobile/scrcpy);
+no camera). You drive the menu walkthrough while it records; see
+[`tools/capture/README.md`](tools/capture/README.md) for the shot list.
+
 ---
 
 ## Run it for real

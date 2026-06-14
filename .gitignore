@@ -52,6 +52,9 @@ node_modules/
 dist/
 .npm/
 
+# Demo recordings (tools/capture) — large video binaries, never committed.
+tools/capture/output/
+
 # Python (helper)
 __pycache__/
 *.py[cod]
