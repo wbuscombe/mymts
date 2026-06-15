@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): per-tile controls surface — captions (soft tracks) + single-source audio (2026-06-15)
+
+Each playing video tile gains a transient controls surface (hover on desktop, tap on touch; hidden otherwise — no persistent chrome) — the web analog of the native `SlotControlsOverlay`. It holds **Change · CC · Audio · ↻ (reconnect)**, bringing two native-parity gaps to the browser.
+
+- **(B) Per-tile captions** via the hls.js subtitle API (`subtitleDisplay`/`subtitleTrack`) and the native `<video>` `textTracks`. **Honest about the limit:** only **soft** (separate-track) captions can be toggled; captions **burned into the picture can't be removed**, so a stream with no soft track shows **"CC —"** (a real no-op) rather than a fake "off". Default OFF (matching native). A persisted **wall-wide default** (`prefs.captions`) with a **per-tile session override**.
+- **(C) Per-tile audio** — a single-audible-tile model: enabling a tile **unmutes it and mutes all others** (one audio source, never a cacophony). Tiles autoplay **muted**; unmuting happens on the control **click** (the autoplay-required gesture) — never on page load. The 🔊/🔇 indicator reads the element's **realized** mute state.
+  - **Audio is bound to slot+channel, not the slot alone.** A transient reconnect of the same channel keeps audio; a slot whose channel is replaced/cleared **never inherits** the prior selection (fixing an "audio teleport" caught in adversarial review). A *deliberate* channel change on the audible slot keeps audio (native slot parity). Audio is **session-only** (not persisted).
+- **(D)** The surface is mouse + touch friendly and never persistently covers the video. Pure helpers (`captionState`/`captionLabel`, `nextAudible`/`isAudible`, `shouldReassertAudio`) are unit-tested. CSP / no-proxy / A1 / vendored-hls.js posture untouched; the ticker, divider, reconnect, and 3-column cap are untouched. PIA never touched.
+
 ## feat(web): sectioned channel picker grouped by category (mirrors native) (2026-06-15)
 
 The web client's channel picker was a flat list; it now groups channels into category **sections** — Sports / US News / Global News / Business / Weather / General — in the native order, mirroring the TV wall's `ChannelPickerOverlay`. The web is a dumb consumer of the helper's served `category` (the same authoritative taxonomy native uses); it never invents categories.

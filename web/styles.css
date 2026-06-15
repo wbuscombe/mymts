@@ -176,6 +176,28 @@ body { display: flex; flex-direction: column; }
   background: #000000bb; border: 1px solid var(--line); border-radius: 50%; cursor: pointer; }
 .tile-refresh:hover, .tile-refresh:focus-visible { background: #ffffff22; color: #fff; border-color: var(--label); }
 
+/* Per-tile controls surface (D): Change · CC · Audio · Reconnect. Transient —
+   revealed on hover (desktop), focus-within (keyboard), or .show (tap toggle on
+   touch); hidden otherwise so it never persistently covers the video. A light
+   bottom scrim keeps the buttons legible without obscuring the picture. */
+.tile-controls { position: absolute; inset: auto 0 0 0; z-index: 3; display: flex;
+  flex-direction: column; gap: 6px; padding: 8px;
+  background: linear-gradient(to top, #000000dd, #00000000);
+  opacity: 0; pointer-events: none; transition: opacity 0.14s ease; }
+.tile:hover .tile-controls, .tile-controls:focus-within, .tile-controls.show {
+  opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .tile-controls { transition: none; } }
+.tc-name { font-size: 11px; color: var(--label); text-shadow: 0 1px 2px #000;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tc-btn { font-size: 11px; line-height: 1; color: var(--label); background: #000000bb;
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; cursor: pointer;
+  min-height: 32px; min-width: 32px; }
+.tc-btn:hover, .tc-btn:focus-visible { background: #ffffff22; color: #fff;
+  border-color: var(--label); outline: none; }
+.tc-btn.on { border-color: var(--accent); color: var(--accent); }   /* CC on / audio on */
+.tc-btn.unavailable { color: var(--ghost); border-style: dashed; }  /* CC — : no soft track */
+
 /* ---- settings + picker modals ---- */
 .modal-scrim { position: fixed; inset: 0; background: #000000cc; display: flex;
   align-items: center; justify-content: center; z-index: 10; }

@@ -502,6 +502,7 @@ export const DEFAULT_VIEW_PREFS = {
   gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
   tickerNews: false, feedRecency: "all", tickerScrollPct: 100,
   tickerMotion: "crawl",   // web default; Android defaults to "flip"
+  captions: false,         // wall-wide caption DEFAULT — OFF, matching native (per-tile override is session-only)
   hidden: [], hiddenLeagues: [], assignments: {},
 };
 
@@ -556,6 +557,7 @@ export function normalizeViewPrefs(raw) {
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
     tickerScrollPct: clampTickerSpeedPct(p.tickerScrollPct ?? DEFAULT_VIEW_PREFS.tickerScrollPct),
     tickerMotion: tickerMotionOption(p.tickerMotion),   // unknown → web default "crawl"
+    captions: p.captions === true,   // explicit opt-in only (honest default OFF, like native)
     hidden: Array.isArray(p.hidden) ? p.hidden.map(String) : [],
     hiddenLeagues: Array.isArray(p.hiddenLeagues) ? p.hiddenLeagues.map(String) : [],
     assignments: (p.assignments && typeof p.assignments === "object") ? p.assignments : {},
@@ -576,6 +578,7 @@ export function serializeViewPrefs(prefs) {
     tickerNews: p.tickerNews, feedRecency: p.feedRecency,
     tickerScrollPct: p.tickerScrollPct,
     tickerMotion: p.tickerMotion,
+    captions: p.captions,
     hidden: p.hidden instanceof Set ? [...p.hidden] : p.hidden,
     hiddenLeagues: p.hiddenLeagues instanceof Set ? [...p.hiddenLeagues] : p.hiddenLeagues,
     assignments: p.assignments,
@@ -650,6 +653,62 @@ export function sectionChannels(channels) {
   return CHANNEL_CATEGORY_ORDER
     .filter((cat) => buckets.has(cat))
     .map((cat) => ({ category: cat, channels: buckets.get(cat) }));
+}
+
+// ----- per-tile caption + audio control state (pure; the DOM/hls wiring is in
+// app.mjs/video.mjs). These mirror the native SlotControlsOverlay's honest
+// caption state and single-audible-tile audio model. -----
+
+/**
+ * Honest caption-control state for a tile, given whether the stream exposes a
+ * SOFT (separate-track) caption track and whether captions are toggled on:
+ *   "none" → no soft track on this stream → nothing to toggle. Burned-in
+ *            captions (pixels in the video) CANNOT be removed; the UI must say
+ *            so, not pretend the toggle worked.
+ *   "on"   → soft track present and enabled.
+ *   "off"  → soft track present and disabled.
+ * Pure — unit-tested. The actual track enable/disable lives in video.mjs.
+ */
+export function captionState(hasSoftTrack, enabled) {
+  if (!hasSoftTrack) return "none";
+  return enabled ? "on" : "off";
+}
+
+/** Short honest label for a caption state (the per-tile control's caption line). */
+export function captionLabel(state) {
+  if (state === "none") return "CC —";   // no soft track (may be burned-in / none)
+  return state === "on" ? "CC on" : "CC off";
+}
+
+/**
+ * Single-audible-tile model (native LineupStore.toggleAudible): the wall has at
+ * most ONE unmuted tile. Toggling the currently-audible tile mutes the wall
+ * (returns -1); toggling any other tile MOVES audio to it. `current` is the
+ * audible cell index (or -1 = all muted); `clicked` is the tile acted on. Pure.
+ */
+export function nextAudible(current, clicked) {
+  const cur = Number.isInteger(current) ? current : -1;
+  const c = Number(clicked);
+  if (!Number.isInteger(c) || c < 0) return cur;
+  return cur === c ? -1 : c;
+}
+
+/** Whether a given cell index is the single audible tile (false when -1/all-muted). */
+export function isAudible(audibleIndex, cellIndex) {
+  return Number.isInteger(audibleIndex) && audibleIndex >= 0 && audibleIndex === cellIndex;
+}
+
+/**
+ * Whether a tile that just went live should RE-ASSERT audio (unmute) — only when
+ * it is STILL the chosen audible slot AND still carries the SAME channel the
+ * operator chose audio for. This keeps audio across a transient reconnect of the
+ * same channel, but a slot whose channel was replaced or cleared NEVER inherits
+ * the prior audio selection (the "audio teleport" bug: a stale slot pointer
+ * auto-unmuting an unrelated stream). The audio choice is bound to the
+ * slot+channel, not the slot alone. Pure — unit-tested.
+ */
+export function shouldReassertAudio(audibleIndex, audibleSlug, cellIndex, cellSlug) {
+  return isAudible(audibleIndex, cellIndex) && cellSlug != null && cellSlug === audibleSlug;
 }
 
 // ----- in-browser video auto-recovery (retry transient, give up on hopeless) -----

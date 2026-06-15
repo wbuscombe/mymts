@@ -65,6 +65,11 @@ import {
   CHANNEL_CATEGORY_ORDER,
   channelCategory,
   sectionChannels,
+  captionState,
+  captionLabel,
+  nextAudible,
+  isAudible,
+  shouldReassertAudio,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -640,6 +645,7 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   assert.equal(d.feedRecency, "all");
   assert.equal(d.tickerScrollPct, 100);
   assert.equal(d.tickerMotion, "crawl");        // web default motion
+  assert.equal(d.captions, false);              // captions default OFF (matches native)
   assert.deepEqual(d.hidden, []); assert.deepEqual(d.hiddenLeagues, []);
   assert.deepEqual(d.assignments, {});
   // Matches the exported default shape.
@@ -647,6 +653,9 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   // tickerNews is ONLY true on an explicit true (not "true", not 1).
   assert.equal(normalizeViewPrefs({ tickerNews: "true" }).tickerNews, false);
   assert.equal(normalizeViewPrefs({ tickerNews: true }).tickerNews, true);
+  // captions, like tickerNews, is an explicit-opt-in boolean (honest OFF default).
+  assert.equal(normalizeViewPrefs({ captions: "true" }).captions, false);
+  assert.equal(normalizeViewPrefs({ captions: true }).captions, true);
   // Out-of-range values are clamped on load (defensive against a tampered blob).
   assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridRows, 3);
   assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridCols, 1);
@@ -671,7 +680,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   const live = {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
-    tickerMotion: "flip",
+    tickerMotion: "flip", captions: true,
     hidden: new Set(["BBC", "Reuters"]),
     hiddenLeagues: new Set(["NBA"]),
     assignments: { 0: "espn", 1: "tnt" },
@@ -682,7 +691,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   assert.deepEqual(reread, {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
-    tickerMotion: "flip",
+    tickerMotion: "flip", captions: true,
     hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],
     assignments: { 0: "espn", 1: "tnt" },
   });
@@ -877,4 +886,55 @@ test("sectionChannels: preserves input order WITHIN a section (caller pre-sorts 
   // Empty / non-array inputs are safe.
   assert.deepEqual(sectionChannels([]), []);
   assert.deepEqual(sectionChannels(null), []);
+});
+
+// ----- per-tile caption state (B) — soft vs burned-in honesty -----
+
+test("captionState: no soft track → 'none' (honest); present → on/off; label matches", () => {
+  // The crux honesty: with no soft track there is nothing to toggle — burned-in
+  // captions can't be removed, so the state is "none", NOT a fake "off".
+  assert.equal(captionState(false, true), "none");
+  assert.equal(captionState(false, false), "none");
+  assert.equal(captionState(true, true), "on");
+  assert.equal(captionState(true, false), "off");
+  assert.equal(captionLabel("none"), "CC —");
+  assert.equal(captionLabel("on"), "CC on");
+  assert.equal(captionLabel("off"), "CC off");
+});
+
+// ----- per-tile audio (C) — single audible tile (radio-button model) -----
+
+test("nextAudible: enabling a tile moves audio to it; re-enabling the same mutes the wall", () => {
+  // From all-muted, picking tile 2 makes 2 audible.
+  assert.equal(nextAudible(-1, 2), 2);
+  // Picking a DIFFERENT tile moves audio (single source — never two unmuted).
+  assert.equal(nextAudible(2, 0), 0);
+  // Picking the CURRENTLY-audible tile toggles the whole wall back to muted.
+  assert.equal(nextAudible(2, 2), -1);
+  // Defensive: a bad clicked index leaves the current selection unchanged.
+  assert.equal(nextAudible(1, -1), 1);
+  assert.equal(nextAudible(1, "x"), 1);
+});
+
+test("isAudible: only the single selected index is audible; -1 = all muted", () => {
+  assert.equal(isAudible(2, 2), true);
+  assert.equal(isAudible(2, 0), false);
+  assert.equal(isAudible(-1, 0), false);   // wall muted → no tile audible
+  assert.equal(isAudible(-1, -1), false);  // never treat the "muted" sentinel as audible
+});
+
+test("shouldReassertAudio: reconnect keeps audio only for the SAME slot+channel (no teleport)", () => {
+  // Tile 1 was made audible for channel "espn". On reconnect of the SAME channel
+  // in that slot → re-assert (audio returns after a transient blip).
+  assert.equal(shouldReassertAudio(1, "espn", 1, "espn"), true);
+  // The slot's channel was REPLACED (now "tnt") → must NOT inherit the old audio
+  // selection — this is the "audio teleport" the review caught.
+  assert.equal(shouldReassertAudio(1, "espn", 1, "tnt"), false);
+  // The slot was CLEARED (no channel) → no audio to re-assert.
+  assert.equal(shouldReassertAudio(1, "espn", 1, null), false);
+  // A DIFFERENT slot than the audible one never re-asserts.
+  assert.equal(shouldReassertAudio(1, "espn", 0, "espn"), false);
+  // Wall muted (audibleIndex -1) → nothing re-asserts even on a slug match.
+  assert.equal(shouldReassertAudio(-1, "espn", 0, "espn"), false);
+  assert.equal(shouldReassertAudio(-1, null, 0, null), false);
 });

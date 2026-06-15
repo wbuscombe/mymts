@@ -21,7 +21,7 @@ import {
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
-  sectionChannels,
+  sectionChannels, captionState, captionLabel, nextAudible, isAudible, shouldReassertAudio,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -411,6 +411,23 @@ let channelsBySlug = new Map();
 let channelList = [];
 let cells = [];          // per-index { key, teardown, setState }
 let autoFilled = false;
+// Single-audible-tile model (native LineupStore.audibleSlot): at most ONE tile
+// is unmuted. SESSION-ONLY — never persisted: the autoplay rule blocks
+// autoplay-with-sound, so audio is an explicit per-session choice, not a saved
+// default that would try (and fail) to unmute on load. -1 = the wall is muted.
+// `audibleSlug` records WHICH channel the operator chose audio for, so a slot
+// whose channel was replaced/cleared never inherits the prior audio selection
+// (the audio is bound to slot+channel, not the slot index alone).
+let audibleIndex = -1;
+let audibleSlug = null;
+
+/** A tile's effective caption on/off: the per-tile SESSION override if the
+ *  operator set one on this tile, else the persisted wall-wide default
+ *  (prefs.captions). The override is intentionally not persisted (only the
+ *  wall-wide default is) — per the chosen model. */
+function effectiveCaptions(cell) {
+  return cell && cell.captionsOverride != null ? cell.captionsOverride : prefs.captions === true;
+}
 
 async function pollChannels() {
   try {
@@ -451,6 +468,7 @@ function teardownCells() {
 /** Rebuild the grid layout (cell count changed) from scratch. */
 function buildGrid() {
   teardownCells();
+  audibleIndex = -1; audibleSlug = null;   // fresh cells → no stale audible pointer; the wall starts muted
   applyPrefs();
   const grid = el("grid"); grid.replaceChildren();
   const layout = gridConfig();
@@ -487,14 +505,107 @@ function changeChip(cell) {
   cell.el.appendChild(chip);
 }
 
+// ----- per-tile controls surface (D — the web SlotControlsOverlay analog) -----
+// On a PLAYING video tile, a transient surface (hover on desktop / tap on touch)
+// exposes Change channel · Captions · Audio · Reconnect. Hidden otherwise, so the
+// ambient wall stays clean. Empty/TV-only/dead tiles keep their own affordances
+// (the centered ↻ on a dead tile; whole-tile click to pick on an empty one).
+
+/** Build the per-tile control surface for a video tile and stash the CC/Audio
+ *  button refs on the cell (so updateTileControls can refresh their labels). */
+function buildTileControls(cell, label) {
+  const controls = node("div", "tile-controls");
+  controls.appendChild(node("div", "tc-name", label));
+  const actions = node("div", "tc-actions");
+  const mkBtn = (cls, text, title, onActivate) => {
+    const b = node("button", `tc-btn ${cls}`, text);
+    b.type = "button";
+    b.title = title; b.setAttribute("aria-label", title);
+    // stopPropagation so a button press doesn't also toggle the surface (the
+    // tile-body click handler). The click IS a user gesture (matters for audio).
+    b.addEventListener("click", (e) => { e.stopPropagation(); onActivate(); });
+    return b;
+  };
+  const cc = mkBtn("tc-cc", "CC", "Toggle captions on this tile", () => toggleCellCaptions(cell));
+  const audio = mkBtn("tc-audio", "🔇", "Play this tile's audio (mutes the others)", () => setCellAudio(cell));
+  actions.appendChild(mkBtn("tc-change", "Change", "Change this tile's channel", () => openPicker(cell.index)));
+  actions.appendChild(cc);
+  actions.appendChild(audio);
+  actions.appendChild(mkBtn("tc-reconnect", "↻", "Reconnect this tile", () => refreshCell(cell)));
+  controls.appendChild(actions);
+  cell.ccBtn = cc; cell.audioBtn = audio; cell.controlsEl = controls;
+  return controls;
+}
+
+/** A video tile's body click toggles the controls surface (the touch
+ *  affordance; desktop also reveals it on hover via CSS). */
+function setVideoTileClick(cell) {
+  cell.el.onclick = () => { if (cell.controlsEl) cell.controlsEl.classList.toggle("show"); };
+}
+
+/** Refresh a tile's CC + Audio button labels/state from the live handle +
+ *  session state. No-op once the tile is no longer a playing video. */
+function updateTileControls(cell) {
+  if (!cell || !cell.ccBtn || !cell.audioBtn || !cell.streamHandle) return;
+  let hasCc = false;
+  try { hasCc = cell.streamHandle.hasCaptions() === true; } catch { hasCc = false; }
+  const ccState = captionState(hasCc, effectiveCaptions(cell));   // "none" | "on" | "off"
+  cell.ccBtn.textContent = captionLabel(ccState);
+  cell.ccBtn.classList.toggle("on", ccState === "on");
+  cell.ccBtn.classList.toggle("unavailable", ccState === "none");
+  cell.ccBtn.setAttribute("aria-pressed", ccState === "on" ? "true" : "false");
+  // Indicator from the element's REALIZED mute state (ground truth), not just the
+  // session pointer — so it can never claim "audio on" while the tile is silent.
+  let aud = false;
+  try { aud = cell.streamHandle.audible() === true; } catch { aud = false; }
+  cell.audioBtn.textContent = aud ? "🔊" : "🔇";
+  cell.audioBtn.classList.toggle("on", aud);
+  cell.audioBtn.setAttribute("aria-pressed", aud ? "true" : "false");
+}
+
+/** Toggle THIS tile's captions (a per-tile session override of the wall-wide
+ *  default). If the stream has no soft track the control shows the honest
+ *  "CC —" and the toggle is a visual no-op (nothing to disable). */
+function toggleCellCaptions(cell) {
+  cell.captionsOverride = !effectiveCaptions(cell);
+  if (cell.streamHandle) { try { cell.streamHandle.setCaptions(cell.captionsOverride); } catch { /* no track */ } }
+  updateTileControls(cell);
+}
+
+/** Drop the audio pointer if this cell owns it but is becoming a non-playing
+ *  tile (empty / TV-only / offline / terminally dead) — so a silent slot never
+ *  claims to own audio. NOT called for a transient reconnect (audio returns when
+ *  the SAME channel recovers); the live re-apply's slug guard is the backstop. */
+function clearAudioIfOwner(cell) {
+  if (audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
+}
+
+/** Move audio to THIS tile (single-audible-tile model): unmute it, mute every
+ *  other tile. Toggling the already-audible tile mutes the whole wall. The
+ *  invoking click is the user gesture the autoplay rule requires to unmute. */
+function setCellAudio(cell) {
+  audibleIndex = nextAudible(audibleIndex, cell.index);
+  // Bind the audio choice to the chosen slot's CURRENT channel (null when toggled
+  // off) so a later channel change/clear can't auto-inherit it on reconnect.
+  audibleSlug = audibleIndex === cell.index ? (prefs.assignments[cell.index] || null) : null;
+  for (const c of cells) {
+    if (!c.isVideo || !c.streamHandle) continue;
+    try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
+    updateTileControls(c);
+  }
+}
+
 function renderCell(cell, slug, ch, bp) {
   const tile = cell.el;
   tile.replaceChildren();
   cell.isVideo = false;                 // only the playback branch sets this true
+  cell.streamHandle = null;             // per-tile control handle (set in the playback branch)
+  cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
   tile.onclick = () => openPicker(cell.index);
 
   if (!slug || !ch) {
     // Empty cell — obvious affordance to pick a channel.
+    clearAudioIfOwner(cell);   // a cleared slot no longer owns audio
     const s = node("div", "tile-state");
     s.appendChild(node("div", "big", "＋"));
     s.appendChild(node("div", "head", "Add channel"));
@@ -505,6 +616,7 @@ function renderCell(cell, slug, ch, bp) {
 
   const label = ch.label || ch.slug;
   if (bp === "no") {
+    clearAudioIfOwner(cell);   // TV-only / offline → not a browser audio source
     const live = channelStatus(ch).playable;
     const s = node("div", `tile-state${live ? " tvonly" : ""}`);
     s.appendChild(node("div", "big", live ? "📺" : "○"));
@@ -538,7 +650,10 @@ function renderCell(cell, slug, ch, bp) {
   const dot = node("span", "tile-dot dot-unknown");
   const lab = node("span", "tile-label", label);
   tile.append(video, dot, lab);
-  changeChip(cell);
+  // Per-tile controls surface (D): Change · CC · Audio · Reconnect — appears on
+  // hover/tap, hidden otherwise (no persistent chrome over the video).
+  tile.appendChild(buildTileControls(cell, label));
+  setVideoTileClick(cell);   // tap toggles the surface (touch); hover shows it (CSS)
 
   let playOverlay = null;
   const clearOverlay = () => { if (playOverlay) { playOverlay.remove(); playOverlay = null; } };
@@ -549,7 +664,21 @@ function renderCell(cell, slug, ch, bp) {
       cell.videoAttempt = 0;          // a clean (re)connect refills the retry budget
       clearCellRetry(cell);
       dot.className = "tile-dot dot-live"; video.style.visibility = ""; clearOverlay();
-      tile.onclick = () => openPicker(cell.index);
+      // Re-apply the per-session caption + audio state now that the stream is
+      // actually playing (tracks parsed; unmuting is allowed on a playing tile).
+      try { handle.setCaptions(effectiveCaptions(cell)); } catch { /* no track yet */ }
+      // Audio re-asserts ONLY for the same slot+channel it was chosen for — so a
+      // transient reconnect keeps audio, but a slot whose channel was replaced
+      // never inherits it (no "audio teleport"). Clear a now-stale pointer.
+      const keepAudio = shouldReassertAudio(audibleIndex, audibleSlug, cell.index, slug);
+      if (!keepAudio && audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
+      try { handle.setAudible(keepAudio); } catch { /* ignore */ }
+      updateTileControls(cell);
+      setVideoTileClick(cell);
+    } else if (state === "captions") {
+      // Soft-caption availability became known/changed → refresh the CC label
+      // ("CC on/off" vs the honest "CC —" when there's no soft track).
+      updateTileControls(cell);
     } else if (state === "needgesture") {
       // Autoplay blocked — show a click-to-play affordance; click plays.
       dot.className = "tile-dot dot-unknown";
@@ -583,13 +712,14 @@ function renderCell(cell, slug, ch, bp) {
         // Genuinely unplayable, OR transient retries exhausted → STOP. Tear the
         // dead handle down off the event path; the tile then rests (honest)
         // until a manual ↻ or a channel-status change — never an infinite retry.
-        const dead = handle.teardown; cell.teardown = null;
+        const dead = handle.teardown; cell.teardown = null; cell.streamHandle = null;
         setTimeout(() => { try { dead(); } catch {} }, 0);
         showDeadVideo(cell, label, decision.reason);
       }
     }
   });
   cell.teardown = handle.teardown;
+  cell.streamHandle = handle;   // exposes setCaptions/hasCaptions/setAudible to the per-tile controls
 }
 
 /** Honest "Reconnecting…" state while a transient failure backs off. Never
@@ -597,6 +727,7 @@ function renderCell(cell, slug, ch, bp) {
 function showReconnecting(cell, label, attempt) {
   const tile = cell.el;
   tile.replaceChildren();
+  cell.streamHandle = null; cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
   const s = node("div", "tile-state reconnecting");
   s.appendChild(node("div", "big", "↻"));
   s.appendChild(node("div", "head", label));
@@ -612,6 +743,8 @@ function showReconnecting(cell, label, attempt) {
 function showDeadVideo(cell, label, reason) {
   const tile = cell.el;
   tile.replaceChildren();
+  cell.streamHandle = null; cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
+  clearAudioIfOwner(cell);   // a tile that gave up is silent → it no longer owns audio
   const s = node("div", "tile-state");
   s.appendChild(node("div", "big", "○"));
   s.appendChild(node("div", "head", label));
@@ -734,6 +867,11 @@ function assignCell(slug) {
   if (pickerCell == null) return;
   if (slug) prefs.assignments[pickerCell] = slug;
   else delete prefs.assignments[pickerCell];
+  // If the operator DELIBERATELY re-points the audible slot at a new channel
+  // (the picker click is a user gesture), audio follows the slot to that channel
+  // (native slot-based parity). Clearing the slot drops audio (handled when the
+  // empty cell renders). A non-deliberate death/clear never carries audio over.
+  if (pickerCell === audibleIndex) audibleSlug = slug || null;
   savePrefs();
   el("picker-modal").classList.add("hidden");
   renderGrid();
@@ -877,6 +1015,24 @@ function wireSettings() {
     prefs.tickerNews = tickerNews.checked;
     savePrefs(); pollTicker();
   });
+
+  // Captions DEFAULT (wall-wide, persisted; per-tile override lives on the tile
+  // controls and is session-only). Live-applied to tiles WITHOUT a per-tile
+  // override, so changing the default takes effect immediately on those tiles.
+  const captionsDefault = el("captions-default");
+  if (captionsDefault) {
+    captionsDefault.checked = prefs.captions === true;
+    captionsDefault.addEventListener("change", () => {
+      prefs.captions = captionsDefault.checked;
+      savePrefs();
+      for (const c of cells) {
+        if (c.isVideo && c.streamHandle && c.captionsOverride == null) {
+          try { c.streamHandle.setCaptions(prefs.captions); } catch { /* no track */ }
+          updateTileControls(c);
+        }
+      }
+    });
+  }
 
   rebuildLeagueToggles();
 }
