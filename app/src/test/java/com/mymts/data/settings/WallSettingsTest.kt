@@ -240,13 +240,18 @@ class WallSettingsTest {
         assertEquals(74, clampFitScalePct(74))   // in-range passes through
     }
 
-    @Test fun `ticker speeds default to 100 percent and clamp to readable bounds`() {
-        assertEquals(100, WallSettings.Default.tickerScrollPct)
-        assertEquals(100, WallSettings.Default.tickerFlipPct)
+    @Test fun `ticker scroll defaults to a calm mid speed with flip unchanged and bounds clamped`() {
+        // Scroll default lowered from the old too-fast 100% to a calm mid-speed,
+        // with a low floor so the slow end is genuinely slow + readable at 10 ft.
+        assertEquals(TICKER_SPEED_DEFAULT_PCT, WallSettings.Default.tickerScrollPct)
+        assertTrue("default is a calm mid-speed, not the old 100%", TICKER_SPEED_DEFAULT_PCT in 30..60)
+        assertEquals(100, WallSettings.Default.tickerFlipPct)   // flip dwell default unchanged
         assertEquals(TICKER_SPEED_MAX_PCT, clampTickerSpeedPct(9999))
         assertEquals(TICKER_SPEED_MIN_PCT, clampTickerSpeedPct(0))
+        assertTrue("floor lowered well below 40% for a genuinely slow option", TICKER_SPEED_MIN_PCT <= 15)
         assertEquals(120, clampTickerSpeedPct(120))
-        assertTrue("min below max", TICKER_SPEED_MIN_PCT < TICKER_SPEED_MAX_PCT)
+        assertTrue("min below default below max", TICKER_SPEED_MIN_PCT < TICKER_SPEED_DEFAULT_PCT)
+        assertTrue(TICKER_SPEED_DEFAULT_PCT < TICKER_SPEED_MAX_PCT)
     }
 
     @Test fun `grid defaults to 2x2 with cells = rows times cols, dims clamp 1-3`() {

@@ -95,12 +95,14 @@ data class WallSettings(
     // change for the slots that still exist. Cell count = rows × cols.
     val gridRows: Int = 2,
     val gridCols: Int = 2,
-    // Ticker speed (2026-06-11), as percentages adjusted by D-pad LEFT/RIGHT
-    // sliders. 100% = the (calmer) defaults; higher = faster, lower = slower,
-    // clamped to readable bounds. `tickerScrollPct` scales the horizontal
-    // marquee velocity; `tickerFlipPct` scales the page-flip speed (higher =
-    // shorter dwell). Live-applied + persisted.
-    val tickerScrollPct: Int = 100,
+    // Ticker speed, as percentages adjusted by D-pad LEFT/RIGHT sliders; higher =
+    // faster, lower = slower, clamped to [TICKER_SPEED_MIN_PCT]..MAX.
+    // `tickerScrollPct` scales the crawl/marquee velocity (× CRAWL_BASE_DP_PER_SEC)
+    // AND the flip's per-page reveal; `tickerFlipPct` scales the page-flip dwell
+    // (higher = shorter dwell). The scroll default is a calm mid-speed
+    // ([TICKER_SPEED_DEFAULT_PCT]) — the old 100% default ran too fast for 10 ft.
+    // Live-applied + persisted.
+    val tickerScrollPct: Int = TICKER_SPEED_DEFAULT_PCT,
     val tickerFlipPct: Int = 100,
     // Ticker MOTION (2026-06-13, cross-platform parity). The strip's motion is
     // an explicit setting offered on BOTH platforms; only the per-platform
@@ -126,11 +128,16 @@ const val GRID_DIM_MAX = 3
 /** Clamp a stored/edited grid dimension into [GRID_DIM_MIN]..[GRID_DIM_MAX]. */
 internal fun clampGridDim(value: Int): Int = value.coerceIn(GRID_DIM_MIN, GRID_DIM_MAX)
 
-/** Ticker-speed sliders: percentage range + step (D-pad LEFT/RIGHT). Bounds keep
- *  the scroll/flip from getting unreadably fast or painfully slow. */
-const val TICKER_SPEED_MIN_PCT = 40
+/** Ticker-speed slider range + step + default (D-pad LEFT/RIGHT). The percent
+ *  scales the crawl/marquee velocity (and the flip's per-page reveal); the FLOOR
+ *  is deliberately low (10%) so the slow end is a genuinely calm, readable crawl
+ *  at 10 ft, and the default sits comfortably below the old too-fast value — a
+ *  usable slow→fast range the operator dials in-app, no redeploy to chase a speed.
+ *  The crawl's absolute base lives in `TickerStrip.CRAWL_BASE_DP_PER_SEC`. */
+const val TICKER_SPEED_MIN_PCT = 10
 const val TICKER_SPEED_MAX_PCT = 200
-const val TICKER_SPEED_STEP_PCT = 20
+const val TICKER_SPEED_STEP_PCT = 10
+const val TICKER_SPEED_DEFAULT_PCT = 50
 
 /** Clamp a ticker-speed percentage into [TICKER_SPEED_MIN_PCT]..[TICKER_SPEED_MAX_PCT]. */
 internal fun clampTickerSpeedPct(value: Int): Int =

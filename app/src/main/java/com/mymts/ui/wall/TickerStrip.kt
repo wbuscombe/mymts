@@ -124,9 +124,15 @@ fun TickerStrip(
  *  percent shortens the dwell (faster), lower lengthens it (slower). */
 private const val BASE_DWELL_MS = 9000L
 
-/** Base horizontal reveal velocity at 100% scroll speed; the "Scroll speed"
- *  slider scales it linearly. */
+/** Base horizontal reveal velocity at 100% scroll speed for the FLIP's per-page
+ *  reveal; the "Scroll speed" slider scales it linearly. */
 private val BASE_SCROLL_VELOCITY = 32.dp
+
+/** Base velocity (dp/sec at 100% scroll speed) for the CRAWL marquee — separate
+ *  from (and calmer than) the flip's reveal so the crawl reads comfortably at
+ *  10 ft. With the 10% slider floor this gives a genuinely slow slow-end; the
+ *  slider (`tickerScrollPct`) multiplies it. Tunable; `internal` for the test. */
+internal const val CRAWL_BASE_DP_PER_SEC = 24f
 
 /** A page rests at its START (left edge fully shown) for this long before the
  *  single-pass reveal begins, so the operator catches the leftmost content. */
@@ -277,7 +283,7 @@ private fun CrawlTicker(
         // No per-frame re-layout — leaves the main thread free for video decode.
         LaunchedEffect(pages, scrollPct, paused, copyWidthPx, overflow) {
             if (paused || !overflow || copyWidthPx <= 0) { offsetPx = 0f; return@LaunchedEffect }
-            val pxPerSec = crawlPxPerSec(BASE_SCROLL_VELOCITY.value, scrollPct, density)
+            val pxPerSec = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, scrollPct, density)
             var lastNs = withFrameNanos { it }
             while (true) {
                 val nowNs = withFrameNanos { it }

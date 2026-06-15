@@ -1,5 +1,8 @@
 package com.mymts.ui.wall
 
+import com.mymts.data.settings.TICKER_SPEED_DEFAULT_PCT
+import com.mymts.data.settings.TICKER_SPEED_MAX_PCT
+import com.mymts.data.settings.TICKER_SPEED_MIN_PCT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +33,33 @@ class CrawlDurationTest {
         assertEquals(64f * 0.016f, crawlAdvancePx(64f, 16L, CRAWL_MAX_FRAME_DELTA_MS), 0.001f)
         // zero delta → no advance.
         assertEquals(0f, crawlAdvancePx(64f, 0L, CRAWL_MAX_FRAME_DELTA_MS), 0.001f)
+    }
+
+    // ---- the speed SETTING drives the crawl, across a usable slow→fast range ----
+
+    @Test fun `the slider range maps monotonically from a genuinely-slow floor to fast`() {
+        val d = 2f  // ~1080p density on the Onn box
+        val floor = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, TICKER_SPEED_MIN_PCT, d)
+        val mid = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, TICKER_SPEED_DEFAULT_PCT, d)
+        val top = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, TICKER_SPEED_MAX_PCT, d)
+        // strictly increasing — more slider = faster.
+        assertTrue("floor < default < max", floor < mid && mid < top)
+        // the floor is genuinely slow (a calm ambient crawl), and the top is
+        // meaningfully faster than the floor (a real range, not all-fast).
+        assertTrue("floor is slow (<= 15 px/s)", floor <= 15f)
+        assertTrue("top is many× the floor", top >= floor * 5f)
+    }
+
+    @Test fun `the same setting value changes the speed (the setting is wired, not hardcoded)`() {
+        val d = 2f
+        // Two distinct slider values MUST produce distinct speeds — the regression
+        // guard for "the slider appears dead": speed is a function of the setting.
+        assertTrue(
+            crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, 40, d) > crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, 20, d),
+        )
+        assertTrue(
+            crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, 200, d) > crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, 100, d),
+        )
     }
 
     @Test fun `crawlAdvancePx CLAMPS a stalled frame so it drops missed motion (no sprint)`() {

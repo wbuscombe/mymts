@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(app): lower the ticker crawl speed range for a genuinely-slow option (2026-06-15)
+
+The crawl ran too fast and the speed slider felt like it did little. **Finding:** the crawl was NOT unwired — the chain `WallScreen → TickerStrip → CrawlTicker → crawlPxPerSec(scrollPct)` is intact and the driver re-keys on `scrollPct`, so the setting *does* drive it live. The real problem was the **range**: a 40% floor × a 32 dp/s base made the whole band fast (≈26–128 px/s at 1080p), so the slider only spanned "fast → faster" and even the floor was too fast for 10 ft.
+
+Re-ranged so the operator can dial it in-app (no redeploy to chase a speed):
+- **Floor 40% → 10%** (`TICKER_SPEED_MIN_PCT`) and **step 20% → 10%** — a genuinely slow, calm slow-end + finer control.
+- **Crawl base 32 → 24 dp/s** via a new crawl-only `CRAWL_BASE_DP_PER_SEC` (the flip's per-page reveal keeps its 32 dp/s `BASE_SCROLL_VELOCITY` — untouched).
+- **Scroll default 100% → 50%** (`TICKER_SPEED_DEFAULT_PCT`) — a calm mid-speed, not the old too-fast value. (Existing installs keep their saved value; this only sets the fresh-install default.)
+
+Resulting range (≈1080p): floor ≈ 4.8 px/s (slow + readable) → default ≈ 24 px/s → max ≈ 96 px/s. Pure `crawlPxPerSec` mapping unit-tested (monotonic, slow floor, the setting changes the speed). `WallSettings` round-trip still passes. The flip dwell (`tickerFlipPct`), panel-fit, video, back-nav, and resync are untouched; the web client's range is unchanged (native-only pass).
+
 ## fix(app): smooth playback + ticker + back-nav, and a minimal resync (native) (2026-06-15)
 
 Four related native fixes unified by one principle: **real-time fidelity over catch-up** (drop, don't accumulate-and-sprint).

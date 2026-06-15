@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.settings.clampGridDim
+import com.mymts.data.settings.TICKER_SPEED_DEFAULT_PCT
 import com.mymts.data.settings.clampTickerSpeedPct
 import com.mymts.data.settings.FeedWidth
 import com.mymts.data.settings.FeedRecency
@@ -437,7 +438,7 @@ class LineupStore(context: Context) {
                 gridRows = clampGridDim(getInt(KEY_GRID_ROWS, 2)),
                 gridCols = clampGridDim(getInt(KEY_GRID_COLS, 2)),
                 // Clamp on read — a corrupt speed can't make the ticker unreadable.
-                tickerScrollPct = clampTickerSpeedPct(getInt(KEY_TICKER_SCROLL, 100)),
+                tickerScrollPct = clampTickerSpeedPct(getInt(KEY_TICKER_SCROLL, TICKER_SPEED_DEFAULT_PCT)),
                 tickerFlipPct = clampTickerSpeedPct(getInt(KEY_TICKER_FLIP, 100)),
                 // Corrupt/out-of-range ordinal → the Android default (Flip).
                 tickerMotion = tickerMotionFromOrdinal(getInt(KEY_TICKER_MOTION, TickerMotion.Flip.ordinal)),
