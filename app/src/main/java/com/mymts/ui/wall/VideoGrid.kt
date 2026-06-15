@@ -81,6 +81,8 @@ fun VideoGrid(
     columns: Int,
     reconnectNonce: Int = 0,
     reconnectSlot: Int = -1,
+    resyncNonce: Int = 0,
+    resyncSlot: Int = -1,
     modifier: Modifier = Modifier,
     helperUnreachable: Boolean = false,
     audibleSlot: Int = -1,
@@ -157,6 +159,19 @@ fun VideoGrid(
         } else {
             val pIdx = playingSlots.indexOfFirst { it.index == reconnectSlot }
             if (pIdx >= 0) manager.reconnect(pIdx)
+        }
+    }
+
+    // Quick resync (Part D): jump the requested tile (or all) to the live edge —
+    // dropping the behind-live backlog — or reconnect it if it's actually dead.
+    // Lighter than a full reconnect. Skip nonce 0 (initial) like reconnect.
+    LaunchedEffect(resyncNonce) {
+        if (resyncNonce <= 0) return@LaunchedEffect
+        if (resyncSlot < 0) {
+            manager.resyncAll()
+        } else {
+            val pIdx = playingSlots.indexOfFirst { it.index == resyncSlot }
+            if (pIdx >= 0) manager.resync(pIdx)
         }
     }
 

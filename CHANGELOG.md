@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(app): smooth playback + ticker + back-nav, and a minimal resync (native) (2026-06-15)
+
+Four related native fixes unified by one principle: **real-time fidelity over catch-up** (drop, don't accumulate-and-sprint).
+
+- **(C) Ticker crawl made cheap — the prime suspect for the new video lag.** The just-shipped crawl drove motion with `horizontalScroll` + `animateScrollTo`, re-laying-out a wide two-copy Row **every frame** → starved video decode on the S905Y4 (video degraded right when the crawl went live). Now a single `graphicsLayer { translationX }` (compositor-only, no re-layout) driven by a `withFrameNanos` loop whose **per-frame delta is clamped** (`CRAWL_MAX_FRAME_DELTA_MS=33`) so a stall **drops** the missed motion instead of sprinting to catch up. Base speed unchanged (the cost was the per-frame layout, not the speed). Pure helpers (`crawlPxPerSec`/`crawlAdvancePx`) unit-tested.
+- **(B) Live video held at the live edge.** Added `MediaItem.LiveConfiguration` (`TARGET_LIVE_OFFSET_MS=4000`, imperceptible `0.97–1.03` speed window — micro-correction only) + tighter `LoadControl` buffers (`max 3000ms`) so latency can't pile up, plus a **live-edge watchdog** on the existing 2s tick: when `currentLiveOffset` exceeds `MAX_LIVE_DRIFT_MS=8000`, `seekToDefaultPosition()` **jumps to live and drops the stale backlog** rather than playing through it. New pure predicate `shouldSeekToLive` unit-tested. Honest constraint: these prioritize currency, not the hardware ceiling — a too-busy grid still needs fewer tiles.
+- **(A) Single coherent back-stack — BACK can never exit to the launcher from a menu.** The wall delegated overlay-BACK to each overlay's own (focus-dependent) key handler, with the only `BackHandler` gated on `menu.isOpen`; when a tile-opened overlay didn't hold focus, BACK fell through to the Activity → home. Replaced with ONE focus-independent `BackHandler` enabled whenever any overlay is open, driven by a pure `menuBackOutcome` pop (`picker→controls→dismiss→close→pass`), unit-tested. Flow-smoothing: picking a channel now completes straight to the **wall** (one less hop); BACK from the picker still steps up to controls.
+- **(D) Quick resync-to-live (single + all), zero persistent wall chrome.** Reuses (B)'s `seekToLive` primitive (or reconnect if a tile is actually dead) via `StreamPlayerManager.resync`/`resyncAll`. **Single:** long-press SELECT on a focused tile (`LONG_PRESS_RESYNC_MS=500`); short press still opens its controls. **All:** a "Resync all feeds" row in the side menu. A brief self-dismissing "Resyncing…" flash is the only chrome.
+
+App unit suite green (incl. the WallSettings round-trip); release APK builds clean. The B/C constants are exposed for at-the-box feel-test/tuning. Not yet deployed.
+
 ## fix(app): channel picker takes + holds D-pad focus on open (native) (2026-06-15)
 
 **Bug:** opening the sectioned channel picker (the `ChannelCategory` list — Sports / US News / Global News / Business / Weather) lost the D-pad cursor entirely — focus was null, the D-pad did nothing, only Back escaped — so you couldn't change a feed on the fly. Both entry points (selecting a video tile on the wall, and the menu → slot controls → "change channel") broke identically.

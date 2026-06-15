@@ -70,6 +70,21 @@ class StreamPlayerManager(
         _players.values.forEach { it.reconnect() }
     }
 
+    /**
+     * Quick RESYNC of ONE tile (Part D): jump to the live edge — dropping any
+     * behind-live backlog — or RECONNECT if the tile is actually dead/absent.
+     * Lighter than a full reconnect for a healthy-but-drifted tile (no manifest
+     * refetch / player rebuild), reusing the live-edge primitive from Part B.
+     */
+    fun resync(idx: Int) {
+        _players[idx]?.let { if (it.needsReconnect()) it.reconnect() else it.seekToLive() }
+    }
+
+    /** Quick RESYNC of EVERY tile (the wall's "Resync all feeds"). */
+    fun resyncAll() {
+        _players.values.forEach { if (it.needsReconnect()) it.reconnect() else it.seekToLive() }
+    }
+
     override fun onStart(owner: LifecycleOwner) {
         if (_players.isEmpty()) {
             specs.forEachIndexed { idx, spec ->

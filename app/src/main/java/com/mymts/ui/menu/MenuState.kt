@@ -104,3 +104,31 @@ class MenuState {
 
 @Composable
 fun rememberMenuState(): MenuState = remember { MenuState() }
+
+/**
+ * What a single BACK press does, given the current overlay state — the ONE
+ * coherent pop. A focus-independent [androidx.activity.compose.BackHandler] in
+ * WallScreen consumes BACK whenever this is not [Pass] and applies the outcome,
+ * so BACK can never escape to the Activity (→ launcher) from inside a menu/overlay
+ * (the intermittent-exit bug: nothing consumed BACK in the window where a sub-
+ * overlay was open but its content didn't hold focus). Pure → unit-tested.
+ */
+sealed interface BackOutcome {
+    /** Channel picker → the slot-controls of the SAME slot (one level up). */
+    data class ToSlotControls(val slotIndex: Int) : BackOutcome
+    /** Dismiss the current sub-overlay → the side menu if it's open, else the wall. */
+    data object DismissOverlay : BackOutcome
+    /** Close the side menu → the wall. */
+    data object CloseMenu : BackOutcome
+    /** Nothing is open — do NOT consume; root BACK backgrounds/exits (correct ONLY here). */
+    data object Pass : BackOutcome
+}
+
+/** The coherent BACK pop for `(isOpen, pending)`. Pure — no Compose. */
+fun menuBackOutcome(isOpen: Boolean, pending: MenuState.PendingSelection?): BackOutcome =
+    when (pending) {
+        is MenuState.PendingSelection.SlotPicker -> BackOutcome.ToSlotControls(pending.slotIndex)
+        // SlotControls / Settings / SourceFilter / SportsLeagueFilter → dismiss the sub-overlay.
+        is MenuState.PendingSelection -> BackOutcome.DismissOverlay
+        null -> if (isOpen) BackOutcome.CloseMenu else BackOutcome.Pass
+    }

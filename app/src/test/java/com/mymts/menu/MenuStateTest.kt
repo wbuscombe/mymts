@@ -1,6 +1,8 @@
 package com.mymts.menu
 
+import com.mymts.ui.menu.BackOutcome
 import com.mymts.ui.menu.MenuState
+import com.mymts.ui.menu.menuBackOutcome
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -84,5 +86,41 @@ class MenuStateTest {
         s.dismissSelection()
         assertTrue("dismissing the picker keeps the menu open", s.isOpen)
         assertNull(s.pendingSelection)
+    }
+
+    // ---- coherent BACK pop (Part A — BACK never escapes to the launcher) ----
+
+    @Test fun `back pops the channel picker UP to its slot controls`() {
+        // picker → controls of the SAME slot (one level up, menu state preserved).
+        assertEquals(
+            BackOutcome.ToSlotControls(2),
+            menuBackOutcome(isOpen = false, pending = MenuState.PendingSelection.SlotPicker(2)),
+        )
+        assertEquals(
+            BackOutcome.ToSlotControls(2),
+            menuBackOutcome(isOpen = true, pending = MenuState.PendingSelection.SlotPicker(2)),
+        )
+    }
+
+    @Test fun `back dismisses any other sub-overlay`() {
+        for (p in listOf(
+            MenuState.PendingSelection.SlotControls(0),
+            MenuState.PendingSelection.Settings,
+            MenuState.PendingSelection.SourceFilter,
+            MenuState.PendingSelection.SportsLeagueFilter,
+        )) {
+            assertEquals("$p → dismiss", BackOutcome.DismissOverlay, menuBackOutcome(isOpen = true, pending = p))
+            assertEquals("$p → dismiss (from tile)", BackOutcome.DismissOverlay, menuBackOutcome(isOpen = false, pending = p))
+        }
+    }
+
+    @Test fun `back closes the side menu when only it is open`() {
+        assertEquals(BackOutcome.CloseMenu, menuBackOutcome(isOpen = true, pending = null))
+    }
+
+    @Test fun `back does NOT consume at the bare wall (root back may exit)`() {
+        // The ONLY state where BACK is not consumed — so a stray BACK inside any
+        // overlay can never reach the Activity, but root BACK still backgrounds.
+        assertEquals(BackOutcome.Pass, menuBackOutcome(isOpen = false, pending = null))
     }
 }

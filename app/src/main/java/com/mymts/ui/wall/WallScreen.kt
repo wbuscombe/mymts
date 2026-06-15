@@ -1,5 +1,6 @@
 package com.mymts.ui.wall
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -22,11 +24,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -42,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mymts.data.helper.Channel
 import com.mymts.data.helper.ChannelsRepository
 import com.mymts.data.helper.FeedRepository
@@ -50,10 +55,12 @@ import com.mymts.data.lineup.LineupStore
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.ticker.HelperTickerSource
 import com.mymts.ui.menu.AudioState
+import com.mymts.ui.menu.BackOutcome
 import com.mymts.ui.menu.CaptionsState
 import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
+import com.mymts.ui.menu.menuBackOutcome
 import com.mymts.ui.menu.SettingsOverlay
 import com.mymts.ui.menu.SourceFilterOverlay
 import com.mymts.ui.wall.feed.FeedListBuilder
@@ -65,6 +72,7 @@ import com.mymts.ui.nav.NavResult
 import com.mymts.ui.nav.WallFocus
 import com.mymts.ui.nav.WallFocusModel
 import com.mymts.ui.nav.WallZone
+import kotlinx.coroutines.delay
 
 /**
  * Stage 3 wall + Stage 5 menu + channel picker.
@@ -86,6 +94,10 @@ import com.mymts.ui.nav.WallZone
  * behind a scrim. **C3**: offline channels are surfaced honestly at
  * every layer — the row, the picker, the tile.
  */
+/** Hold SELECT on a focused tile at least this long to RESYNC it (Part D), vs a
+ *  short press which opens the tile's controls. Tunable by feel on the remote. */
+private const val LONG_PRESS_RESYNC_MS = 500L
+
 @Composable
 fun WallScreen(
     helperBaseUrl: String,
@@ -191,7 +203,22 @@ fun WallScreen(
     // status travels into the picker via Channel.isPlayable.
     val pickerChannels = remember(allChannels) { allChannels.sortedByLiveFirst() }
 
-    BackHandler(enabled = menu.isOpen) { menu.close() }
+    // Single coherent, focus-INDEPENDENT BACK handler (Part A). Enabled whenever
+    // ANY overlay is open; it pops one level via the pure `menuBackOutcome`. This
+    // guarantees BACK is consumed from inside any menu/overlay — it can never fall
+    // through to the Activity (→ launcher), the intermittent-exit bug (which hit
+    // when a sub-overlay was open but its content didn't hold focus, so no
+    // overlay's own key handler caught BACK). At the bare wall (Pass) the handler
+    // is DISABLED, so root BACK backgrounds the app — correct only there.
+    val backOutcome = menuBackOutcome(menu.isOpen, menu.pendingSelection)
+    BackHandler(enabled = backOutcome != BackOutcome.Pass) {
+        when (val o = backOutcome) {
+            is BackOutcome.ToSlotControls -> menu.openControls(o.slotIndex)
+            BackOutcome.DismissOverlay -> menu.dismissSelection()
+            BackOutcome.CloseMenu -> menu.close()
+            BackOutcome.Pass -> Unit // handler disabled in this state; unreachable
+        }
+    }
 
     val rootFocusRequester = remember { FocusRequester() }
     // Deterministically RE-HOME focus to the wall root whenever the menu fully
@@ -224,6 +251,28 @@ fun WallScreen(
     fun requestReconnect(slot: Int) {
         reconnectSlot = slot
         reconnectNonce++
+    }
+
+    // Quick RESYNC signal (Part D) — jump to the live edge (drop the backlog), or
+    // reconnect a tile that's actually dead. Lighter than a full reconnect, reusing
+    // the live-edge primitive. slot -1 = all tiles; >=0 = that one. A brief,
+    // self-dismissing "Resyncing…" flash is the ONLY chrome (no persistent button).
+    var resyncNonce by remember { mutableIntStateOf(0) }
+    var resyncSlot by remember { mutableIntStateOf(-1) }
+    var resyncFlash by remember { mutableStateOf(false) }
+    fun requestResync(slot: Int) {
+        resyncSlot = slot
+        resyncNonce++
+        resyncFlash = true
+    }
+    // Long-press SELECT timing for the per-tile resync gesture (Part D).
+    var centerDownAtMs by remember { mutableLongStateOf(0L) }
+    // Auto-dismiss the brief "Resyncing…" flash (no persistent chrome).
+    LaunchedEffect(resyncNonce) {
+        if (resyncNonce <= 0) return@LaunchedEffect
+        resyncFlash = true
+        delay(1500)
+        resyncFlash = false
     }
 
     // Dispatch a NavIntent through the pure focus model and apply its
@@ -283,6 +332,30 @@ fun WallScreen(
             .focusRequester(rootFocusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
+                // Part D — long-press SELECT on a FOCUSED VIDEO TILE = quick RESYNC
+                // that tile (jump to live, or reconnect if dead). Short press = open
+                // its controls. We act on KeyUp here ONLY for the grid SELECT so we
+                // can tell a tap from a hold; every other key keeps its KeyDown
+                // behaviour untouched (this is the one place the wall reads KeyUp).
+                val onGridTile = !menu.isOpen && menu.pendingSelection == null &&
+                    focus.active == WallZone.Grid
+                if (onGridTile && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
+                    when (event.type) {
+                        KeyEventType.KeyDown -> {
+                            if (centerDownAtMs == 0L) centerDownAtMs = SystemClock.uptimeMillis()
+                            return@onPreviewKeyEvent true
+                        }
+                        KeyEventType.KeyUp -> {
+                            val held = SystemClock.uptimeMillis() - centerDownAtMs
+                            centerDownAtMs = 0L
+                            if (held >= LONG_PRESS_RESYNC_MS) requestResync(focus.gridIndex)
+                            else dispatchNavWithSide(NavIntent.Select)
+                            return@onPreviewKeyEvent true
+                        }
+                        else -> return@onPreviewKeyEvent false
+                    }
+                }
+
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 // KEY_MENU always toggles the side panel — keeps the
                 // legacy gesture working for remotes that have one.
@@ -403,6 +476,8 @@ fun WallScreen(
                     columns = gridColumns,
                     reconnectNonce = reconnectNonce,
                     reconnectSlot = reconnectSlot,
+                    resyncNonce = resyncNonce,
+                    resyncSlot = resyncSlot,
                     modifier = Modifier.fillMaxSize(),
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                     audibleSlot = audibleSlot,
@@ -432,6 +507,7 @@ fun WallScreen(
             // controls overlay then re-routes "Channel" to the picker.
             onSlotSelected = { slotIndex -> menu.openControls(slotIndex) },
             onSettingsSelected = { menu.openSettings() },
+            onResyncAll = { requestResync(-1); menu.close() },
             modifier = Modifier.fillMaxSize(),
             feedSide = wallSettings.feedSide,
         )
@@ -485,11 +561,13 @@ fun WallScreen(
                 currentSelection = slots.getOrNull(pending.slotIndex)?.currentSlug(),
                 onAssign = { slug ->
                     lineupStore.assign(pending.slotIndex, slug)
-                    // Return to the controls overlay so the operator
-                    // can immediately toggle audio/captions on the
-                    // newly-chosen channel — calmer than punting them
-                    // back to the side menu.
-                    menu.openControls(pending.slotIndex)
+                    // Flow-smoothing (Part A): picking a channel is the primary
+                    // reason the picker is open, so SELECT completes straight to
+                    // the WALL — one less hop. The other slot controls (audio /
+                    // captions / reconnect) stay one tile-select away. BACK from
+                    // the picker still steps up to the controls (onCancel), so
+                    // cancel and commit have distinct, sensible destinations.
+                    menu.close()
                 },
                 onCancel = { menu.openControls(pending.slotIndex) },
                 modifier = Modifier.fillMaxSize(),
@@ -566,8 +644,32 @@ fun WallScreen(
           if (wallSettings.calibrationBorder) {
               CalibrationOverlay(modifier = Modifier.fillMaxSize())
           }
+          // Brief, self-dismissing "Resyncing…" flash (Part D) — the ONLY resync
+          // chrome; no persistent button cluttering the ambient wall.
+          ResyncFlash(visible = resyncFlash, modifier = Modifier.fillMaxSize())
         }   // inset Box
       }     // BoxWithConstraints (overscan safe-area)
+    }
+}
+
+/** The brief "Resyncing…" flash (Part D) — a centered chip shown for ~1.5s when
+ *  the operator triggers a resync, then gone. No persistent wall chrome. */
+@Composable
+private fun ResyncFlash(visible: Boolean, modifier: Modifier = Modifier) {
+    if (!visible) return
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .background(Color(0xCC000000))
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+            Text(
+                text = "Resyncing…",
+                color = WallColors.LabelPrimary,
+                fontSize = 14.sp,
+                letterSpacing = 1.sp,
+            )
+        }
     }
 }
 

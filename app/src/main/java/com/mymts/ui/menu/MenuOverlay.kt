@@ -62,6 +62,7 @@ fun MenuOverlay(
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
     onSettingsSelected: () -> Unit,
+    onResyncAll: () -> Unit,
     modifier: Modifier = Modifier,
     feedSide: FeedSide = FeedSide.Left,
 ) {
@@ -97,6 +98,7 @@ fun MenuOverlay(
                     versionLine = versionLine,
                     onSlotSelected = onSlotSelected,
                     onSettingsSelected = onSettingsSelected,
+                    onResyncAll = onResyncAll,
                 )
             }
         }
@@ -110,6 +112,7 @@ private fun MenuPanel(
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
     onSettingsSelected: () -> Unit,
+    onResyncAll: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
 
@@ -158,6 +161,18 @@ private fun MenuPanel(
                     detailStyle = SlotRow.DetailStyle.Default,
                 ),
                 onSelect = onSettingsSelected,
+            )
+            // Quick RESYNC of every tile (Part D) — the discoverable home for the
+            // "jump to live" action (the per-tile gesture is long-press SELECT on a
+            // focused tile). Reuses the live-edge primitive; closes the menu.
+            MenuRow(
+                row = SlotRow(
+                    slotIndex = -1,
+                    title = "Resync all feeds",
+                    detail = "jump every tile to live now",
+                    detailStyle = SlotRow.DetailStyle.Default,
+                ),
+                onSelect = onResyncAll,
             )
         }
         Column {
