@@ -5,39 +5,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pins the CRAWL-motion pacing policy ([crawlDurationMs]) — the cross-platform
- * ticker motion (the web wall's continuous marquee, offered on the native wall
- * too). One copy of the concatenated content scrolls a full copy-width at the
- * configured velocity; the duration is `copyWidthPx / (velocity*density)`.
+ * Pins the CRAWL-motion pacing policy — the cross-platform ticker motion (the
+ * web wall's continuous marquee, offered on the native wall too). Motion is now
+ * driven by a CHEAP graphicsLayer translation advanced per frame; the pure parts
+ * are the velocity ([crawlPxPerSec]) and the CLAMPED per-frame advance
+ * ([crawlAdvancePx]) — the "drop, don't sprint" lever that keeps a stall from
+ * catching up in one big jump and starving video decode.
  */
 class CrawlDurationTest {
 
-    // density 1.0 so px == dp (legible arithmetic); velocity 32 dp/sec (BASE).
+    // density 1.0 so px == dp (legible arithmetic); 32 dp/sec base (BASE_SCROLL_VELOCITY).
     private val density = 1f
-    private val velocity = 32f
+    private val base = 32f
 
-    @Test fun `no width yields no duration (nothing to crawl)`() {
-        assertEquals(0, crawlDurationMs(0, velocity, density))
-        assertEquals(0, crawlDurationMs(-100, velocity, density))   // defensive
+    @Test fun `crawlPxPerSec scales base by density and the speed percent`() {
+        assertEquals(32f, crawlPxPerSec(base, 100, density), 0.001f)       // 100% at density 1
+        assertEquals(64f, crawlPxPerSec(base, 100, 2f), 0.001f)           // denser screen → faster px/sec
+        assertEquals(64f, crawlPxPerSec(base, 200, density), 0.001f)      // 200% speed → 2x
+        assertTrue("never zero", crawlPxPerSec(base, 1, density) >= 1f)   // floor (a 0 would freeze motion)
     }
 
-    @Test fun `duration is width over velocity`() {
-        // 320px at 32px/sec → 10s = 10000ms. No cap (a crawl runs as long as the
-        // content is wide — unlike the flip's per-page reveal, there's no dwell).
-        assertEquals(10000, crawlDurationMs(320, velocity, density))
-        assertEquals(5000, crawlDurationMs(160, velocity, density))
+    @Test fun `crawlAdvancePx is pxPerSec times the frame delta in seconds`() {
+        // 64 px/sec over a 16ms frame → ~1.024 px.
+        assertEquals(64f * 0.016f, crawlAdvancePx(64f, 16L, CRAWL_MAX_FRAME_DELTA_MS), 0.001f)
+        // zero delta → no advance.
+        assertEquals(0f, crawlAdvancePx(64f, 0L, CRAWL_MAX_FRAME_DELTA_MS), 0.001f)
     }
 
-    @Test fun `density scales px-per-second (denser screen crawls the same px faster)`() {
-        // 320px at density 2 → velocity 64px/sec → 5s.
-        assertEquals(5000, crawlDurationMs(320, velocity, 2f))
-    }
-
-    @Test fun `a faster speed pref shortens the duration and never returns zero`() {
-        val slow = crawlDurationMs(1000, velocity, density)          // 100% speed
-        val fast = crawlDurationMs(1000, velocity * 2f, density)     // 200% speed
-        assertTrue("faster speed → shorter crawl", fast < slow)
-        // Even an absurd velocity can't return < 1ms (a 0 would make tween throw).
-        assertTrue(crawlDurationMs(1, 100000f, density) >= 1)
+    @Test fun `crawlAdvancePx CLAMPS a stalled frame so it drops missed motion (no sprint)`() {
+        val cap = CRAWL_MAX_FRAME_DELTA_MS
+        // A 500ms stall is clamped to the cap — it advances by AT MOST one capped
+        // frame, not the whole 500ms of "missed" motion.
+        val stalled = crawlAdvancePx(64f, 500L, cap)
+        val capped = crawlAdvancePx(64f, cap, cap)
+        assertEquals(capped, stalled, 0.001f)
+        // and the cap is well under the stall (so motion is genuinely dropped).
+        assertTrue("stall dropped, not sprinted", stalled < 64f * (500f / 1000f))
+        // a negative/garbage delta can't drive motion backwards.
+        assertEquals(0f, crawlAdvancePx(64f, -100L, cap), 0.001f)
     }
 }

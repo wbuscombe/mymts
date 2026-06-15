@@ -25,20 +25,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -207,16 +211,22 @@ private fun PagedTicker(
     }
 }
 
-/**
- * Pure duration policy for the CRAWL motion: how long one copy of the
- * concatenated content takes to scroll a full copy-width at the configured
- * velocity. Returns ms (>=1 when there's width to scroll; 0 when there isn't).
- * Pure — no Compose — so the pacing is unit-testable.
- */
-internal fun crawlDurationMs(copyWidthPx: Int, velocityDpPerSec: Float, density: Float): Int {
-    if (copyWidthPx <= 0) return 0
-    val pxPerSec = (velocityDpPerSec * density).coerceAtLeast(1f)
-    return (copyWidthPx / pxPerSec * 1000f).toInt().coerceAtLeast(1)
+/** Hard cap on the per-frame crawl delta: a stall (GC/jank) advances at most
+ *  this much, so the crawl DROPS the missed motion instead of sprinting to catch
+ *  up (~2 frames at 60fps / 1 at 30fps — frame-rate-independent but bounded). */
+internal const val CRAWL_MAX_FRAME_DELTA_MS = 33L
+
+/** Pure: crawl velocity in px/sec from the base dp/sec, the operator's speed
+ *  percent, and the display density. Frame-rate-independent. Unit-tested. */
+internal fun crawlPxPerSec(baseDpPerSec: Float, scrollPct: Int, density: Float): Float =
+    (baseDpPerSec * density * (scrollPct.coerceAtLeast(1) / 100f)).coerceAtLeast(1f)
+
+/** Pure: how far (px) the crawl advances this frame, with the frame delta
+ *  CLAMPED to [maxFrameDeltaMs] so a long (stalled) frame can't sprint. This is
+ *  the "drop, don't accumulate-and-sprint" lever. Unit-tested. */
+internal fun crawlAdvancePx(pxPerSec: Float, frameDeltaMs: Long, maxFrameDeltaMs: Long): Float {
+    val dt = frameDeltaMs.coerceIn(0L, maxFrameDeltaMs)
+    return pxPerSec * (dt / 1000f)
 }
 
 /**
@@ -237,13 +247,21 @@ private fun CrawlTicker(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current.density
-    val scrollState = rememberScrollState()
     var copyWidthPx by remember(pages) { mutableIntStateOf(0) }
+    var offsetPx by remember(pages) { mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier = modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
         val viewportPx = with(LocalDensity.current) { maxWidth.roundToPx() }
         val overflow = copyWidthPx > 0 && copyWidthPx >= viewportPx
         Row(
-            modifier = Modifier.fillMaxHeight().horizontalScroll(scrollState, enabled = false),
+            // CHEAP motion: translate the already-composed strip on the COMPOSITOR
+            // (graphicsLayer translationX) — NOT a horizontalScroll + animateScrollTo,
+            // which re-lays-out the wide two-copy row every frame and starved video
+            // decode on the modest S905Y4. `unbounded` lets the two-copy row exceed
+            // the viewport width; the surrounding Box clips the overflow.
+            modifier = Modifier
+                .fillMaxHeight()
+                .wrapContentWidth(align = Alignment.Start, unbounded = true)
+                .graphicsLayer { translationX = -offsetPx },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -253,22 +271,21 @@ private fun CrawlTicker(
         }
         // Staleness flag pinned to the RIGHT edge (same as the flip motion).
         if (stale) StaleChip(modifier = Modifier.align(Alignment.CenterEnd))
-    }
 
-    // Drive the continuous scroll: 0 → one copy-width, linearly, forever. Paused
-    // = no scroll. Re-keys on the measured width + speed so a live change applies.
-    LaunchedEffect(pages, scrollPct, paused, copyWidthPx) {
-        if (paused) { scrollState.scrollTo(0); return@LaunchedEffect }
-        val w = copyWidthPx
-        if (w <= 0) return@LaunchedEffect       // not laid out yet (re-runs when measured)
-        val velocityDp = (BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)).value
-        val durMs = crawlDurationMs(w, velocityDp, density)
-        while (true) {
-            scrollState.scrollTo(0)
-            // If one copy doesn't overflow, maxValue can't reach a full copy-
-            // width → nothing to crawl; idle and re-check (content/size may grow).
-            if (scrollState.maxValue < w) { delay(1000); continue }
-            scrollState.animateScrollTo(w, tween(durationMillis = durMs, easing = LinearEasing))
+        // Single frame-paced driver: advance the translation by a CLAMPED per-frame
+        // delta (drop, don't sprint) and wrap at one copy-width for a seamless loop.
+        // No per-frame re-layout — leaves the main thread free for video decode.
+        LaunchedEffect(pages, scrollPct, paused, copyWidthPx, overflow) {
+            if (paused || !overflow || copyWidthPx <= 0) { offsetPx = 0f; return@LaunchedEffect }
+            val pxPerSec = crawlPxPerSec(BASE_SCROLL_VELOCITY.value, scrollPct, density)
+            var lastNs = withFrameNanos { it }
+            while (true) {
+                val nowNs = withFrameNanos { it }
+                val frameDeltaMs = (nowNs - lastNs) / 1_000_000L
+                lastNs = nowNs
+                offsetPx += crawlAdvancePx(pxPerSec, frameDeltaMs, CRAWL_MAX_FRAME_DELTA_MS)
+                if (offsetPx >= copyWidthPx) offsetPx -= copyWidthPx.toFloat()
+            }
         }
     }
 }
