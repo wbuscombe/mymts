@@ -58,6 +58,10 @@ import {
   videoBackoffMs,
   videoRetryDecision,
   VIDEO_MAX_RETRIES,
+  clampFeedPct,
+  feedPctFromPointer,
+  FEED_PANE_MIN_PCT,
+  FEED_PANE_MAX_PCT,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -802,4 +806,26 @@ test("videoRetryDecision: retries transient on a backoff, then GIVES UP (bounded
   // at the cap it gives up to the honest state — NEVER loops forever
   assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).retry, false);
   assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).reason, "exhausted");
+});
+
+// ----- draggable feed/video divider (A) — resize/clamp math -----
+
+test("clampFeedPct: bounds the split so neither pane collapses", () => {
+  assert.equal(clampFeedPct(5), FEED_PANE_MIN_PCT);    // too narrow → floor (feed keeps room)
+  assert.equal(clampFeedPct(90), FEED_PANE_MAX_PCT);   // too wide → cap (video keeps room)
+  assert.equal(clampFeedPct(40), 40);                  // in-range passes through
+  assert.ok(FEED_PANE_MIN_PCT >= 15 && FEED_PANE_MAX_PCT <= 60); // feed≥15%, video≥40%
+  assert.equal(clampFeedPct(NaN), 32);                 // non-finite → default, never breaks layout
+});
+
+test("feedPctFromPointer: ratio from pointer over the wall, clamped (sane across sizes)", () => {
+  // wall left=0, width=1000: a pointer at 400px → 40% feed.
+  assert.equal(feedPctFromPointer(400, 0, 1000), 40);
+  // same RATIO at a different window size (left=200, width=2000): 600px in → 30%.
+  assert.equal(feedPctFromPointer(800, 200, 2000), 30);
+  // dragging past the edges clamps to the bounds, never collapses a pane.
+  assert.equal(feedPctFromPointer(10, 0, 1000), FEED_PANE_MIN_PCT);
+  assert.equal(feedPctFromPointer(990, 0, 1000), FEED_PANE_MAX_PCT);
+  // a degenerate (zero-width) wall → the safe default, no divide-by-zero.
+  assert.equal(feedPctFromPointer(400, 0, 0), 32);
 });

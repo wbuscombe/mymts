@@ -505,6 +505,31 @@ export const DEFAULT_VIEW_PREFS = {
   hidden: [], hiddenLeagues: [], assignments: {},
 };
 
+// ----- feed/video pane split (the draggable divider's clamps + math) -----
+
+/** Bounds for the feed-pane width (percent of the wall body) — the divider can't
+ *  starve the feed of headline room nor shrink the video pane below a watchable
+ *  size. Video pane min = 100 − FEED_PANE_MAX_PCT. Named for tunability. */
+export const FEED_PANE_MIN_PCT = 18;
+export const FEED_PANE_MAX_PCT = 58;
+
+/** Clamp a feed-pane width percent into [FEED_PANE_MIN_PCT..FEED_PANE_MAX_PCT];
+ *  a non-finite value falls back to the default. Pure — unit-tested. */
+export function clampFeedPct(value, min = FEED_PANE_MIN_PCT, max = FEED_PANE_MAX_PCT) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_VIEW_PREFS.feedPct;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** The feed-pane width percent for a pointer at clientX [pointerX] over the wall
+ *  body (its left edge [wallLeft], width [wallWidth] px), clamped so neither pane
+ *  collapses. A ratio (not fixed px) so it stays sane across window sizes. Pure. */
+export function feedPctFromPointer(pointerX, wallLeft, wallWidth) {
+  if (!(Number(wallWidth) > 0)) return DEFAULT_VIEW_PREFS.feedPct;
+  const raw = ((Number(pointerX) - Number(wallLeft)) / Number(wallWidth)) * 100;
+  return clampFeedPct(raw);
+}
+
 /**
  * Normalize a raw (parsed-JSON or partial) prefs object into the canonical
  * view-prefs shape — clamping every value into its valid range, defaulting
@@ -525,7 +550,7 @@ export function normalizeViewPrefs(raw) {
   return {
     gridRows: clampGridDim(gridRows ?? DEFAULT_VIEW_PREFS.gridRows),
     gridCols: clampGridDim(gridCols ?? DEFAULT_VIEW_PREFS.gridCols),
-    feedPct: typeof p.feedPct === "number" ? p.feedPct : DEFAULT_VIEW_PREFS.feedPct,
+    feedPct: clampFeedPct(typeof p.feedPct === "number" ? p.feedPct : DEFAULT_VIEW_PREFS.feedPct),
     feedFont: typeof p.feedFont === "number" ? p.feedFont : DEFAULT_VIEW_PREFS.feedFont,
     tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"

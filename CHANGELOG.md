@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): draggable feed↔video divider in the web client (persisted ratio) (2026-06-15)
+
+Web-client-only. A draggable vertical divider now sits between the news-feed pane and the video grid, so the operator can resize the split directly on the wall instead of hunting in Settings. Reuses the existing `feedPct` / `--feed-pct` / prefs mechanism — no new storage key, no new layout model.
+
+- **Pointer + touch + keyboard.** Drag the divider (mouse or touch — `setPointerCapture`, `touch-action:none`) to set the ratio; the live `feedPct` is computed from the pointer position over the wall (`feedPctFromPointer`). The divider is focusable (`role="separator"`, `tabindex="0"`); **←/→ nudge** ±2% when focused. The ratio is clamped so neither pane collapses (`clampFeedPct`, 18–58%) and **persists** on drag-end / keypress via the existing `savePrefs`.
+- **Stays in lockstep with Settings.** The "Feed width" slider was re-ranged to match the divider's 18–58% clamp; dragging updates the slider and vice-versa (single source of truth: `prefs.feedPct`).
+- **Untouched by design:** the bottom ticker, and the video grid's existing column behavior **including the 3-column cap** (native parity, documented-not-lifted).
+- Pure helpers `clampFeedPct` (bounds + NaN→default) and `feedPctFromPointer` (ratio across wall sizes, edge-clamped) are unit-tested. No CSP / no-proxy / A1 / vendored-hls.js change; no native app, no PIA.
+
 ## fix(app): lower the ticker crawl speed range for a genuinely-slow option (2026-06-15)
 
 The crawl ran too fast and the speed slider felt like it did little. **Finding:** the crawl was NOT unwired — the chain `WallScreen → TickerStrip → CrawlTicker → crawlPxPerSec(scrollPct)` is intact and the driver re-keys on `scrollPct`, so the setting *does* drive it live. The real problem was the **range**: a 40% floor × a 32 dp/s base made the whole band fast (≈26–128 px/s at 1080p), so the slider only spanned "fast → faster" and even the floor was too fast for 10 ft.

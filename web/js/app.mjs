@@ -20,6 +20,7 @@ import {
   feedDetailModel,
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
+  feedPctFromPointer, clampFeedPct,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -824,7 +825,7 @@ function wireSettings() {
   onGridDim(gridCols, "gridCols");
 
   const feedWidth = el("feed-width"); feedWidth.value = String(prefs.feedPct);
-  feedWidth.addEventListener("input", () => { prefs.feedPct = Number(feedWidth.value); applyPrefs(); savePrefs(); });
+  feedWidth.addEventListener("input", () => { prefs.feedPct = clampFeedPct(Number(feedWidth.value)); applyPrefs(); savePrefs(); });
 
   const feedFont = el("feed-font"); feedFont.value = String(prefs.feedFont);
   feedFont.addEventListener("change", () => { prefs.feedFont = Number(feedFont.value); applyPrefs(); savePrefs(); });
@@ -872,10 +873,55 @@ function wireSettings() {
   rebuildLeagueToggles();
 }
 
+/** Draggable feed↔video divider — pointer (mouse + touch) drag resizes the split
+ *  via the existing `feedPct` pref (→ `--feed-pct`); the ratio persists through
+ *  savePrefs (the same localStorage prefs store, not a new key). The video grid's
+ *  column logic (incl. the 3-column native-parity cap) is untouched — only the
+ *  pane widths change. ←/→ when the divider is focused nudges it (keyboard a11y). */
+function wireDivider() {
+  const divider = el("pane-divider");
+  const wall = el("wall");
+  if (!divider || !wall) return;
+  const setFeedPct = (pct) => {
+    prefs.feedPct = pct;
+    document.documentElement.style.setProperty("--feed-pct", pct + "%");
+    const slider = el("feed-width");
+    if (slider) slider.value = String(pct);   // keep the settings slider in sync
+  };
+  let dragging = false;
+  divider.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    divider.classList.add("dragging");
+    try { divider.setPointerCapture(e.pointerId); } catch { /* not all targets capture */ }
+    e.preventDefault();
+  });
+  divider.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const r = wall.getBoundingClientRect();
+    setFeedPct(feedPctFromPointer(e.clientX, r.left, r.width));   // pure clamp in render.mjs
+  });
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove("dragging");
+    try { divider.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    savePrefs();   // persist the chosen ratio
+  };
+  divider.addEventListener("pointerup", endDrag);
+  divider.addEventListener("pointercancel", endDrag);
+  divider.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    setFeedPct(clampFeedPct(prefs.feedPct + (e.key === "ArrowLeft" ? -2 : 2)));
+    savePrefs();
+    e.preventDefault();
+  });
+}
+
 function startLoop(fn, ms) { fn(); return setInterval(fn, ms); }
 function main() {
   applyPrefs();
   wireSettings();
+  wireDivider();
   buildGrid();
   startLoop(pollTicker, TICKER_POLL_MS);
   startLoop(pollFeed, FEED_POLL_MS);

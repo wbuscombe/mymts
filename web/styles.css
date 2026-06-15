@@ -106,7 +106,15 @@ body { display: flex; flex-direction: column; }
 .wall { flex: 1; display: flex; min-height: 0; }
 .feed-pane { width: var(--feed-pct); min-width: 220px; background: var(--panel);
   display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-.grid-pane { flex: 1; background: var(--bg); padding: 4px; min-height: 0; }
+.grid-pane { flex: 1; background: var(--bg); padding: 4px; min-height: 0; min-width: 0; }
+
+/* Draggable feed↔video divider (pointer + touch). A thin bar with a wider
+   invisible hit area; col-resize cursor + an accent on hover/focus. touch-action
+   none so a touch-drag resizes instead of scrolling. */
+.pane-divider { flex: 0 0 5px; align-self: stretch; position: relative; z-index: 5;
+  background: var(--line); cursor: col-resize; touch-action: none; outline: none; }
+.pane-divider::before { content: ""; position: absolute; inset: 0 -5px; }  /* generous hit target */
+.pane-divider:hover, .pane-divider:focus-visible, .pane-divider.dragging { background: var(--accent); }
 
 .pane-head { display: flex; justify-content: space-between; align-items: center;
   padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--line); }

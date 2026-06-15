@@ -45,6 +45,9 @@
       <div class="pane-head"><span class="pane-title">FEED</span><span id="feed-status" class="pane-status"></span></div>
       <div id="feed" class="feed"></div>
     </section>
+    <!-- Drag (mouse/touch) to resize the feed↔video split; ←/→ when focused nudges. -->
+    <div class="pane-divider" id="pane-divider" role="separator" aria-orientation="vertical"
+         aria-label="Resize feed and video panes" tabindex="0" title="Drag to resize"></div>
     <section class="grid-pane" aria-label="video grid">
       <div id="grid" class="video-grid"></div>
     </section>
@@ -76,7 +79,7 @@
              ARCHITECTURE.md (native-vs-web). -->
         <p class="note">Up to 3 × 3 (9 tiles) — matches the TV wall's grid so both screens stay in sync.</p>
         <label class="row"><span>Feed width</span>
-          <input type="range" id="feed-width" min="22" max="55" step="1" /></label>
+          <input type="range" id="feed-width" min="18" max="58" step="1" /></label>
         <label class="row"><span>Feed text size</span>
           <select id="feed-font"><option value="0.88">Small</option><option value="1" selected>Default</option><option value="1.18">Large</option></select></label>
         <label class="row"><span>Feed recency</span>
