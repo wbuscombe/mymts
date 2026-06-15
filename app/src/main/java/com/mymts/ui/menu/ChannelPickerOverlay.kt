@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mymts.data.helper.Channel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -128,6 +130,29 @@ internal fun channelToFocus(channels: List<Channel>, currentSelection: String?):
     return (current ?: channels.first()).slug
 }
 
+/**
+ * The LazyColumn **flat index** of the channel row to open focused on — each
+ * section contributes one header item plus its channel items. Returns -1 if
+ * [focusSlug] isn't in the sectioned list. The picker `scrollToItem`s this index
+ * into view BEFORE requesting focus, so the request can't silently no-op on an
+ * uncomposed off-screen row (the focus-loss bug). Pure — unit-tested.
+ */
+internal fun initialFocusIndex(
+    sections: List<Pair<String, List<Channel>>>,
+    focusSlug: String?,
+): Int {
+    if (focusSlug == null) return -1
+    var index = 0
+    for ((_, chans) in sections) {
+        index++ // the section header item
+        for (ch in chans) {
+            if (ch.slug == focusSlug) return index
+            index++
+        }
+    }
+    return -1
+}
+
 @Composable
 private fun PickerListCard(
     slotIndex: Int,
@@ -138,6 +163,25 @@ private fun PickerListCard(
     onAssign: (slug: String) -> Unit,
     onCancel: () -> Unit,
 ) {
+    // List-level focus entry — mirrors SourceFilterOverlay's working pattern, but
+    // for an ARBITRARY target (the slot's current channel, which can be in an
+    // off-screen section). Hoist ONE FocusRequester, scroll the target into view
+    // so its row is composed + placed, THEN request focus. The old per-row
+    // LaunchedEffect never ran for an off-screen target → the picker opened with
+    // null focus and the D-pad was dead until Back. Keyed on Unit = once per open.
+    val initialFocusRequester = remember { FocusRequester() }
+    val initialIndex = remember(sections, focusSlug) { initialFocusIndex(sections, focusSlug) }
+    LaunchedEffect(Unit) {
+        if (initialIndex >= 0) {
+            listState.scrollToItem(initialIndex)
+            // Wait until the target row is actually laid out before focusing it —
+            // requestFocus() no-ops on a node that isn't placed yet.
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.index == initialIndex } }
+                .first { it }
+        }
+        runCatching { initialFocusRequester.requestFocus() }
+    }
+
     Column(
         modifier = Modifier
             .widthIn(min = 440.dp)
@@ -170,7 +214,7 @@ private fun PickerListCard(
                 items(chans, key = { it.slug }) { channel ->
                     ChannelRow(
                         channel = channel,
-                        isInitial = channel.slug == focusSlug,
+                        focusRequester = if (channel.slug == focusSlug) initialFocusRequester else null,
                         onSelect = { onAssign(channel.slug) },
                     )
                 }
@@ -203,15 +247,16 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun ChannelRow(
     channel: Channel,
-    isInitial: Boolean,
+    focusRequester: FocusRequester?,
     onSelect: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isFocused by interaction.collectIsFocusedAsState()
 
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (isInitial) focusRequester.requestFocus() }
-
+    // The initial row carries the hoisted requester (so PickerListCard can focus
+    // it AFTER scrolling it into view); every other row passes null. Focus itself
+    // is driven at the list level — never a per-row LaunchedEffect (which can't
+    // run for an off-screen LazyColumn row).
     val bring = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
 
@@ -221,7 +266,7 @@ private fun ChannelRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .let { if (isInitial) it.focusRequester(focusRequester) else it }
+            .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
             .bringIntoViewRequester(bring)
             .onFocusEvent { if (it.isFocused) scope.launch { bring.bringIntoView() } }
             .background(if (isFocused) MenuColors.FocusBackground else Color.Transparent)

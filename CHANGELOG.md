@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(app): channel picker takes + holds D-pad focus on open (native) (2026-06-15)
+
+**Bug:** opening the sectioned channel picker (the `ChannelCategory` list — Sports / US News / Global News / Business / Weather) lost the D-pad cursor entirely — focus was null, the D-pad did nothing, only Back escaped — so you couldn't change a feed on the fly. Both entry points (selecting a video tile on the wall, and the menu → slot controls → "change channel") broke identically.
+
+**Root cause (cause #2 — request-focus on an uncomposed target):** the picker requested focus from a **per-row** `LaunchedEffect` inside the `LazyColumn` (`if (isInitial) requestFocus()`), targeting the **slot's current channel**. When that channel sits in an off-screen section (e.g. Weather, the last one), `LazyColumn` never composes its row → the `LaunchedEffect` never runs → `requestFocus()` never fires → null focus. Nothing scrolled the target into view first. (Both entry points funnel through the one `ChannelPickerOverlay`, so both broke regardless of caller.)
+
+**Fix (reuses `SourceFilterOverlay`'s proven list-level pattern):** hoist a single `FocusRequester` to the list level; on open, **`scrollToItem` the target into view, wait until its row is actually laid out (`snapshotFlow` on `visibleItemsInfo`), then `requestFocus()`** — so the request can't no-op on an uncomposed row. The flat-index computation is a new pure function `initialFocusIndex(sections, focusSlug)` (counts each section header + its channels), unit-tested incl. the off-screen-last-section case that broke. Section headers stay non-focusable (D-pad flows across sections); the existing focus-following scroll + the caller's exit-restore are unchanged. No `WallSettings`/panel-fit touched.
+
+Tests: 3 new pure cases (`ChannelPickerListTest`) pin the index logic + that `channelToFocus`'s target always resolves to a real row; full app unit suite green (incl. the WallSettings round-trip); release APK builds clean. The on-device focus *landing* is integration-level — the operator's at-the-box feel-test (both entry points). **Not yet deployed** — ships with the next `.92` build (which also lights up the committed ticker-motion crawl).
+
 ## docs: BACKLOG accuracy pass + recorded candidate charter checks (2026-06-14)
 
 Docs-only hygiene, closing the two doc-vs-reality gaps the read-only backlog audit flagged. No code, no deploy.
