@@ -612,16 +612,23 @@ export function browserPlayability(channel) {
 
 // ----- in-browser video auto-recovery (retry transient, give up on hopeless) -----
 //
-// An always-on wall can't leave a tile dead until a manual reload. We retry the
-// RETRYABLE failures on a backoff and HONESTLY stop on the genuinely-unplayable
-// ones — looping forever on a stream the browser fundamentally can't play
-// (DRM / unsupported codec / native-ExoPlayer-only) is its own bad behaviour
-// (wasted cycles, flicker, never succeeds). These are pure so the classification
-// + backoff are unit-tested against the real hls.js/native failure signals.
+// An always-on wall can't leave a tile dead until a manual reload. A RETRYABLE
+// drop (transient network/stream hiccup, was-playing-then-dropped) reconnects on
+// a steady ~15s cadence for up to a ~3-min window (~12 attempts), then HONESTLY
+// gives up to the persistent state (the centered ↻ for manual retry). A
+// genuinely-unplayable failure (DRM / unsupported codec / native-ExoPlayer-only)
+// NEVER auto-retries — looping forever on a stream the browser fundamentally
+// can't play is its own bad behaviour (wasted cycles, flicker, never succeeds).
+// These are pure so the classification + the reconnect schedule are unit-tested
+// against the real hls.js/native failure signals.
 
-export const VIDEO_MAX_RETRIES = 4;       // bounded — then fall to the honest state
-export const VIDEO_BACKOFF_BASE_MS = 2000;
-export const VIDEO_BACKOFF_MAX_MS = 30000;
+/** Fixed reconnect cadence + total window for a RETRYABLE drop. Polling (a steady
+ *  interval) suits a transient outage that may clear at any time, better than an
+ *  exponential backoff that would wait minutes between late attempts. Named for
+ *  tunability. */
+export const VIDEO_RECONNECT_INTERVAL_MS = 15_000;   // reconnect every ~15s
+export const VIDEO_RECONNECT_WINDOW_MS = 180_000;    // for up to a ~3-min window
+export const VIDEO_MAX_RECONNECTS = Math.round(VIDEO_RECONNECT_WINDOW_MS / VIDEO_RECONNECT_INTERVAL_MS); // ~12
 
 /**
  * Classify a video failure signal into RETRYABLE (transient — worth a backoff
@@ -653,23 +660,18 @@ export function classifyVideoFailure(kind, details = "") {
   return { retryable: true, reason: k || "unknown" };
 }
 
-/** Exponential backoff (ms) for attempt N (0-indexed), capped. */
-export function videoBackoffMs(attempt, base = VIDEO_BACKOFF_BASE_MS, max = VIDEO_BACKOFF_MAX_MS) {
-  const n = Math.max(0, Math.floor(Number(attempt) || 0));
-  return Math.min(max, base * 2 ** n);
-}
-
 /**
- * Decide what to do after a failure: retry (with a delay) or give up to the
- * honest persistent state. NEVER retries a non-retryable failure (the crux);
- * NEVER retries past `maxRetries` (so a flaky stream can't loop forever).
- * Returns { retry, delayMs?, reason }.
+ * Decide what to do after a failure: schedule the next reconnect (a fixed
+ * [VIDEO_RECONNECT_INTERVAL_MS] poll) or give up to the honest persistent state.
+ * NEVER retries a non-retryable failure (the crux); NEVER retries past
+ * `maxRetries` (so a flaky stream can't poll forever — it gives up after the
+ * window). Returns { retry, delayMs?, reason }.
  */
-export function videoRetryDecision(attempt, classification, maxRetries = VIDEO_MAX_RETRIES) {
+export function videoRetryDecision(attempt, classification, maxRetries = VIDEO_MAX_RECONNECTS) {
   const c = classification || { retryable: false, reason: "unknown" };
   if (!c.retryable) return { retry: false, reason: c.reason };
   if (Math.floor(Number(attempt) || 0) >= maxRetries) return { retry: false, reason: "exhausted" };
-  return { retry: true, delayMs: videoBackoffMs(attempt), reason: c.reason };
+  return { retry: true, delayMs: VIDEO_RECONNECT_INTERVAL_MS, reason: c.reason };
 }
 
 // ----- feed source filter (browser-local view pref, mirrors the wall) -----

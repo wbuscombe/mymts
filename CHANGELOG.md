@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): retune the video auto-reconnect to 15s polling over a ~3-min window (2026-06-15)
+
+Web-client-only. A tile whose stream drops for a **transient** reason (network/media error, stall, native MSE hiccup) now **reconnects on a steady ~15s cadence for up to a ~3-minute window** (≈12 attempts) before giving up — replacing the old exponential backoff (4 tries, 2s→30s) that gave up in well under a minute. A real-world transient outage (a CDN blip, a Wi-Fi stutter) usually clears within a minute or two, so a calm fixed-interval poll recovers the tile unattended instead of stranding it on the manual-retry ring after a handful of fast tries.
+
+- This is a **retune of the existing recovery path, not a new loop.** `app.mjs` already drives one `setTimeout`-per-cell from `videoRetryDecision(...).delayMs`; only the pure decision + its constants changed — `VIDEO_RECONNECT_INTERVAL_MS=15000`, `VIDEO_RECONNECT_WINDOW_MS=180000`, `VIDEO_MAX_RECONNECTS≈12` (replacing `VIDEO_MAX_RETRIES`/`VIDEO_BACKOFF_*`; `videoBackoffMs` removed).
+- **Genuinely-unplayable tiles still NEVER auto-retry.** `classifyVideoFailure` is untouched: no-HLS-support / DRM / codec / remux / unsupported-source still resolve to the honest centered "Browser can't play this source — on the TV wall" state with the manual **↻**. Only `retryable` failures poll.
+- **Manual ↻ forces an immediate re-attempt and resets the window** (`refreshCell` zeroes `videoAttempt`), so an operator is never worse off than the auto path. When a tile reaches the window cap it gives up to the centered ↻ for manual retry.
+- Pure-logic only — `videoRetryDecision` (fixed 15s delay, gives up at the cap with reason `"exhausted"`) and the reconnect-schedule constants are unit-tested. No CSP / no-proxy / A1 / vendored-hls.js change; no native app, no PIA.
+
 ## feat(web): draggable feed↔video divider in the web client (persisted ratio) (2026-06-15)
 
 Web-client-only. A draggable vertical divider now sits between the news-feed pane and the video grid, so the operator can resize the split directly on the wall instead of hunting in Settings. Reuses the existing `feedPct` / `--feed-pct` / prefs mechanism — no new storage key, no new layout model.

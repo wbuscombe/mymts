@@ -55,9 +55,9 @@ import {
   safeHttpLink,
   feedDetailModel,
   classifyVideoFailure,
-  videoBackoffMs,
   videoRetryDecision,
-  VIDEO_MAX_RETRIES,
+  VIDEO_RECONNECT_INTERVAL_MS,
+  VIDEO_MAX_RECONNECTS,
   clampFeedPct,
   feedPctFromPointer,
   FEED_PANE_MIN_PCT,
@@ -781,31 +781,29 @@ test("classifyVideoFailure: transient failures ARE retryable", () => {
   assert.equal(classifyVideoFailure("somethingNew").retryable, true);   // unknown → bounded retry
 });
 
-test("videoBackoffMs: exponential, capped, monotonic", () => {
-  assert.equal(videoBackoffMs(0), 2000);
-  assert.equal(videoBackoffMs(1), 4000);
-  assert.equal(videoBackoffMs(2), 8000);
-  assert.equal(videoBackoffMs(99), 30000);   // capped
-  assert.ok(videoBackoffMs(3) >= videoBackoffMs(2));
+test("reconnect schedule: ~15s interval over a ~3-min window (~12 attempts)", () => {
+  assert.equal(VIDEO_RECONNECT_INTERVAL_MS, 15_000);          // poll every 15s
+  assert.equal(VIDEO_MAX_RECONNECTS, 12);                     // 3 min / 15s
 });
 
-test("videoRetryDecision: never retries the unplayable (no infinite loop on a hopeless stream)", () => {
+test("videoRetryDecision: never retries the unplayable (no poll loop on a hopeless stream)", () => {
   const drm = classifyVideoFailure("keySystemError");
-  assert.equal(videoRetryDecision(0, drm).retry, false);   // not even attempt 0
+  assert.equal(videoRetryDecision(0, drm).retry, false);   // not even attempt 0 — marks immediately
   assert.equal(videoRetryDecision(0, classifyVideoFailure("no-hls-support")).retry, false);
+  assert.equal(videoRetryDecision(0, classifyVideoFailure("native", "src_not_supported")).retry, false);
 });
 
-test("videoRetryDecision: retries transient on a backoff, then GIVES UP (bounded)", () => {
+test("videoRetryDecision: polls a transient drop every 15s, then GIVES UP at the window", () => {
   const net = classifyVideoFailure("networkError");
-  // attempts 0..max-1 retry with an increasing delay
-  for (let a = 0; a < VIDEO_MAX_RETRIES; a++) {
+  // attempts 0..max-1 schedule the next reconnect at the FIXED 15s interval.
+  for (let a = 0; a < VIDEO_MAX_RECONNECTS; a++) {
     const d = videoRetryDecision(a, net);
-    assert.equal(d.retry, true, `attempt ${a} should retry`);
-    assert.ok(d.delayMs > 0);
+    assert.equal(d.retry, true, `attempt ${a} should reconnect`);
+    assert.equal(d.delayMs, VIDEO_RECONNECT_INTERVAL_MS, "fixed 15s cadence, not a backoff");
   }
-  // at the cap it gives up to the honest state — NEVER loops forever
-  assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).retry, false);
-  assert.equal(videoRetryDecision(VIDEO_MAX_RETRIES, net).reason, "exhausted");
+  // at the window's end it gives up to the honest state — NEVER polls forever
+  assert.equal(videoRetryDecision(VIDEO_MAX_RECONNECTS, net).retry, false);
+  assert.equal(videoRetryDecision(VIDEO_MAX_RECONNECTS, net).reason, "exhausted");
 });
 
 // ----- draggable feed/video divider (A) — resize/clamp math -----
