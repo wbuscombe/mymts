@@ -131,8 +131,32 @@ def test_api_channels_pinned_fields(phantom_client: TestClient) -> None:
     item = body["channels"][0]
     for field in ("slug", "label", "kind", "current_url", "status", "enabled",
                   "last_check_at", "last_success_at", "last_error", "error_count",
-                  "browser_playable"):
+                  "browser_playable", "category"):
         assert field in item, f"missing field: {field}"
+
+
+def test_api_channels_category_mirrors_native_taxonomy(phantom_client: TestClient) -> None:
+    """Every channel carries a `category` from the native ChannelCategory map,
+    ALWAYS present (status-independent), and only ever one of the six known
+    sections — so the web picker can section by it without inventing categories."""
+    from mymts_helper.channels.category import CATEGORY_ORDER
+
+    body = phantom_client.get("/api/channels").json()
+    by_slug = {c["slug"]: c["category"] for c in body["channels"]}
+    # Spot-check the mapping mirrors native (one channel per section + a fallback).
+    expected = {
+        "cbs-sports-hq": "Sports",
+        "cnn": "US News",
+        "bbc-news": "Global News",
+        "bloomberg-tv": "Business",
+        "fox-weather": "Weather",
+        "nasa-tv": "General",   # unmapped slug → GENERAL fallback (as native)
+    }
+    for slug, cat in expected.items():
+        assert by_slug.get(slug) == cat, f"{slug} should be {cat}, got {by_slug.get(slug)}"
+    # No channel ever lands outside the known taxonomy.
+    for c in body["channels"]:
+        assert c["category"] in CATEGORY_ORDER, f"{c['slug']} has unknown category {c['category']}"
 
 
 # ---- SQLite cross-thread regression (feed-sources expansion) ----

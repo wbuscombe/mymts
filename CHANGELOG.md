@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): serve each channel's `category` on /api/channels (mirrors native taxonomy) (2026-06-15)
+
+The native wall's channel picker groups channels into category sections (Sports / US News / Global News / Business / Weather / General); the helper now serves each channel's `category` on the existing `/api/channels` response so the LAN web client can build the SAME sectioned picker without inventing its own categories.
+
+- New `helper/src/mymts_helper/channels/category.py` — a faithful port of the native `ChannelCategory` map (the six section names + the same slug→category assignments, with `nasa-tv`/`iss-feed`/`redbull-tv` falling through to `General`). The category is **derived from the slug** (a pure function over a static map), so there is **no DB column and no migration** — a channel's section is a property of which channel it is.
+- The field is **additive and status-independent** (an offline channel still reports its section); `API_SCHEMA_VERSION` stays `1` (additive). The TV ignores it (it has its own copy); the web client consumes it.
+- Contract test updated to pin `category` in the response, plus a test asserting the mapping mirrors native and every channel lands in one of the six known sections. Helper suite green; new code ruff-clean. No auth/network/topology change.
+
 ## feat(web): retune the video auto-reconnect to 15s polling over a ~3-min window (2026-06-15)
 
 Web-client-only. A tile whose stream drops for a **transient** reason (network/media error, stall, native MSE hiccup) now **reconnects on a steady ~15s cadence for up to a ~3-minute window** (≈12 attempts) before giving up — replacing the old exponential backoff (4 tries, 2s→30s) that gave up in well under a minute. A real-world transient outage (a CDN blip, a Wi-Fi stutter) usually clears within a minute or two, so a calm fixed-interval poll recovers the tile unattended instead of stranding it on the manual-retry ring after a handful of fast tries.
