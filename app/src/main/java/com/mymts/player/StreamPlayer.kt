@@ -157,6 +157,15 @@ class StreamPlayer(
                     return
                 }
             }
+            // Live-edge watchdog (Part B): if this tile has drifted too far behind
+            // live (a backlog accumulated), JUMP to the live edge — drop the stale
+            // backlog instead of playing through it. Real-time over catch-up.
+            player?.let { p ->
+                if (shouldSeekToLive(p.currentLiveOffset, MAX_LIVE_DRIFT_MS)) {
+                    Log.i(TAG, "[${spec.label}] live drift ${p.currentLiveOffset}ms > ${MAX_LIVE_DRIFT_MS}ms — seek to live")
+                    p.seekToDefaultPosition()
+                }
+            }
             handler.postDelayed(this, tickIntervalMs)
         }
     }
@@ -188,7 +197,9 @@ class StreamPlayer(
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(1500, 4000, 500, 1500)
+            // Tight buffers so latency can't pile up behind live: get to playing
+            // fast, never hoard a deep behind-live cushion (real-time over catch-up).
+            .setBufferDurationsMs(MIN_BUFFER_MS, MAX_BUFFER_MS, BUFFER_FOR_PLAYBACK_MS, BUFFER_FOR_REBUFFER_MS)
             .setTargetBufferBytes(4 * 1024 * 1024)
             .setBackBuffer(0, false)
             .build()
@@ -278,7 +289,20 @@ class StreamPlayer(
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             .build()
 
-        val mediaItem = MediaItem.fromUri(spec.url)
+        // Live-edge adherence: aim for a small offset behind live, with an
+        // imperceptibly narrow speed window for micro-correction only. GROSS drift
+        // is corrected by the watchdog's seek-to-live (in the tick), NOT by
+        // sprinting playback through the backlog (the catch-up feel to avoid).
+        val mediaItem = MediaItem.Builder()
+            .setUri(spec.url)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(TARGET_LIVE_OFFSET_MS)
+                    .setMinPlaybackSpeed(MIN_PLAYBACK_SPEED)
+                    .setMaxPlaybackSpeed(MAX_PLAYBACK_SPEED)
+                    .build(),
+            )
+            .build()
         val source: MediaSource = HlsMediaSource.Factory(DefaultHttpDataSource.Factory())
             .createMediaSource(mediaItem)
         exo.setMediaSource(source)
@@ -330,6 +354,20 @@ class StreamPlayer(
     fun getPlayer(): ExoPlayer? = player
 
     /**
+     * Jump to the live edge NOW, dropping any behind-live backlog (Part B/D). The
+     * quick "resync" gesture and the drift watchdog both use this. A no-op if the
+     * player is gone (released/dead) — the caller decides whether to reconnect.
+     */
+    fun seekToLive() {
+        player?.seekToDefaultPosition()
+    }
+
+    /** True iff this player is in a non-recoverable/absent state where a resync
+     *  should RECONNECT (fresh player) rather than just seek to live. */
+    fun needsReconnect(): Boolean =
+        player == null || _state.value == State.DEAD || _state.value == State.OFFLINE
+
+    /**
      * Detach the player but DO NOT touch the tracker state machine — used
      * internally by the recovery ladder when we need a fresh ExoPlayer
      * without resetting the tracker's strike count.
@@ -355,5 +393,30 @@ class StreamPlayer(
 
     companion object {
         private const val TAG = "MyMTS.StreamPlayer"
+
+        // --- Live-edge + buffer tuning (Part B). The operator feel-tests + tunes
+        //     these; they prioritize CURRENCY/real-time, not the hardware ceiling
+        //     (a too-busy grid still needs fewer concurrent tiles — out of scope). ---
+        /** Lag behind the live edge ExoPlayer aims to hold (small = current). */
+        const val TARGET_LIVE_OFFSET_MS = 4_000L
+        /** Drift past which the watchdog JUMPS to live (drops the backlog). ~2× target. */
+        const val MAX_LIVE_DRIFT_MS = 8_000L
+        /** Imperceptible micro-correction window only — gross drift is the seek, not this. */
+        const val MIN_PLAYBACK_SPEED = 0.97f
+        const val MAX_PLAYBACK_SPEED = 1.03f
+        // Tight buffers: get-to-playing fast, don't accumulate a deep behind-live cushion.
+        const val MIN_BUFFER_MS = 1_500
+        const val MAX_BUFFER_MS = 3_000
+        const val BUFFER_FOR_PLAYBACK_MS = 500
+        const val BUFFER_FOR_REBUFFER_MS = 1_500
     }
 }
+
+/**
+ * Pure: should the live-edge watchdog seek to live? True only when the measured
+ * offset behind live exceeds [maxDriftMs]. A non-live / unknown window reports a
+ * negative offset (`C.TIME_UNSET`), which is below any positive threshold → false.
+ * Pure (no Media3) so it's unit-testable. See [StreamPlayer.MAX_LIVE_DRIFT_MS].
+ */
+internal fun shouldSeekToLive(currentLiveOffsetMs: Long, maxDriftMs: Long): Boolean =
+    currentLiveOffsetMs > maxDriftMs
