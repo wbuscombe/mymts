@@ -62,6 +62,9 @@ import {
   feedPctFromPointer,
   FEED_PANE_MIN_PCT,
   FEED_PANE_MAX_PCT,
+  CHANNEL_CATEGORY_ORDER,
+  channelCategory,
+  sectionChannels,
 } from "../js/render.mjs";
 
 test("directionGlyph: markets arrows, none for sports, none for unknown", () => {
@@ -826,4 +829,52 @@ test("feedPctFromPointer: ratio from pointer over the wall, clamped (sane across
   assert.equal(feedPctFromPointer(990, 0, 1000), FEED_PANE_MAX_PCT);
   // a degenerate (zero-width) wall → the safe default, no divide-by-zero.
   assert.equal(feedPctFromPointer(400, 0, 0), 32);
+});
+
+// ----- sectioned channel picker (A) — group by category like native -----
+
+test("channelCategory: trusts the served category; missing/unknown → General (never invents)", () => {
+  assert.equal(channelCategory({ slug: "cbs-sports-hq", category: "Sports" }), "Sports");
+  assert.equal(channelCategory({ slug: "bbc-news", category: "Global News" }), "Global News");
+  // An old helper that doesn't serve `category`, or an unknown value, buckets
+  // into General — the same fallback native uses — so the channel never vanishes.
+  assert.equal(channelCategory({ slug: "x" }), "General");
+  assert.equal(channelCategory({ slug: "x", category: "" }), "General");
+  assert.equal(channelCategory({ slug: "x", category: "Politics" }), "General");
+  assert.equal(channelCategory(null), "General");
+});
+
+test("sectionChannels: orders by the native section order, omits empty sections", () => {
+  // Deliberately out of order on input; expect native ORDER, weather present,
+  // US News absent (no channels) → that header must NOT appear.
+  const chans = [
+    { slug: "bloomberg-tv", category: "Business" },
+    { slug: "cbs-sports-hq", category: "Sports" },
+    { slug: "fox-weather", category: "Weather" },
+    { slug: "bbc-news", category: "Global News" },
+    { slug: "nasa-tv", category: "General" },
+  ];
+  const sections = sectionChannels(chans);
+  assert.deepEqual(sections.map((s) => s.category), ["Sports", "Global News", "Business", "Weather", "General"]);
+  // No "US News" header (it was empty) — never an empty section.
+  assert.ok(!sections.some((s) => s.category === "US News"));
+  // Section order follows the canonical taxonomy.
+  assert.deepEqual(sections.map((s) => s.category),
+    CHANNEL_CATEGORY_ORDER.filter((c) => c !== "US News"));
+});
+
+test("sectionChannels: preserves input order WITHIN a section (caller pre-sorts live-first)", () => {
+  // Two Global News channels in a specific (already live-first) order — the
+  // grouping must not reorder them (native: caller pre-sorts, grouping doesn't).
+  const chans = [
+    { slug: "sky-news", category: "Global News" },
+    { slug: "bbc-news", category: "Global News" },
+    { slug: "cnn", category: "US News" },
+  ];
+  const sections = sectionChannels(chans);
+  const global = sections.find((s) => s.category === "Global News");
+  assert.deepEqual(global.channels.map((c) => c.slug), ["sky-news", "bbc-news"]);
+  // Empty / non-array inputs are safe.
+  assert.deepEqual(sectionChannels([]), []);
+  assert.deepEqual(sectionChannels(null), []);
 });

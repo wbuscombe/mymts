@@ -610,6 +610,48 @@ export function browserPlayability(channel) {
   return "maybe";
 }
 
+// ----- sectioned channel picker (group by category, mirrors native) -----
+//
+// The native ChannelPickerOverlay groups channels under category sections in a
+// fixed order; the helper now serves each channel's `category` on /api/channels
+// (the SAME taxonomy, derived from the slug — see helper channels/category.py),
+// so the web picker sections by it identically instead of showing a flat list.
+
+/** Section render order — EXACTLY the native ChannelCategory.ORDER. A channel
+ *  whose served category isn't one of these (missing field on an old helper, or
+ *  an unknown value) buckets into "General" so it's never dropped from the picker. */
+export const CHANNEL_CATEGORY_ORDER = ["Sports", "US News", "Global News", "Business", "Weather", "General"];
+
+/** The section a channel belongs to. Trusts the helper's served `category`
+ *  (authoritative, mirrors native) when it's a known section; otherwise falls
+ *  back to "General" — the same fallback native uses for an unmapped slug, so we
+ *  never invent a category nor lose a channel. Pure. */
+export function channelCategory(channel) {
+  const c = channel && typeof channel.category === "string" ? channel.category : "";
+  return CHANNEL_CATEGORY_ORDER.includes(c) ? c : "General";
+}
+
+/**
+ * Group channels into ordered sections by category, mirroring native's
+ * ChannelCategory.sectioned: order by CHANNEL_CATEGORY_ORDER, and OMIT empty
+ * sections (no empty headers). Within a section, input order is preserved — the
+ * caller pre-sorts (live-first, then alpha) so each section reads live-first,
+ * exactly as native does (the grouping never reorders). Pure — unit-tested.
+ * Returns [{ category, channels: [...] }, ...].
+ */
+export function sectionChannels(channels) {
+  const list = Array.isArray(channels) ? channels : [];
+  const buckets = new Map();
+  for (const ch of list) {
+    const cat = channelCategory(ch);
+    if (!buckets.has(cat)) buckets.set(cat, []);
+    buckets.get(cat).push(ch);
+  }
+  return CHANNEL_CATEGORY_ORDER
+    .filter((cat) => buckets.has(cat))
+    .map((cat) => ({ category: cat, channels: buckets.get(cat) }));
+}
+
 // ----- in-browser video auto-recovery (retry transient, give up on hopeless) -----
 //
 // An always-on wall can't leave a tile dead until a manual reload. A RETRYABLE

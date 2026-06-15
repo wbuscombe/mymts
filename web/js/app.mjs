@@ -21,6 +21,7 @@ import {
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
+  sectionChannels,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -701,7 +702,11 @@ function renderPicker() {
   clear.onclick = () => assignCell(null);
   root.appendChild(clear);
 
-  // Channels: browser-playable first, then TV-only, then offline.
+  // Pre-sort browser-playable first, then TV-only, then offline (alpha within),
+  // THEN group into category SECTIONS (Sports / US News / Global News / Business
+  // / Weather / General) in the native order — mirroring native's ChannelPicker
+  // Overlay (the caller pre-sorts; the grouping preserves order). Empty sections
+  // are omitted (sectionChannels), so there are never empty headers.
   const order = (c) => {
     const bp = browserPlayability(c);
     if (bp === "yes" || bp === "maybe") return 0;
@@ -711,14 +716,17 @@ function renderPicker() {
   const sorted = channelList.slice().sort((a, b) =>
     order(a) - order(b) || (a.label || a.slug).toLowerCase().localeCompare((b.label || b.slug).toLowerCase()));
 
-  for (const ch of sorted) {
-    const meta = pickerMeta(ch);
-    const row = node("div", `prow${ch.slug === current ? " assigned" : ""}`);
-    row.appendChild(node("span", `dot ${meta.dot}`));
-    row.appendChild(node("span", "pname", ch.label || ch.slug));
-    row.appendChild(node("span", "pstatus", meta.text));
-    row.onclick = () => assignCell(ch.slug);
-    root.appendChild(row);
+  for (const section of sectionChannels(sorted)) {
+    root.appendChild(node("div", "picker-section", section.category));
+    for (const ch of section.channels) {
+      const meta = pickerMeta(ch);
+      const row = node("div", `prow${ch.slug === current ? " assigned" : ""}`);
+      row.appendChild(node("span", `dot ${meta.dot}`));
+      row.appendChild(node("span", "pname", ch.label || ch.slug));
+      row.appendChild(node("span", "pstatus", meta.text));
+      row.onclick = () => assignCell(ch.slug);
+      root.appendChild(row);
+    }
   }
 }
 

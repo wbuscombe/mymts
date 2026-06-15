@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): sectioned channel picker grouped by category (mirrors native) (2026-06-15)
+
+The web client's channel picker was a flat list; it now groups channels into category **sections** — Sports / US News / Global News / Business / Weather / General — in the native order, mirroring the TV wall's `ChannelPickerOverlay`. The web is a dumb consumer of the helper's served `category` (the same authoritative taxonomy native uses); it never invents categories.
+
+- Pure `sectionChannels` (group by category, order by the canonical `CHANNEL_CATEGORY_ORDER`, **omit empty sections** — no empty headers) + `channelCategory` (trusts the served category; missing/unknown → "General", the native fallback, so a channel is never dropped). The caller pre-sorts live-first, and the grouping preserves within-section order (native parity). Both unit-tested.
+- **Backward-compatible:** an old helper that doesn't serve `category` degrades to a single "General" section (never crashes/empties). "Clear this cell" is unchanged. A1 intact (the section header is `textContent`, never markup).
+
 ## feat(helper): serve each channel's `category` on /api/channels (mirrors native taxonomy) (2026-06-15)
 
 The native wall's channel picker groups channels into category sections (Sports / US News / Global News / Business / Weather / General); the helper now serves each channel's `category` on the existing `/api/channels` response so the LAN web client can build the SAME sectioned picker without inventing its own categories.
