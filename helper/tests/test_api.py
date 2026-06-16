@@ -179,28 +179,36 @@ def test_api_channels_category_mirrors_native_taxonomy(phantom_client: TestClien
 
 
 def test_api_channels_expanded_lineup(phantom_client: TestClient) -> None:
-    """The 2026-06 lineup expansion: the new free-direct-HLS channels are present
-    and correctly categorized, and the un-addable channels are OMITTED. (Ordering
-    is ORDER BY slug at the API; within-category prominence is a client concern.)"""
+    """The 2026-06 lineup: the free-direct-HLS expansion AND the YouTube-sourced
+    channels (via the yt-dlp resolver) are present + correctly categorized, and
+    the un-addable channels are OMITTED. (Ordering is ORDER BY slug at the API;
+    within-category prominence is a client concern.)"""
     body = phantom_client.get("/api/channels").json()
     by_slug = {c["slug"]: c["category"] for c in body["channels"]}
 
-    # New additions present + correctly categorized.
+    # Direct-HLS additions present + correctly categorized.
     added = {
         "abc-news-live": "US News", "nbc-news-now": "US News",
         "news-nation": "US News", "scripps-news": "US News",
         "abc-news-au": "Global News", "cna": "Global News",
         "gb-news": "Global News", "nhk-world": "Global News",
     }
-    for slug, cat in added.items():
+    # YouTube-sourced additions (kind='youtube') — now carriable via the resolver.
+    added_youtube = {
+        "pbs-newshour": "US News", "court-tv": "US News", "law-crime": "US News",
+        "euronews": "Global News", "wion": "Global News", "ndtv": "Global News",
+        "i24news-en": "Global News", "cbs-golazo": "Sports",
+    }
+    for slug, cat in {**added, **added_youtube}.items():
         assert slug in by_slug, f"new channel {slug} missing from lineup"
         assert by_slug[slug] == cat, f"{slug} should be {cat}, got {by_slug.get(slug)}"
 
-    # Honestly-omitted channels must NOT be seeded (paywall / web-embed / YouTube-
-    # only / tokenized / no-HLS). cnn IS kept — already seeded; the omit is about
-    # not ADDING new paywalled duplicates.
-    for slug in ("pbs-newshour", "court-tv", "law-crime", "cbs-news", "euronews",
-                 "wion", "ndtv", "weathernation", "c-span-2", "fox-news", "msnbc"):
+    # Still honestly-omitted (paywall / web-embed / no confirmable live HLS).
+    # cnn IS kept — already seeded; c-span main stays direct-HLS (the YouTube
+    # /live was a far-future scheduled event, re-adding would duplicate the slug);
+    # arirang couldn't be confirmed live from the NAS vantage.
+    for slug in ("cbs-news", "arirang", "weathernation", "c-span-2",
+                 "fox-news", "msnbc"):
         assert slug not in by_slug, f"omitted channel {slug} should NOT be seeded"
 
 

@@ -62,14 +62,29 @@ _BY_SLUG: dict[str, str] = {
     "cna": GLOBAL_NEWS,
     "gb-news": GLOBAL_NEWS,
     "nhk-world": GLOBAL_NEWS,
-    # Honestly OMITTED (no stable direct-HLS origin via the helper's direct-HLS-only
-    # model — there is no yt-dlp resolver; kind='youtube' is a future migration):
-    #   • YouTube-live-only (no direct HLS): PBS NewsHour, C-SPAN main, Court TV,
-    #     Law & Crime.
-    #   • Tokenized / third-party-redirect only (against findings/05's direct-origin
-    #     principle): CBS News 24/7, Euronews English, i24NEWS (expiring JWT).
-    #   • No clean public endpoint: WION, NDTV 24x7 (community redirect file only),
-    #     CBS Sports Golazo; Arirang (http:// only — fails HTTPS-only).
+    # --- 2026-06 YouTube-sourced lineup (kind='youtube'; the yt-dlp resolver
+    #     now turns each /live URL into an HLS manifest — see youtube_resolver.py).
+    #     Each was resolved + probed from the NAS's residential vantage before
+    #     seeding; non-24/7 feeds (Court TV / Law&Crime / PBS) ride the honest-
+    #     offline path (shown offline between shows, live when live). NOTE: the
+    #     native picker groups by its OWN ChannelCategory.BY_SLUG (it doesn't yet
+    #     consume the served `category`), so these show under General on the TV
+    #     until that parity follow-up; the web picker groups them correctly here.
+    "pbs-newshour": US_NEWS,
+    "court-tv": US_NEWS,
+    "law-crime": US_NEWS,
+    "euronews": GLOBAL_NEWS,
+    "wion": GLOBAL_NEWS,
+    "ndtv": GLOBAL_NEWS,
+    "i24news-en": GLOBAL_NEWS,
+    "cbs-golazo": SPORTS,
+    # Still honestly OMITTED:
+    #   • C-SPAN main → already shipped as a direct-HLS channel (`c-span`,
+    #     cspan1 akamai); the YouTube /live only offered a far-future scheduled
+    #     event, so re-adding it as kind='youtube' would just duplicate the slug.
+    #   • Arirang → could NOT confirm a live HLS from the NAS vantage (every
+    #     candidate handle 404'd or reported not-live); omitted to ship no dead
+    #     channel — revisit when a stable live handle is confirmed.
     #   • Paywall / cable-auth: CNN, Fox News, MSNBC, CBS Sports Network.
     #   • Web-embed only (no HLS): C-SPAN 2 & 3.
     #   • Known NAS-prober TLS handshake failure: WeatherNation.

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): add YouTube-sourced channels (2026-06-16)
+
+Eight channels added via the new yt-dlp resolver (`kind='youtube'`), each
+resolved + probed from the NAS's **residential** vantage before seeding (no
+PIA). Lineup is 29 direct-HLS + 8 YouTube = 37.
+
+- **US News:** PBS NewsHour, Court TV, Law&Crime — the YouTube-live-only
+  channels the helper couldn't carry before. Court TV + PBS were live at
+  validation; Law&Crime rides the **honest-offline** path (its handle resolves;
+  it's dark between trials and flips live when a trial is on — never shown
+  fake-live).
+- **Global News:** Euronews, WION, NDTV, i24NEWS English — all live + browser-
+  playable at validation.
+- **Sports:** CBS Sports Golazo — live at validation.
+- **Re-evaluated and OMITTED, honestly:** **C-SPAN main** is already shipped as
+  a direct-HLS channel (`c-span`); its YouTube `/live` only offered a far-future
+  scheduled event, so re-adding it as `youtube` would just duplicate the slug.
+  **Arirang** could not be confirmed live from the NAS vantage (every candidate
+  handle 404'd or reported not-live) — omitted to ship **no dead channels**.
+- Categorized in the helper's `channels/category.py` (drives the web picker +
+  the served `category` field). NATIVE-PARITY NOTE: the TV picker groups by its
+  own `ChannelCategory.BY_SLUG` (it doesn't yet consume the served field), so
+  these surface and **play** on the TV wall but sit under *General* there until
+  a native-map follow-up; the web picker groups them correctly.
+
 ## feat(helper): yt-dlp YouTube-live resolver (kind='youtube') (2026-06-16)
 
 The helper was direct-HLS-only — `kind='youtube'` was rejected as a "future

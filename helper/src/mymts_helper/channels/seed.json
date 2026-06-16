@@ -172,5 +172,53 @@
     "label": "NHK World Japan",
     "kind": "hls",
     "source_url": "https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8"
+  },
+  {
+    "slug": "pbs-newshour",
+    "label": "PBS NewsHour",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@PBSNewsHour/live"
+  },
+  {
+    "slug": "court-tv",
+    "label": "Court TV",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@CourtTV/live"
+  },
+  {
+    "slug": "law-crime",
+    "label": "Law&Crime",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@LawAndCrime/live"
+  },
+  {
+    "slug": "euronews",
+    "label": "Euronews",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@euronews/live"
+  },
+  {
+    "slug": "wion",
+    "label": "WION",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@WION/live"
+  },
+  {
+    "slug": "ndtv",
+    "label": "NDTV",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@NDTV/live"
+  },
+  {
+    "slug": "i24news-en",
+    "label": "i24NEWS English",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@i24NEWS_EN/live"
+  },
+  {
+    "slug": "cbs-golazo",
+    "label": "CBS Sports Golazo",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@cbssportsgolazo/live"
   }
 ]
