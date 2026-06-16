@@ -23,6 +23,7 @@ import com.mymts.data.settings.feedWidthFromOrdinal
 import com.mymts.data.settings.overscanFromOrdinal
 import com.mymts.data.settings.uiScaleFromOrdinal
 import com.mymts.data.settings.TickerMotion
+import com.mymts.player.AudioRouting
 import com.mymts.data.settings.tickerMotionFromOrdinal
 import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.clampOffsetDp
@@ -278,7 +279,7 @@ class LineupStore(context: Context) {
      */
     fun toggleAudible(slotIndex: Int) {
         require(slotIndex >= 0) { "slotIndex must be >= 0" }
-        val next = if (_audibleSlot.intValue == slotIndex) -1 else slotIndex
+        val next = AudioRouting.nextAudible(_audibleSlot.intValue, slotIndex)
         _audibleSlot.intValue = next
         prefs.edit().putInt(KEY_AUDIBLE_SLOT, next).apply()
     }

@@ -313,15 +313,26 @@ class StreamPlayer(
     }
 
     /**
-     * Toggle the player's volume between muted and the audible level.
+     * Make this tile audible (decode + play its audio) or inaudible.
      *
-     * The wall is muted by default and only one tile is meant to be
-     * audible at a time (see `WallAudio`). This is a small surface for
-     * the controls overlay; ownership of "which tile is audible" lives
-     * one layer up.
+     * Inaudible tiles **DISABLE the audio renderer** (`setTrackTypeDisabled(
+     * TRACK_TYPE_AUDIO, true)`) — not merely `volume = 0f` — so the AAC track
+     * is NOT decoded. The wall is muted by default (no audible slot), so by
+     * default every tile's audio renderer is OFF; on a 4-tile wall that's the
+     * ~16% CPU the soft codec was spending decoding inaudible audio. The audible
+     * tile ENABLES its renderer and plays at full volume. Single-audible-tile
+     * ownership lives one layer up (LineupStore.audibleSlot → VideoGrid).
+     *
+     * `buildUpon()` copies the current params, so the TEXT-disabled (captions-off)
+     * state set at create time is preserved — AUDIO + TEXT toggle independently.
      */
     fun setAudible(audible: Boolean) {
-        player?.volume = if (audible) 1f else 0f
+        val exo = player ?: return
+        exo.volume = if (audible) 1f else 0f
+        exo.trackSelectionParameters = exo.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, !audible)
+            .build()
     }
 
     /**

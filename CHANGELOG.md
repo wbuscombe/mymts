@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## perf(app): disable the audio renderer on inaudible tiles (keep the per-tile toggle) (2026-06-16)
+
+`setAudible(false)` previously only set `volume = 0f` — the AAC track kept **decoding** on every muted tile. On the 4-tile wall that was the ~16% CPU the `media.swcodec` process spent decoding audio nobody hears (per the read-only perf pass). Now an inaudible tile **disables its audio renderer** (`setTrackTypeDisabled(TRACK_TYPE_AUDIO, true)`) so the track isn't decoded; the audible tile enables its renderer and plays.
+
+- **Perf AND the feature, not either/or:** the single-audible-tile toggle is unchanged — selecting a tile enables ONLY its audio renderer and disables every other tile's; the default (no tile audible) leaves **all** audio renderers off ⇒ the full ~16% back at rest.
+- `buildUpon()` preserves the captions-off (`TRACK_TYPE_TEXT`) state, so audio + text toggle independently.
+- New pure `AudioRouting` (`nextAudible`/`audioEnabled`) drives both `LineupStore.toggleAudible` and the `VideoGrid` per-tile apply, unit-tested (default-none→all-off, single-source, at-most-one-enabled). App suite green (319); WallSettings round-trip intact (panel-fit untouched).
+
 ## fix(web): captions off by default + a wall-wide Settings toggle (2026-06-16)
 
 The menu rebuild removed the per-tile caption control but left **no** subtitle handling in `video.mjs`, so hls.js silently **auto-selected and rendered a manifest's default subtitle track** — captions came back ON. This restores the honest default-OFF and adds a wall-wide control.

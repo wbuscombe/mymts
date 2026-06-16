@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mymts.player.AudioRouting
 import com.mymts.player.StreamPlayer
 import com.mymts.player.StreamPlayerManager
 import com.mymts.ui.wall.TileSlotResolver.Slot
@@ -126,7 +127,7 @@ fun VideoGrid(
         bound.forEach { tile ->
             val player = tile.player ?: return@forEach
             val slot = tile.slot as? Slot.Playing ?: return@forEach
-            player.setAudible(slot.index == audibleSlot)
+            player.setAudible(AudioRouting.audioEnabled(audibleSlot, slot.index))
             player.setCaptionsEnabled(slot.index in captionsOnSlots)
         }
     }
