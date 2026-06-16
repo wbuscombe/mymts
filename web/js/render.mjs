@@ -502,6 +502,7 @@ export function tickerFlipDwellMs(pct, base = TICKER_FLIP_BASE_DWELL_MS, min = 2
 export const DEFAULT_VIEW_PREFS = {
   gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
   feedSide: "left",        // native Feed side parity (feed left | feed right)
+  captions: false,         // wall-wide soft-caption rendering — OFF by default (native parity)
   tickerNews: false, feedRecency: "all",
   tickerScrollPct: 100,    // crawl speed (native Scroll speed)
   tickerFlipPct: 100,      // flip dwell speed (native Flip speed) — separate lever, like native
@@ -564,6 +565,7 @@ export function normalizeViewPrefs(raw) {
     tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
     feedSide: feedSideOption(p.feedSide),               // native Feed side (left | right)
+    captions: p.captions === true,   // explicit opt-in only (honest default OFF)
     tickerScrollPct: clampTickerSpeedPct(p.tickerScrollPct ?? DEFAULT_VIEW_PREFS.tickerScrollPct),
     tickerFlipPct: clampTickerSpeedPct(p.tickerFlipPct ?? DEFAULT_VIEW_PREFS.tickerFlipPct),
     tickerMotion: tickerMotionOption(p.tickerMotion),   // unknown → web default "crawl"
@@ -586,6 +588,7 @@ export function serializeViewPrefs(prefs) {
     feedPct: p.feedPct, feedFont: p.feedFont,
     tickerNews: p.tickerNews, feedRecency: p.feedRecency,
     feedSide: p.feedSide,
+    captions: p.captions,
     tickerScrollPct: p.tickerScrollPct,
     tickerFlipPct: p.tickerFlipPct,
     tickerMotion: p.tickerMotion,

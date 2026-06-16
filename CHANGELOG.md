@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(web): captions off by default + a wall-wide Settings toggle (2026-06-16)
+
+The menu rebuild removed the per-tile caption control but left **no** subtitle handling in `video.mjs`, so hls.js silently **auto-selected and rendered a manifest's default subtitle track** — captions came back ON. This restores the honest default-OFF and adds a wall-wide control.
+
+- **video.mjs:** hls.js now runs with `subtitleDisplay:false`, forces `subtitleTrack = -1`, and re-asserts the desired state on `SUBTITLE_TRACKS_UPDATED` (so a manifest default can't auto-select); native `<video>` `textTracks` are set `mode='disabled'` on `addtrack`. A `setCaptions(on)` handle method flips the whole wall.
+- **Settings → Video → "Captions"** toggle, **default OFF**, persisted (`prefs.captions`), applied live to every playing tile.
+- **Honest:** soft (separate-track) captions only — captions **burned into the picture** (a news chyron) are part of the image and can't be removed by any client; stated next to the toggle.
+- **Native:** verified already captions-off by default (`StreamPlayer` disables `TRACK_TYPE_TEXT` at player creation; `captionsOnSlots` defaults empty) — no change needed.
+
 ## feat(helper): expand the channel lineup with free 24/7 direct-HLS sources (2026-06-16)
 
 Eight free, always-on news channels added to the helper seed (consumed by both the TV wall and the web client), each **validated `HTTP 200 + #EXTM3U` from the NAS prober's US vantage before seeding** — the `docs/findings/05` sourcing standard. All are **direct-origin** HLS (Akamai / CloudFront / Amagi / official), token-free, https-clean:

@@ -641,6 +641,7 @@ function renderCell(cell, slug, ch, bp) {
       const keepAudio = shouldReassertAudio(audibleIndex, audibleSlug, cell.index, slug);
       if (!keepAudio && audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
       try { handle.setAudible(keepAudio); } catch { /* ignore */ }
+      try { handle.setCaptions(prefs.captions === true); } catch { /* no track */ }
       updateTileAudioBadge(cell);
       tile.onclick = () => openSlotControls(cell.index);
     } else if (state === "needgesture") {
@@ -1108,6 +1109,20 @@ function wireSettings() {
     prefs.tickerNews = tickerNews.checked;
     savePrefs(); pollTicker();
   });
+
+  // Captions (wall-wide, default OFF). Soft subtitle tracks only — burned-in
+  // captions can't be removed. Applies live to every playing tile.
+  const captions = el("captions-enabled");
+  if (captions) {
+    captions.checked = prefs.captions === true;
+    captions.addEventListener("change", () => {
+      prefs.captions = captions.checked;
+      savePrefs();
+      for (const c of cells) {
+        if (c.isVideo && c.streamHandle) { try { c.streamHandle.setCaptions(prefs.captions); } catch { /* no track */ } }
+      }
+    });
+  }
 
   rebuildLeagueToggles();
 }

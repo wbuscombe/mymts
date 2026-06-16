@@ -647,6 +647,7 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   assert.equal(d.tickerFlipPct, 100);           // native Flip speed default
   assert.equal(d.tickerMotion, "crawl");        // web default motion
   assert.equal(d.feedSide, "left");             // native Feed side default
+  assert.equal(d.captions, false);              // captions OFF by default (native parity)
   assert.deepEqual(d.hidden, []); assert.deepEqual(d.hiddenLeagues, []);
   assert.deepEqual(d.assignments, {});
   // Matches the exported default shape.
@@ -656,6 +657,9 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   assert.equal(normalizeViewPrefs({ tickerNews: true }).tickerNews, true);
   // feedSide is left unless explicitly "right" (defensive against junk).
   assert.equal(normalizeViewPrefs({ feedSide: "right" }).feedSide, "right");
+  // captions is an explicit-opt-in boolean (only true enables; honest OFF default).
+  assert.equal(normalizeViewPrefs({ captions: "true" }).captions, false);
+  assert.equal(normalizeViewPrefs({ captions: true }).captions, true);
   assert.equal(normalizeViewPrefs({ feedSide: "bogus" }).feedSide, "left");
   // Out-of-range values are clamped on load (defensive against a tampered blob).
   assert.equal(normalizeViewPrefs({ tickerFlipPct: 9999 }).tickerFlipPct, 200);
@@ -681,7 +685,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   // arrays; normalize is the canonical re-read. The round-trip must be stable.
   const live = {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
-    feedSide: "right",
+    feedSide: "right", captions: true,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
     tickerMotion: "flip",
     hidden: new Set(["BBC", "Reuters"]),
@@ -693,7 +697,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   const reread = normalizeViewPrefs(JSON.parse(JSON.stringify(stored)));
   assert.deepEqual(reread, {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
-    feedSide: "right",
+    feedSide: "right", captions: true,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
     tickerMotion: "flip",
     hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],

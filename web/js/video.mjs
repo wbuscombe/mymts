@@ -32,10 +32,12 @@
 // forever — the retry/give-up policy lives in render.mjs (pure, unit-tested);
 // this module only surfaces the honest signal it acts on.
 //
-// NO captions control: the captions on these news streams are BURNED INTO THE
-// VIDEO (open captions encoded into the broadcast image) — unremovable by hls.js
-// or any client, web or native. There is therefore no caption track to toggle;
-// we deliberately do not expose one (a dead "CC —" no-op reads as broken).
+// Captions: SOFT (separate-track) captions are rendered ONLY when the wall-wide
+// "Captions" setting is on (default OFF). By default we force subtitles off —
+// hls.js would otherwise AUTO-SELECT a manifest's default subtitle track and burn
+// it onto the tile (the regression this fixes). `setCaptions(on)` flips the whole
+// wall. BURNED-IN captions (pixels in the broadcast image, e.g. a news chyron) are
+// NOT a track and CANNOT be removed by any client — they always show.
 //
 // Audio: each tile starts MUTED (the autoplay rule blocks autoplay WITH sound;
 // tiles must autoplay muted). `setAudible(true)` simply unmutes the <video>; the
@@ -77,7 +79,35 @@ export function attachStream(videoEl, url, onState) {
   let lastProgressAt = 0;
   let watchdog = null;
 
+  // Wall-wide caption desire (default OFF). Applied to soft tracks only; re-asserted
+  // whenever the track set changes so hls.js can't silently auto-select a default.
+  let desiredCaptions = false;
+
   const set = (s, d) => { if (!destroyed) onState(s, d); };
+
+  /** Force the stream's SOFT subtitle rendering to match `desiredCaptions`. hls.js:
+   *  master switch + track index (-1 = none). Native HLS: <video> textTracks mode. */
+  const applyCaptions = () => {
+    if (hls) {
+      try { hls.subtitleDisplay = desiredCaptions; } catch (_) { /* older hls */ }
+      try {
+        const tracks = hls.subtitleTracks || [];
+        hls.subtitleTrack = desiredCaptions && tracks.length > 0 ? 0 : -1;
+      } catch (_) { /* none to select */ }
+    } else {
+      const tt = videoEl.textTracks;
+      if (tt) {
+        let firstCap = -1;
+        for (let i = 0; i < tt.length; i++) {
+          if (tt[i].kind === "subtitles" || tt[i].kind === "captions") { firstCap = i; break; }
+        }
+        for (let i = 0; i < tt.length; i++) {
+          tt[i].mode = (desiredCaptions && i === firstCap) ? "showing" : "disabled";
+        }
+      }
+    }
+  };
+  const onTracksChanged = () => { applyCaptions(); };
 
   const tryPlay = () => {
     const p = videoEl.play();
@@ -116,9 +146,19 @@ export function attachStream(videoEl, url, onState) {
       const code = videoEl.error ? videoEl.error.code : 0;
       set("error", { kind: "native", details: MEDIA_ERR[code] || "MEDIA_ERR_UNKNOWN" });
     }, { once: true });
+    // Native HLS surfaces caption tracks on the <video>; force them to the desired
+    // (default-off) state as they arrive so none auto-shows.
+    if (videoEl.textTracks && typeof videoEl.textTracks.addEventListener === "function") {
+      videoEl.textTracks.addEventListener("addtrack", onTracksChanged);
+      videoEl.textTracks.addEventListener("removetrack", onTracksChanged);
+    }
   } else if (Hls() && Hls().isSupported()) {
-    hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, maxBufferLength: 12, backBufferLength: 12 });
+    // subtitleDisplay:false → don't auto-render a default subtitle track (the regression).
+    hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, maxBufferLength: 12, backBufferLength: 12, subtitleDisplay: false });
     hls.on(Hls().Events.MANIFEST_PARSED, () => tryPlay());
+    // Re-assert the desired caption state whenever the subtitle track set changes,
+    // so hls.js can't silently select a manifest default when captions are off.
+    hls.on(Hls().Events.SUBTITLE_TRACKS_UPDATED, onTracksChanged);
     hls.on(Hls().Events.ERROR, (_e, data) => {
       // Only FATAL errors are honest "can't play"; hls.js auto-recovers
       // transient ones internally. Fatal = it gave up after its own retries.
@@ -151,9 +191,18 @@ export function attachStream(videoEl, url, onState) {
     /** The tile's realized audible state (true = unmuted). Drives the honest
      *  🔊/🔇 indicator from the element itself, not just the session pointer. */
     audible() { return !!videoEl && !videoEl.muted; },
+    /** Wall-wide caption toggle: render SOFT subtitle tracks (on) or force them off
+     *  (off, the default). Burned-in captions are unaffected (not a track). */
+    setCaptions(on) { desiredCaptions = on === true; applyCaptions(); },
     teardown() {
       destroyed = true;
       if (watchdog) { clearInterval(watchdog); watchdog = null; }
+      try {
+        if (videoEl.textTracks && typeof videoEl.textTracks.removeEventListener === "function") {
+          videoEl.textTracks.removeEventListener("addtrack", onTracksChanged);
+          videoEl.textTracks.removeEventListener("removetrack", onTracksChanged);
+        }
+      } catch (_) { /* ignore */ }
       try { if (hls) hls.destroy(); } catch (_) { /* ignore */ }
       try { videoEl.removeAttribute("src"); videoEl.load(); } catch (_) { /* ignore */ }
     },
