@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from mymts_helper import db
@@ -112,12 +113,16 @@ def test_recent_items_since_filter(tmp_path: Path) -> None:
 def test_retention_sweep_deletes_old_items(tmp_path: Path) -> None:
     p, sid = _setup(tmp_path)
     conn = db.connect(p)
-    # Insert two items: one well past the retention window, one fresh.
+    # Insert two items: one well past the retention window, one fresh. The fresh
+    # item's timestamp is anchored to NOW (yesterday) — retention_sweep compares
+    # against SQLite datetime('now', ...), so a hardcoded date would age out of
+    # the window as the calendar advances (a time-bomb) and delete both items.
+    fresh_ts = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     items = [
         ParsedItem(guid="old", title="Old", summary="", link="",
                    published_at="2020-01-01T00:00:00.000Z"),
         ParsedItem(guid="fresh", title="Fresh", summary="", link="",
-                   published_at="2026-06-01T00:00:00.000Z"),
+                   published_at=fresh_ts),
     ]
     store.insert_items(conn, sid, items)
     deleted = store.retention_sweep(conn, days=14)
