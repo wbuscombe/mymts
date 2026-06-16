@@ -52,6 +52,10 @@ class Config:
     feed_poll_interval_seconds: int = 300
     feed_retention_days: int = 14
     channel_probe_interval_seconds: int = 30 * 60
+    # yt-dlp YouTube-live resolver (2026-06-16). Per-extraction socket timeout
+    # for kind='youtube' channels. 25s default matches the resolver's
+    # DEFAULT_RESOLVE_TIMEOUT; the prober adds an async deadline on top.
+    youtube_resolve_timeout_seconds: int = 25
     # Ticker (markets + sports) — added 2026-06-05. Polite intervals on
     # keyless public sources (Yahoo Finance, CoinGecko, ESPN scoreboard):
     # markets move minute-to-minute; sports scores update on a slower cadence.
@@ -120,6 +124,9 @@ class Config:
             feed_retention_days=int(os.environ.get("FEED_RETENTION_DAYS", "14")),
             channel_probe_interval_seconds=int(
                 os.environ.get("CHANNEL_PROBE_INTERVAL_SECONDS", str(30 * 60))
+            ),
+            youtube_resolve_timeout_seconds=int(
+                os.environ.get("YOUTUBE_RESOLVE_TIMEOUT_SECONDS", "25")
             ),
             markets_poll_interval_seconds=int(
                 os.environ.get("MARKETS_POLL_INTERVAL_SECONDS", "120")

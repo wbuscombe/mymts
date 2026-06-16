@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from mymts_helper import db
+from mymts_helper.channels import prober as prober_mod
+from mymts_helper.channels import registry
 from mymts_helper.channels.prober import (
+    ChannelProber,
     _is_media_playlist,
     _looks_like_hls_manifest,
     _pick_variant_url,
     classify_browser_playable,
 )
-
+from mymts_helper.channels.youtube_resolver import YouTubeResolver
+from mymts_helper.fetcher import FetchResult
 
 MASTER_WITH_TWO_VARIANTS = b"""#EXTM3U
 #EXT-X-VERSION:6
@@ -147,6 +154,78 @@ def test_pick_variant_url_rejects_absolute_http_variant() -> None:
 http://insecure.test/v.m3u8
 """
     assert _pick_variant_url(body, "https://cdn.test/master.m3u8") is None
+
+
+_MEDIA = b"#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg.ts\n"
+
+
+def _seed_youtube(p: Path) -> registry.ChannelRow:
+    db.migrate(p)
+    conn = db.connect(p)
+    try:
+        registry.upsert_channel(
+            conn, slug="pbs", label="PBS NewsHour", kind="youtube",
+            source_url="https://www.youtube.com/@PBSNewsHour/live",
+        )
+    finally:
+        conn.close()
+    conn = db.connect(p)
+    try:
+        return next(c for c in registry.list_channels(conn) if c.slug == "pbs")
+    finally:
+        conn.close()
+
+
+def _row(p: Path) -> registry.ChannelRow:
+    conn = db.connect(p)
+    try:
+        return next(c for c in registry.list_channels(conn) if c.slug == "pbs")
+    finally:
+        conn.close()
+
+
+async def test_probe_youtube_live_records_resolved_manifest(tmp_path: Path, monkeypatch) -> None:
+    # A live YouTube channel resolves to an HLS manifest; the prober fetches
+    # THAT manifest and records it as current_url (not the /live URL).
+    p = tmp_path / "x.db"
+    c = _seed_youtube(p)
+    resolved = "https://gv/api/manifest/hls_variant/x.m3u8?expire=9999999999"
+    yt = YouTubeResolver(
+        extract_info=lambda u: {"is_live": True, "title": "t", "manifest_url": resolved}
+    )
+
+    async def fake_fetch(url, *, resolver=None, **kw):
+        assert url == resolved  # the prober probes the RESOLVED manifest
+        return FetchResult(url=url, status_code=200,
+                           content_type="application/vnd.apple.mpegurl", body=_MEDIA)
+
+    monkeypatch.setattr(prober_mod, "fetch", fake_fetch)
+    prober = ChannelProber(p, youtube_resolver=yt)
+    await prober._probe_one(c)
+
+    out = _row(p)
+    assert out.status == "live"
+    assert out.current_url == resolved
+
+
+async def test_probe_youtube_offline_is_honest_unavailable(tmp_path: Path, monkeypatch) -> None:
+    # An offline (non-24/7) YouTube channel never reaches the fetcher — it is
+    # recorded unavailable with an honest yt: reason, no fake-live URL.
+    p = tmp_path / "x.db"
+    c = _seed_youtube(p)
+    yt = YouTubeResolver(extract_info=lambda u: {"is_live": False, "title": "t"})
+
+    async def fake_fetch(*a, **k):
+        raise AssertionError("fetch must not run when the channel is offline")
+
+    monkeypatch.setattr(prober_mod, "fetch", fake_fetch)
+    prober = ChannelProber(p, youtube_resolver=yt)
+    await prober._probe_one(c)
+
+    out = _row(p)
+    assert out.status == "unavailable"
+    assert out.current_url is None
+    assert out.last_error.startswith("yt:not_live")
 
 
 def test_pick_variant_url_returns_none_when_no_stream_inf() -> None:

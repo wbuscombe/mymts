@@ -13,6 +13,12 @@ dependencies = [
     "httpx==0.28.1",
     "feedparser==6.0.11",
     "defusedxml==0.7.1",
+    # yt-dlp YouTube-live resolver (kind='youtube'). PINNED — YouTube changes
+    # its player API often and yt-dlp ships fixes on a fast cadence, so this
+    # pin needs a PERIODIC BUMP (a stale yt-dlp silently stops resolving
+    # YouTube channels). Base package has no required runtime deps. See
+    # CHANGELOG "yt-dlp YouTube-live resolver" + channels/youtube_resolver.py.
+    "yt-dlp==2026.3.17",
 ]
 
 [project.optional-dependencies]

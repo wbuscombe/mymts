@@ -22,6 +22,16 @@ A master that's already a **media playlist itself** (no `#EXT-X-STREAM-INF`,
 contains `#EXTINF`) is its own variant — no second fetch is needed. The
 prober marks it live based on the master body alone, which is the
 correct behaviour for single-rendition streams.
+
+**YouTube channels (`kind='youtube'`):** before the master fetch, the prober
+resolves the channel's YouTube `/live` URL to an HLS manifest via the
+in-process [YouTubeResolver]. A channel that isn't live right now (a non-24/7
+feed between shows) resolves to `ok=False` → recorded as an honest
+`unavailable`, never a dead URL. A live channel resolves to a googlevideo HLS
+master, which then runs the SAME master/variant fetch + validation as any
+direct-HLS channel — so a YouTube channel is marked `live` only when its
+resolved manifest is actually reachable through the SSRF-safe fetcher, and
+its `current_url` is the resolved manifest the player can load directly.
 """
 
 from __future__ import annotations
@@ -35,6 +45,11 @@ from urllib.parse import urljoin
 from .. import db
 from ..fetcher import FetchError, Resolver, default_resolver, fetch
 from . import registry
+from .youtube_resolver import (
+    DEFAULT_RESOLVE_TIMEOUT,
+    YouTubeResolution,
+    YouTubeResolver,
+)
 
 log = logging.getLogger("mymts_helper.channels.prober")
 
@@ -138,10 +153,21 @@ class ChannelProber:
         *,
         interval_seconds: int = 30 * 60,   # 30 min — enough for "is it reachable"
         resolver: Resolver = default_resolver,
+        youtube_resolver: YouTubeResolver | None = None,
+        youtube_resolve_timeout_seconds: int = DEFAULT_RESOLVE_TIMEOUT,
     ) -> None:
         self.db_path = db_path
         self.interval = interval_seconds
         self.resolver = resolver
+        # yt-dlp resolver for kind='youtube' channels. Injectable so tests
+        # drive it with synthetic output and never touch the network.
+        self._youtube = youtube_resolver or YouTubeResolver(
+            timeout=youtube_resolve_timeout_seconds
+        )
+        # Async deadline above yt-dlp's own socket timeout so a wedged
+        # extraction can't stall the probe loop. The executor thread still
+        # finishes on yt-dlp's socket_timeout; we just stop awaiting it.
+        self._youtube_deadline = youtube_resolve_timeout_seconds + 15
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self.last_probe_at: str | None = None
@@ -188,9 +214,24 @@ class ChannelProber:
             conn.close()
 
     async def _probe_one(self, c: registry.ChannelRow) -> None:
+        # ---- Resolve (youtube → HLS) ----
+        # For a direct-HLS channel the master URL is the source URL itself.
+        # For a YouTube channel we first resolve /live → an HLS manifest; an
+        # offline (non-24/7) channel resolves to ok=False and is recorded as
+        # an honest `unavailable` (never a fake-live URL).
+        master_url = c.source_url
+        if c.kind == "youtube":
+            resolved = await self._resolve_youtube(c.source_url)
+            if not resolved.ok or not resolved.hls_url:
+                await self._record(c.id, status="unavailable", current_url=None,
+                                   error=f"yt:{resolved.error or 'unresolved'}",
+                                   success=False)
+                return
+            master_url = resolved.hls_url
+
         # ---- Master ----
         try:
-            master = await fetch(c.source_url, resolver=self.resolver)
+            master = await fetch(master_url, resolver=self.resolver)
         except FetchError as e:
             await self._record(c.id, status="unavailable", current_url=None,
                                error=f"fetch:{e}", success=False)
@@ -208,7 +249,7 @@ class ChannelProber:
         # A master that's already a media playlist (single rendition,
         # contains #EXTINF, no #EXT-X-STREAM-INF) is its own variant.
         if _is_media_playlist(master.body):
-            await self._record(c.id, status="live", current_url=c.source_url,
+            await self._record(c.id, status="live", current_url=master_url,
                                error=None, success=True,
                                browser_playable=classify_browser_playable(master.body))
             return
@@ -242,9 +283,27 @@ class ChannelProber:
         # `live` matches what the player can actually reach. Classify
         # browser-playability from the scheme of the master + variant chain
         # (a hint for the web picker; the TV plays it regardless).
-        await self._record(c.id, status="live", current_url=c.source_url,
+        await self._record(c.id, status="live", current_url=master_url,
                            error=None, success=True,
                            browser_playable=classify_browser_playable(master.body, variant.body))
+
+    async def _resolve_youtube(self, url: str) -> YouTubeResolution:
+        """Resolve a YouTube /live URL to HLS off the event loop, bounded.
+
+        yt-dlp's `extract_info` is blocking, so it runs in the default
+        executor; `wait_for` caps how long we await it. A timeout returns an
+        honest unresolved result (the channel shows offline this cycle) rather
+        than stalling every channel behind it.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, self._youtube.resolve, url),
+                timeout=self._youtube_deadline,
+            )
+        except TimeoutError:
+            log.warning("youtube_resolve_deadline", extra={"url": url})
+            return YouTubeResolution(ok=False, error="resolve_timeout")
 
     async def _record(
         self, channel_id: int, *, status: str, current_url: str | None,

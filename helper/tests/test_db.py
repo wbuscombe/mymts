@@ -94,6 +94,82 @@ def test_channels_kind_checked(tmp_path: Path) -> None:
         )
 
 
+def test_channels_kind_youtube_admitted(tmp_path: Path) -> None:
+    # migration 003 widened the kind CHECK to admit 'youtube'.
+    p = tmp_path / "test.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    conn.execute(
+        "INSERT INTO channels(slug, label, kind, source_url) VALUES (?,?,?,?)",
+        ("yt", "YT", "youtube", "https://www.youtube.com/@x/live"),
+    )
+    row = conn.execute("SELECT kind FROM channels WHERE slug='yt'").fetchone()
+    assert row["kind"] == "youtube"
+
+
+def test_migration_003_preserves_rows_and_widens_kind(tmp_path: Path) -> None:
+    """The 003 table-recreate must copy every channel row + all state verbatim,
+    flip the kind CHECK to admit 'youtube', and still reject a bogus kind."""
+    from importlib.resources import files
+
+    p = tmp_path / "test.db"
+    conn = sqlite3.connect(p)
+    conn.row_factory = sqlite3.Row
+    # Build the post-002 channels table (hls-only CHECK + browser_playable),
+    # i.e. the schema as it stood right before 003.
+    conn.executescript(
+        """
+        CREATE TABLE channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            label TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('hls')),
+            source_url TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            current_url TEXT,
+            status TEXT NOT NULL DEFAULT 'unknown'
+                CHECK(status IN ('live','unavailable','unknown')),
+            last_check_at TEXT,
+            last_success_at TEXT,
+            last_error TEXT,
+            error_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            browser_playable INTEGER
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO channels(slug,label,kind,source_url,current_url,status,"
+        "error_count,browser_playable) VALUES (?,?,?,?,?,?,?,?)",
+        ("bbc", "BBC", "hls", "https://x/master.m3u8",
+         "https://x/master.m3u8", "live", 3, 1),
+    )
+    conn.commit()
+
+    sql003 = files("mymts_helper.migrations").joinpath(
+        "003_channel_kind_youtube.sql"
+    ).read_text()
+    conn.executescript(sql003)
+
+    row = conn.execute(
+        "SELECT slug,kind,source_url,current_url,status,error_count,browser_playable "
+        "FROM channels WHERE slug='bbc'"
+    ).fetchone()
+    assert tuple(row) == ("bbc", "hls", "https://x/master.m3u8",
+                          "https://x/master.m3u8", "live", 3, 1)
+    # New CHECK admits youtube...
+    conn.execute(
+        "INSERT INTO channels(slug,label,kind,source_url) VALUES (?,?,?,?)",
+        ("yt", "YT", "youtube", "https://www.youtube.com/@x/live"),
+    )
+    # ...but still rejects an unknown kind.
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO channels(slug,label,kind,source_url) VALUES (?,?,?,?)",
+            ("tw", "TW", "twitch", "https://t/x"),
+        )
+
+
 def test_channels_status_checked(tmp_path: Path) -> None:
     p = tmp_path / "test.db"
     db.migrate(p)

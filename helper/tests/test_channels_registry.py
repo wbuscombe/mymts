@@ -94,16 +94,73 @@ def test_upsert_channel_renames(tmp_path: Path) -> None:
     assert rows[0].source_url.endswith("b.m3u8")
 
 
-def test_upsert_channel_rejects_youtube_kind(tmp_path: Path) -> None:
+def test_upsert_channel_accepts_youtube_kind(tmp_path: Path) -> None:
     p = tmp_path / "x.db"
     db.migrate(p)
     conn = db.connect(p)
-    # YouTube kind lands in a future migration with a yt-dlp sidecar.
+    # kind='youtube' is admitted by migration 003 (yt-dlp resolver). The
+    # source_url must be a YouTube live URL, not an m3u8.
+    cid = registry.upsert_channel(
+        conn, slug="yt", label="YT",
+        source_url="https://www.youtube.com/@PBSNewsHour/live", kind="youtube",
+    )
+    assert cid > 0
+    rows = registry.list_channels(conn)
+    assert rows[0].kind == "youtube"
+    assert rows[0].source_url.endswith("/live")
+
+
+def test_upsert_channel_rejects_unknown_kind(tmp_path: Path) -> None:
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
     with pytest.raises(registry.RegistryError, match="unsupported_kind"):
         registry.upsert_channel(
-            conn, slug="yt", label="YT",
-            source_url="https://x.test/a.m3u8", kind="youtube",
+            conn, slug="tw", label="TW",
+            source_url="https://www.twitch.tv/foo", kind="twitch",
         )
+
+
+def test_upsert_youtube_kind_rejects_non_youtube_url(tmp_path: Path) -> None:
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    # A YouTube-kind channel pointed at a non-YouTube host is rejected.
+    with pytest.raises(registry.RegistryError, match="youtube_url_host"):
+        registry.upsert_channel(
+            conn, slug="yt", label="YT",
+            source_url="https://evil.test/@x/live", kind="youtube",
+        )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/@PBSNewsHour/live",
+        "https://youtube.com/@cspan/live",
+        "https://www.youtube.com/channel/UC123/live",
+        "https://www.youtube.com/live/abcdEFGH012",
+        "https://www.youtube.com/watch?v=abcdEFGH012",
+    ],
+)
+def test_validate_youtube_url_accepts(url: str) -> None:
+    assert registry.validate_youtube_url(url) == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://www.youtube.com/@x/live",          # http
+        "https://notyoutube.com/@x/live",          # wrong host
+        "https://u:p@www.youtube.com/@x/live",     # userinfo
+        "https://www.youtube.com:8443/@x/live",    # odd port
+        "https://www.youtube.com/@x/videos",       # not a live path
+        "https://www.youtube.com/watch?list=PL1",  # watch without v=
+    ],
+)
+def test_validate_youtube_url_rejects(url: str) -> None:
+    with pytest.raises(registry.RegistryError):
+        registry.validate_youtube_url(url)
 
 
 def test_update_status_live(tmp_path: Path) -> None:

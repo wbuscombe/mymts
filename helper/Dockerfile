@@ -36,7 +36,8 @@ RUN pip install --no-cache-dir build hatchling \
         uvicorn[standard]==0.37.0 \
         httpx==0.28.1 \
         feedparser==6.0.11 \
-        defusedxml==0.7.1
+        defusedxml==0.7.1 \
+        yt-dlp==2026.3.17
 
 # ---- runtime ----
 FROM ${PYTHON_IMAGE} AS runtime

@@ -119,6 +119,7 @@ def create_app(
         db_path=db_path,
         interval_seconds=cfg.channel_probe_interval_seconds,
         resolver=active_resolver,
+        youtube_resolve_timeout_seconds=cfg.youtube_resolve_timeout_seconds,
     )
     markets_poller = MarketsPoller(
         interval_seconds=cfg.markets_poll_interval_seconds,

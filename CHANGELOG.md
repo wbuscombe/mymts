@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): yt-dlp YouTube-live resolver (kind='youtube') (2026-06-16)
+
+The helper was direct-HLS-only — `kind='youtube'` was rejected as a "future
+migration." This is that future: the helper now resolves a YouTube `/live` URL
+to its underlying HLS manifest so a YouTube channel can be probed, validated,
+and served exactly like a direct-HLS one. API stays **additive** (a new kind,
+no field changes); existing direct-HLS channels are byte-for-byte unaffected.
+
+- **Resolver** (`channels/youtube_resolver.py`) — `import yt_dlp` (library, not
+  subprocess), `extract_info(url, download=False)`, following the house pattern
+  from the multiview/playlist projects' `stream_resolver.py`. Extracts the live
+  `manifest_url`; gates on `is_live` so a non-24/7 feed that's dark right now
+  resolves to an **honest offline**, never a dead/fake-live URL. A thread-safe
+  `URLCache` keys each resolution by source URL with a TTL **derived from the
+  manifest's own `expire` epoch** minus a safety margin (clamped to [5 min, 4 h]),
+  so a cached URL is always re-resolved *before* it can expire. Tunable named
+  constants (`CACHE_SAFETY_MARGIN_SECONDS`, `MIN/MAX/FALLBACK_CACHE_TTL_SECONDS`,
+  `DEFAULT_RESOLVE_TIMEOUT`). Notably **no `player_client` pin** — yt-dlp's
+  default client set is what returns live HLS; forcing `["web"]` yields "No
+  video formats found" for live streams (learned during channel validation).
+- **Egress — residential, never PIA.** yt-dlp does its own outbound HTTP to
+  youtube.com / googlevideo.com (both public); it runs in the helper container,
+  whose network is the residential `mymts-net` bridge, so resolution leaves via
+  the **normal** egress. The helper has no PIA route — PIA is never touched.
+  Defense in depth: the URL yt-dlp returns is re-validated through the existing
+  SSRF-safe `fetcher` (https-only, RFC1918/CGNAT rejection, bounded) before any
+  channel is marked live — the resolver only *proposes* a URL.
+- **Prober** — `extract_info` is blocking, so the prober resolves in an executor
+  with an asyncio deadline above yt-dlp's socket timeout (a wedged extraction
+  can't stall the loop). A resolved manifest then runs the SAME master/variant
+  fetch + browser-playable classification as any direct-HLS channel; the
+  channel's `current_url` becomes the resolved manifest the player loads.
+- **Migration 003** widens the `kind` CHECK to admit `'youtube'` (SQLite can't
+  ALTER a CHECK → documented table-recreate, rows + state preserved verbatim;
+  tested). Registry gets a structured `validate_youtube_url` (https + a real
+  YouTube host + a live-bearing path), kind-routed alongside `validate_hls_url`.
+- **yt-dlp PINNED `==2026.3.17`** (pyproject + Dockerfile wheel list; base
+  package has no required runtime deps). **MAINTENANCE NOTE:** YouTube changes
+  its player API often and yt-dlp ships fixes on a fast cadence, so this pin
+  needs a **periodic bump** — a stale yt-dlp silently stops resolving YouTube
+  channels. Bump the version in both `helper/pyproject.toml` and
+  `helper/Dockerfile` together.
+
+Helper suite green (resolver/registry/prober/migration tests added); validated
+end-to-end from the NAS's residential vantage — real channels resolve to a
+googlevideo HLS manifest, pass the SSRF-safe master/variant probe, and are
+marked live + browser-playable. No channels added in this commit (next commit).
+
 ## perf(app): disable the audio renderer at player creation (robust across recovery reinit) (2026-06-16)
 
 **Measure-first** (read-only adb on `.92`, the post-audio-fix build):

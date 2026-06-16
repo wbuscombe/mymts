@@ -1,9 +1,15 @@
 """Channel registry — storage + URL validation at the boundary.
 
-Stage 2 supports only `kind='hls'`: the helper accepts a direct HLS URL,
-probes it, and exposes the result. The `kind` column has a CHECK constraint
-that admits exactly that — a future migration adds `'youtube'` when yt-dlp
-arrives in its own sandboxed sidecar.
+Two channel kinds:
+  - `kind='hls'`    — a direct HLS URL the helper probes and exposes verbatim.
+  - `kind='youtube'`— a YouTube `/live` URL the in-process yt-dlp resolver
+    turns into an HLS manifest (see `youtube_resolver.py`); the prober then
+    probes that resolved manifest with the SAME SSRF-safe fetch + validation
+    as a direct-HLS channel. Admitted by migration 003.
+
+Each kind has its own structured validator (`validate_hls_url` /
+`validate_youtube_url`) — structured parsing, not loose regex over the URL
+string, the principle the v1.1 web-app review forced us to internalise.
 """
 
 from __future__ import annotations
@@ -86,6 +92,53 @@ def validate_hls_url(url: str) -> str:
     return url
 
 
+# YouTube hosts we accept a source URL from. Anything else is rejected at the
+# boundary — a `kind='youtube'` channel must point at YouTube itself; the
+# resolver never follows it elsewhere.
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com"})
+
+
+def validate_youtube_url(url: str) -> str:
+    """Structured validation of a YouTube `/live` (or watch/live) source URL.
+
+    Same posture as `validate_hls_url`: https, a real YouTube host, no
+    userinfo, default port, and a path that names a *live* endpoint
+    (`/@handle/live`, `/channel/<id>/live`, `/c|user/<name>/live`,
+    `/live/<id>`, or `/watch?v=`). We do NOT accept an arbitrary YouTube URL —
+    only the live-bearing shapes the resolver knows how to turn into HLS.
+    """
+    if not isinstance(url, str):
+        raise RegistryError("youtube_url_not_string")
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise RegistryError(f"youtube_url_scheme: {parsed.scheme!r} (https only)")
+    host = (parsed.hostname or "").lower()
+    if host not in _YOUTUBE_HOSTS:
+        raise RegistryError(f"youtube_url_host: {host!r}")
+    if parsed.username is not None or parsed.password is not None:
+        raise RegistryError("youtube_url_userinfo")
+    if parsed.port not in (None, 443):
+        raise RegistryError(f"youtube_url_port: {parsed.port}")
+    path = parsed.path
+    query = parsed.query.lower()
+    looks_like_live = (
+        path.endswith("/live")
+        or path.startswith("/live/")
+        or (path == "/watch" and "v=" in query)
+    )
+    if not looks_like_live:
+        raise RegistryError(f"youtube_url_path_not_live: {parsed.path!r}")
+    return url
+
+
+# kind -> the validator that admits its source_url. Adding a kind means adding
+# its migration CHECK entry (003) AND a row here.
+_KIND_VALIDATORS = {
+    "hls": validate_hls_url,
+    "youtube": validate_youtube_url,
+}
+
+
 def upsert_channel(
     conn: sqlite3.Connection,
     *,
@@ -95,9 +148,10 @@ def upsert_channel(
     kind: str = "hls",
 ) -> int:
     validate_slug(slug)
-    if kind != "hls":
+    validator = _KIND_VALIDATORS.get(kind)
+    if validator is None:
         raise RegistryError(f"unsupported_kind: {kind!r}")
-    validate_hls_url(source_url)
+    validator(source_url)
     conn.execute(
         "INSERT INTO channels(slug, label, kind, source_url) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(slug) DO UPDATE SET "
