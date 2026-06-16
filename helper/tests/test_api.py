@@ -80,9 +80,28 @@ def test_api_feed_items_have_pinned_fields(phantom_client: TestClient) -> None:
     body = phantom_client.get("/api/feed").json()
     assert body["items"], "phantom preload should have items"
     item = body["items"][0]
-    for field in ("id", "guid", "source", "source_url", "title", "summary",
-                  "link", "published_at", "fetched_at"):
+    for field in ("id", "guid", "source", "source_category", "source_url", "title",
+                  "summary", "link", "published_at", "fetched_at"):
         assert field in item, f"missing field: {field}"
+
+
+def test_api_feed_source_category_groups_outlets(phantom_client: TestClient) -> None:
+    """Each feed item carries a `source_category` so the web can group the
+    feed-source filter by section (same taxonomy as the channel picker)."""
+    from mymts_helper.channels.category import CATEGORY_ORDER
+    from mymts_helper.feeds.category import source_category
+
+    body = phantom_client.get("/api/feed").json()
+    for it in body["items"]:
+        assert it["source_category"] in CATEGORY_ORDER, it["source_category"]
+        # The served value matches the pure map for that source label.
+        assert it["source_category"] == source_category(it["source"])
+    # Spot-check the taxonomy mapping (outlets bucket into the section names).
+    assert source_category("BBC World") == "Global News"
+    assert source_category("NBC News") == "US News"
+    assert source_category("NFL") == "Sports"
+    assert source_category("Bloomberg Markets") == "Business"
+    assert source_category("Some Unmapped Source") == "General"
 
 
 # ---- /api/channels ----

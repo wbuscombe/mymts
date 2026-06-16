@@ -201,6 +201,10 @@ body { display: flex; flex-direction: column; }
 .row.col { flex-direction: column; align-items: stretch; gap: 6px; }
 .toggles label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
 .toggles .empty { padding: 4px 0; }
+/* category sub-header inside a grouped toggle list (feed sources by category) */
+.toggle-section { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--accent); margin: 8px 0 2px; }
+.toggle-section:first-child { margin-top: 0; }
 .note { font-size: 11px; color: var(--ghost); line-height: 1.5; display: flex; flex-direction: column; gap: 3px; }
 .note:empty { display: none; }
 /* grouped-settings section header (mirrors the native SettingsOverlay sections) */

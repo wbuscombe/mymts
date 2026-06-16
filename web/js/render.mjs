@@ -498,9 +498,22 @@ export function tickerFlipDwellMs(pct, base = TICKER_FLIP_BASE_DWELL_MS, min = 2
 
 // ----- view-prefs normalize / serialize (browser-local, pure + testable) -----
 
+/** Default grid dims for a fresh wall (a saved pref always wins). 2 rows × 3 cols
+ *  = 6 tiles — the wide news-wall default. */
+export const DEFAULT_GRID_ROWS = 2;
+export const DEFAULT_GRID_COLS = 3;
+
+/** Curated default channel lineup for a fresh web wall — mirrors the native
+ *  LineupSelector.PREFERRED so both screens start with the SAME channels (not an
+ *  alphabetical accident that the lineup expansion would shift). The first N
+ *  (playable, present) fill the default grid; a saved assignment always wins. */
+export const WEB_DEFAULT_LINEUP = [
+  "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnbc", "cnn",
+];
+
 /** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
 export const DEFAULT_VIEW_PREFS = {
-  gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
+  gridRows: DEFAULT_GRID_ROWS, gridCols: DEFAULT_GRID_COLS, feedPct: 32, feedFont: 1,
   feedSide: "left",        // native Feed side parity (feed left | feed right)
   captions: false,         // wall-wide soft-caption rendering — OFF by default (native parity)
   tickerNews: false, feedRecency: "all",
@@ -666,6 +679,35 @@ export function sectionChannels(channels) {
   return CHANNEL_CATEGORY_ORDER
     .filter((cat) => buckets.has(cat))
     .map((cat) => ({ category: cat, channels: buckets.get(cat) }));
+}
+
+/**
+ * Group the DISTINCT feed sources in [items] by their helper-served
+ * `source_category` (the same taxonomy as the channel picker), ordered by
+ * CHANNEL_CATEGORY_ORDER, omitting empty sections, sources alpha within a
+ * section. An item with no/unknown category buckets into "General" (never
+ * dropped). Pure — unit-tested. Returns [{ category, sources: [label, …] }, …].
+ */
+export function sectionFeedSources(items) {
+  const list = Array.isArray(items) ? items : [];
+  const catBySource = new Map();
+  for (const it of list) {
+    const label = sourceLabel(it);
+    if (catBySource.has(label)) continue;
+    const c = it && typeof it.source_category === "string" ? it.source_category : "";
+    catBySource.set(label, CHANNEL_CATEGORY_ORDER.includes(c) ? c : "General");
+  }
+  const buckets = new Map();
+  for (const [label, cat] of catBySource) {
+    if (!buckets.has(cat)) buckets.set(cat, []);
+    buckets.get(cat).push(label);
+  }
+  return CHANNEL_CATEGORY_ORDER
+    .filter((cat) => buckets.has(cat))
+    .map((cat) => ({
+      category: cat,
+      sources: buckets.get(cat).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
+    }));
 }
 
 // ----- per-tile audio control state (pure; the DOM/hls wiring is in

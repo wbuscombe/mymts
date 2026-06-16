@@ -65,6 +65,7 @@ import {
   CHANNEL_CATEGORY_ORDER,
   channelCategory,
   sectionChannels,
+  sectionFeedSources,
   feedSideOption,
   nextAudible,
   isAudible,
@@ -639,7 +640,7 @@ test("tickerScrollPxPerSec: scales base velocity by clamped percent (faster = mo
 
 test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () => {
   const d = normalizeViewPrefs({});
-  assert.equal(d.gridRows, 2); assert.equal(d.gridCols, 2);
+  assert.equal(d.gridRows, 2); assert.equal(d.gridCols, 3);   // default 2×3 = 6 tiles
   assert.equal(d.feedPct, 32); assert.equal(d.feedFont, 1);
   assert.equal(d.tickerNews, false);            // load-bearing: OFF unless explicit true
   assert.equal(d.feedRecency, "all");
@@ -894,6 +895,28 @@ test("sectionChannels: preserves input order WITHIN a section (caller pre-sorts 
   // Empty / non-array inputs are safe.
   assert.deepEqual(sectionChannels([]), []);
   assert.deepEqual(sectionChannels(null), []);
+});
+
+test("sectionFeedSources: groups feed sources by served category, ordered, empty omitted", () => {
+  // Feed items carry a `source` label + helper-served `source_category`.
+  const items = [
+    { source: "NBC News", source_category: "US News" },
+    { source: "BBC World", source_category: "Global News" },
+    { source: "NBC News", source_category: "US News" },     // dup source collapses
+    { source: "NFL", source_category: "Sports" },
+    { source: "CBS News", source_category: "US News" },
+    { source: "Bloomberg Markets", source_category: "Business" },
+  ];
+  const sections = sectionFeedSources(items);
+  // Canonical CHANNEL_CATEGORY_ORDER (Sports first, as in the channel picker); no
+  // Weather/General sections (none present) → omitted.
+  assert.deepEqual(sections.map((s) => s.category), ["Sports", "US News", "Global News", "Business"]);
+  // Distinct sources, alpha within a section.
+  assert.deepEqual(sections.find((s) => s.category === "US News").sources, ["CBS News", "NBC News"]);
+  // Missing/unknown category → General (never dropped); empty input safe.
+  assert.deepEqual(sectionFeedSources([{ source: "Mystery" }]), [{ category: "General", sources: ["Mystery"] }]);
+  assert.deepEqual(sectionFeedSources([]), []);
+  assert.deepEqual(sectionFeedSources(null), []);
 });
 
 // ----- feed side (native Feed side parity) -----

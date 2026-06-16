@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query
 
 from .. import db
 from . import store
+from .category import source_category
 
 API_SCHEMA_VERSION = 1
 
@@ -49,6 +50,10 @@ def get_router(db_path: Path) -> APIRouter:
                     "id": int(it["id"]),
                     "guid": it["guid"],
                     "source": it["source_label"],
+                    # Section the web feed-source filter groups by (US News /
+                    # Global News / Sports / Business / General). Derived from the
+                    # source label; additive — the TV ignores it. See feeds/category.py.
+                    "source_category": source_category(it["source_label"]),
                     "source_url": it["source_url"],
                     "title": it["title"],
                     "summary": it["summary"],

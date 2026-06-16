@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): group feed sources by category in settings + default grid 2×3 (2026-06-16)
+
+- **Feed sources grouped by category.** Settings → Feed sources was one flat list; it now groups the source toggles under category headers (Sports / US News / Global News / Business / General) in the canonical order, empty categories omitted, uncheck-to-hide unchanged. The category comes from the **helper** (`feeds/category.py` maps each RSS outlet to the same taxonomy the channel picker uses, served additively as `source_category` per `/api/feed` item) — not an invented client heuristic. Pure `sectionFeedSources` unit-tested.
+- **Default grid 2×3** (named `DEFAULT_GRID_ROWS=2` / `DEFAULT_GRID_COLS=3` = 6 tiles) for a fresh wall; a saved grid pref always wins (`normalizeViewPrefs` defaults only).
+- **Curated default lineup** (`WEB_DEFAULT_LINEUP`, mirroring native `LineupSelector.PREFERRED`): a fresh wall fills its default tiles from the curated set first (then any other playable as fallback), so the channel-lineup expansion can't shift which channels a fresh wall opens with — and web + native start on the same channels. A saved per-tile assignment always wins.
+- **Per-tile audio** stays in the slot controls (click a playing tile → slot-controls modal → Audio row → single-audible-tile toggle); verified discoverable, not moved to global settings.
+
 ## perf(app): disable the audio renderer on inaudible tiles (keep the per-tile toggle) (2026-06-16)
 
 `setAudible(false)` previously only set `volume = 0f` — the AAC track kept **decoding** on every muted tile. On the 4-tile wall that was the ~16% CPU the `media.swcodec` process spent decoding audio nobody hears (per the read-only perf pass). Now an inaudible tile **disables its audio renderer** (`setTrackTypeDisabled(TRACK_TYPE_AUDIO, true)`) so the track isn't decoded; the audible tile enables its renderer and plays.

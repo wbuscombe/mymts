@@ -21,7 +21,8 @@ import {
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
-  sectionChannels, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
+  sectionChannels, sectionFeedSources, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
+  WEB_DEFAULT_LINEUP,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -444,11 +445,17 @@ async function pollChannels() {
  *  browser-playable channels so the grid isn't blank on first load. */
 function autoFillDefaults() {
   if (autoFilled || Object.keys(prefs.assignments).length > 0) { autoFilled = true; return; }
-  const playableFirst = channelList
-    .filter((c) => browserPlayability(c) === "yes" || browserPlayability(c) === "maybe")
+  const playable = (c) => c && (browserPlayability(c) === "yes" || browserPlayability(c) === "maybe");
+  // Curated default lineup (mirrors native PREFERRED) FIRST so the lineup
+  // expansion never changes which channels a fresh wall opens with; then any
+  // other playable channel as fallback fill for the remaining slots.
+  const preferred = WEB_DEFAULT_LINEUP.filter((slug) => playable(channelsBySlug.get(slug)));
+  const rest = channelList
+    .filter((c) => playable(c) && !WEB_DEFAULT_LINEUP.includes(c.slug))
     .map((c) => c.slug);
+  const fill = [...preferred, ...rest];
   const layout = gridConfig();
-  for (let i = 0; i < layout.count && i < playableFirst.length; i++) prefs.assignments[i] = playableFirst[i];
+  for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
   autoFilled = true;
   savePrefs();
 }
@@ -938,10 +945,8 @@ function buildMenuChannels() {
 // ----- settings modal + source toggles -----
 function rebuildSourceToggles(items) {
   const root = el("source-toggles"); if (!root) return;
-  const sources = [...new Set(items.map((i) => sourceLabel(i)))]
-    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   root.replaceChildren();
-  for (const s of sources) {
+  const toggle = (s) => {
     const lab = node("label");
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !prefs.hidden.has(s);
     cb.addEventListener("change", () => {
@@ -949,7 +954,14 @@ function rebuildSourceToggles(items) {
       savePrefs(); pollFeed();
     });
     lab.append(cb, node("span", null, s));
-    root.appendChild(lab);
+    return lab;
+  };
+  // Group the feed-source toggles by category (the helper's taxonomy, served as
+  // source_category) — US News / Global News / Sports / Business / General;
+  // empty categories are omitted. Uncheck-to-hide is unchanged.
+  for (const section of sectionFeedSources(items)) {
+    root.appendChild(node("div", "toggle-section", section.category));
+    for (const s of section.sources) root.appendChild(toggle(s));
   }
 }
 
