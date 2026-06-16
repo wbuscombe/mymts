@@ -74,10 +74,11 @@ class CrawlDurationTest {
 
     // ---- the end-of-crawl dwell (slip time) ----
 
-    @Test fun `CRAWL_DWELL_MS is a positive end-of-crawl rest`() {
-        // The still-pause at the loop point after a completed pass. Named constant.
-        assertEquals(1500L, CRAWL_DWELL_MS)
-        assertTrue("dwell is a real rest", CRAWL_DWELL_MS >= 1000L)
+    @Test fun `CRAWL_DWELL_MS is the doubled end-of-crawl rest`() {
+        // The still-pause at the loop point after a completed pass. DOUBLED from the
+        // original 1500ms baseline to 3000ms so the rest reads clearly at 10 ft.
+        assertEquals(3000L, CRAWL_DWELL_MS)
+        assertEquals("doubled from the 1500ms baseline", 2 * 1500L, CRAWL_DWELL_MS)
     }
 
     // ---- the speed SETTING drives the crawl, across a usable slow→fast range ----

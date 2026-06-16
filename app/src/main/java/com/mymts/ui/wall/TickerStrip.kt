@@ -218,8 +218,9 @@ private fun PagedTicker(
 
 /** End-of-crawl dwell ("slip time") — how long the strip stays STILL at the loop
  *  point after a completed pass before the next pass begins. A calm beat that lets
- *  the eye reset before the content streams again. Named constant, tunable. */
-internal const val CRAWL_DWELL_MS = 1500L
+ *  the eye reset before the content streams again. Named constant, tunable.
+ *  DOUBLED from the original 1500ms so the rest reads clearly at 10 ft. */
+internal const val CRAWL_DWELL_MS = 3000L
 
 /** Pure: crawl velocity in px/sec from the base dp/sec, the operator's speed
  *  percent, and the display density. Frame-rate-independent. Unit-tested. */

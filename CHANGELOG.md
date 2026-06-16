@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## chore(app): double the end-of-crawl ticker dwell default (2026-06-16)
+
+The crawl's end-of-pass dwell ("slip time" — how long the strip stays still at the
+loop point after a completed horizontal scroll) was doubled: `CRAWL_DWELL_MS`
+**1500ms → 3000ms** (a named constant in `TickerStrip.kt`, not a persisted setting).
+A longer rest lets the eye reset before the content streams again. Native only.
+Asserted by `CrawlDurationTest` (the doubled value + the 2× relationship).
+
 ## fix(app): consistent ticker crawl velocity (framework-timed, sub-pixel) (2026-06-16)
 
 The native ticker **crawl** ran at an inconsistent speed — at 10% sometimes too
