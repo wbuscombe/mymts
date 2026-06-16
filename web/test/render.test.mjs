@@ -65,8 +65,7 @@ import {
   CHANNEL_CATEGORY_ORDER,
   channelCategory,
   sectionChannels,
-  captionState,
-  captionLabel,
+  feedSideOption,
   nextAudible,
   isAudible,
   shouldReassertAudio,
@@ -617,11 +616,12 @@ test("gridLayoutFromDims: count = rows × cols; both clamped; same {count,cols,r
 
 // ----- ticker scroll speed (native parity: tickerScrollPct slider) -----
 
-test("clampTickerSpeedPct: 40–200 range, step-agnostic, non-finite → 100", () => {
-  assert.equal(TICKER_SPEED_MIN_PCT, 40);
+test("clampTickerSpeedPct: 10–200 range (matches native + the slider min), non-finite → 100", () => {
+  assert.equal(TICKER_SPEED_MIN_PCT, 10);       // matches native + the slider min=10
   assert.equal(TICKER_SPEED_MAX_PCT, 200);
   assert.equal(clampTickerSpeedPct(100), 100);
-  assert.equal(clampTickerSpeedPct(10), 40);    // below min
+  assert.equal(clampTickerSpeedPct(10), 10);    // the slider floor is LIVE, not snapped up
+  assert.equal(clampTickerSpeedPct(5), 10);     // below min → floor
   assert.equal(clampTickerSpeedPct(999), 200);  // above max
   assert.equal(clampTickerSpeedPct(NaN), 100);  // non-finite → default
 });
@@ -629,9 +629,9 @@ test("clampTickerSpeedPct: 40–200 range, step-agnostic, non-finite → 100", (
 test("tickerScrollPxPerSec: scales base velocity by clamped percent (faster = more px/sec)", () => {
   assert.equal(tickerScrollPxPerSec(60, 100), 60);   // 100% = base
   assert.equal(tickerScrollPxPerSec(60, 200), 120);  // 200% = double
-  assert.equal(tickerScrollPxPerSec(60, 40), 24);    // 40% = slower
+  assert.equal(tickerScrollPxPerSec(60, 10), 6);     // 10% floor = a genuinely slow crawl
   // An out-of-range stored pref is clamped, never a 0/absurd velocity.
-  assert.equal(tickerScrollPxPerSec(60, 0), 24);     // clamps to 40% → 24
+  assert.equal(tickerScrollPxPerSec(60, 0), 6);      // clamps to 10% → 6
   assert.ok(tickerScrollPxPerSec(60, 5) >= 1);       // always > 0
 });
 
@@ -644,8 +644,9 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   assert.equal(d.tickerNews, false);            // load-bearing: OFF unless explicit true
   assert.equal(d.feedRecency, "all");
   assert.equal(d.tickerScrollPct, 100);
+  assert.equal(d.tickerFlipPct, 100);           // native Flip speed default
   assert.equal(d.tickerMotion, "crawl");        // web default motion
-  assert.equal(d.captions, false);              // captions default OFF (matches native)
+  assert.equal(d.feedSide, "left");             // native Feed side default
   assert.deepEqual(d.hidden, []); assert.deepEqual(d.hiddenLeagues, []);
   assert.deepEqual(d.assignments, {});
   // Matches the exported default shape.
@@ -653,10 +654,11 @@ test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () 
   // tickerNews is ONLY true on an explicit true (not "true", not 1).
   assert.equal(normalizeViewPrefs({ tickerNews: "true" }).tickerNews, false);
   assert.equal(normalizeViewPrefs({ tickerNews: true }).tickerNews, true);
-  // captions, like tickerNews, is an explicit-opt-in boolean (honest OFF default).
-  assert.equal(normalizeViewPrefs({ captions: "true" }).captions, false);
-  assert.equal(normalizeViewPrefs({ captions: true }).captions, true);
+  // feedSide is left unless explicitly "right" (defensive against junk).
+  assert.equal(normalizeViewPrefs({ feedSide: "right" }).feedSide, "right");
+  assert.equal(normalizeViewPrefs({ feedSide: "bogus" }).feedSide, "left");
   // Out-of-range values are clamped on load (defensive against a tampered blob).
+  assert.equal(normalizeViewPrefs({ tickerFlipPct: 9999 }).tickerFlipPct, 200);
   assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridRows, 3);
   assert.equal(normalizeViewPrefs({ gridRows: 9, gridCols: 0 }).gridCols, 1);
   assert.equal(normalizeViewPrefs({ tickerScrollPct: 9999 }).tickerScrollPct, 200);
@@ -679,8 +681,9 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   // arrays; normalize is the canonical re-read. The round-trip must be stable.
   const live = {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
-    tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
-    tickerMotion: "flip", captions: true,
+    feedSide: "right",
+    tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
+    tickerMotion: "flip",
     hidden: new Set(["BBC", "Reuters"]),
     hiddenLeagues: new Set(["NBA"]),
     assignments: { 0: "espn", 1: "tnt" },
@@ -690,8 +693,9 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   const reread = normalizeViewPrefs(JSON.parse(JSON.stringify(stored)));
   assert.deepEqual(reread, {
     gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
-    tickerNews: true, feedRecency: "six", tickerScrollPct: 160,
-    tickerMotion: "flip", captions: true,
+    feedSide: "right",
+    tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
+    tickerMotion: "flip",
     hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],
     assignments: { 0: "espn", 1: "tnt" },
   });
@@ -888,21 +892,17 @@ test("sectionChannels: preserves input order WITHIN a section (caller pre-sorts 
   assert.deepEqual(sectionChannels(null), []);
 });
 
-// ----- per-tile caption state (B) — soft vs burned-in honesty -----
+// ----- feed side (native Feed side parity) -----
 
-test("captionState: no soft track → 'none' (honest); present → on/off; label matches", () => {
-  // The crux honesty: with no soft track there is nothing to toggle — burned-in
-  // captions can't be removed, so the state is "none", NOT a fake "off".
-  assert.equal(captionState(false, true), "none");
-  assert.equal(captionState(false, false), "none");
-  assert.equal(captionState(true, true), "on");
-  assert.equal(captionState(true, false), "off");
-  assert.equal(captionLabel("none"), "CC —");
-  assert.equal(captionLabel("on"), "CC on");
-  assert.equal(captionLabel("off"), "CC off");
+test("feedSideOption: only 'right' is right; anything else → 'left'", () => {
+  assert.equal(feedSideOption("right"), "right");
+  assert.equal(feedSideOption("left"), "left");
+  assert.equal(feedSideOption("bogus"), "left");
+  assert.equal(feedSideOption(undefined), "left");
+  assert.equal(feedSideOption(null), "left");
 });
 
-// ----- per-tile audio (C) — single audible tile (radio-button model) -----
+// ----- per-tile audio — single audible tile (radio-button model) -----
 
 test("nextAudible: enabling a tile moves audio to it; re-enabling the same mutes the wall", () => {
   // From all-muted, picking tile 2 makes 2 audible.

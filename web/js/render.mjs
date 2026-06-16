@@ -441,11 +441,12 @@ export function gridLayoutFromDims(rows, cols) {
 // ----- ticker scroll speed (native parity: tickerScrollPct slider) -----
 
 /** Ticker-speed slider bounds + step, mirroring the native
- *  TICKER_SPEED_MIN/MAX/STEP_PCT. 100% = the calm default; the bounds keep
- *  the marquee from getting unreadably fast or painfully slow. */
-export const TICKER_SPEED_MIN_PCT = 40;
+ *  TICKER_SPEED_MIN/MAX/STEP_PCT (10–200, step 10). 100% = the calm default;
+ *  the 10% floor is a genuinely-slow option, the 200% ceiling a readable max.
+ *  Shared by the Scroll speed (crawl) and Flip speed (paged) controls. */
+export const TICKER_SPEED_MIN_PCT = 10;
 export const TICKER_SPEED_MAX_PCT = 200;
-export const TICKER_SPEED_STEP_PCT = 20;
+export const TICKER_SPEED_STEP_PCT = 10;
 
 /** Clamp a ticker-speed percent into the allowed range (defensive on read +
  *  nudge), mirroring native clampTickerSpeedPct. Non-finite → 100 (default). */
@@ -500,11 +501,18 @@ export function tickerFlipDwellMs(pct, base = TICKER_FLIP_BASE_DWELL_MS, min = 2
 /** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
 export const DEFAULT_VIEW_PREFS = {
   gridRows: 2, gridCols: 2, feedPct: 32, feedFont: 1,
-  tickerNews: false, feedRecency: "all", tickerScrollPct: 100,
+  feedSide: "left",        // native Feed side parity (feed left | feed right)
+  tickerNews: false, feedRecency: "all",
+  tickerScrollPct: 100,    // crawl speed (native Scroll speed)
+  tickerFlipPct: 100,      // flip dwell speed (native Flip speed) — separate lever, like native
   tickerMotion: "crawl",   // web default; Android defaults to "flip"
-  captions: false,         // wall-wide caption DEFAULT — OFF, matching native (per-tile override is session-only)
   hidden: [], hiddenLeagues: [], assignments: {},
 };
+
+/** Feed side (native Feed side) — left or right; anything else → "left". Pure. */
+export function feedSideOption(value) {
+  return value === "right" ? "right" : "left";
+}
 
 // ----- feed/video pane split (the draggable divider's clamps + math) -----
 
@@ -555,9 +563,10 @@ export function normalizeViewPrefs(raw) {
     feedFont: typeof p.feedFont === "number" ? p.feedFont : DEFAULT_VIEW_PREFS.feedFont,
     tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
+    feedSide: feedSideOption(p.feedSide),               // native Feed side (left | right)
     tickerScrollPct: clampTickerSpeedPct(p.tickerScrollPct ?? DEFAULT_VIEW_PREFS.tickerScrollPct),
+    tickerFlipPct: clampTickerSpeedPct(p.tickerFlipPct ?? DEFAULT_VIEW_PREFS.tickerFlipPct),
     tickerMotion: tickerMotionOption(p.tickerMotion),   // unknown → web default "crawl"
-    captions: p.captions === true,   // explicit opt-in only (honest default OFF, like native)
     hidden: Array.isArray(p.hidden) ? p.hidden.map(String) : [],
     hiddenLeagues: Array.isArray(p.hiddenLeagues) ? p.hiddenLeagues.map(String) : [],
     assignments: (p.assignments && typeof p.assignments === "object") ? p.assignments : {},
@@ -576,9 +585,10 @@ export function serializeViewPrefs(prefs) {
     gridRows: p.gridRows, gridCols: p.gridCols,
     feedPct: p.feedPct, feedFont: p.feedFont,
     tickerNews: p.tickerNews, feedRecency: p.feedRecency,
+    feedSide: p.feedSide,
     tickerScrollPct: p.tickerScrollPct,
+    tickerFlipPct: p.tickerFlipPct,
     tickerMotion: p.tickerMotion,
-    captions: p.captions,
     hidden: p.hidden instanceof Set ? [...p.hidden] : p.hidden,
     hiddenLeagues: p.hiddenLeagues instanceof Set ? [...p.hiddenLeagues] : p.hiddenLeagues,
     assignments: p.assignments,
@@ -655,30 +665,12 @@ export function sectionChannels(channels) {
     .map((cat) => ({ category: cat, channels: buckets.get(cat) }));
 }
 
-// ----- per-tile caption + audio control state (pure; the DOM/hls wiring is in
-// app.mjs/video.mjs). These mirror the native SlotControlsOverlay's honest
-// caption state and single-audible-tile audio model. -----
-
-/**
- * Honest caption-control state for a tile, given whether the stream exposes a
- * SOFT (separate-track) caption track and whether captions are toggled on:
- *   "none" → no soft track on this stream → nothing to toggle. Burned-in
- *            captions (pixels in the video) CANNOT be removed; the UI must say
- *            so, not pretend the toggle worked.
- *   "on"   → soft track present and enabled.
- *   "off"  → soft track present and disabled.
- * Pure — unit-tested. The actual track enable/disable lives in video.mjs.
- */
-export function captionState(hasSoftTrack, enabled) {
-  if (!hasSoftTrack) return "none";
-  return enabled ? "on" : "off";
-}
-
-/** Short honest label for a caption state (the per-tile control's caption line). */
-export function captionLabel(state) {
-  if (state === "none") return "CC —";   // no soft track (may be burned-in / none)
-  return state === "on" ? "CC on" : "CC off";
-}
+// ----- per-tile audio control state (pure; the DOM/hls wiring is in
+// app.mjs/video.mjs). Mirrors the native SlotControlsOverlay's single-audible-
+// tile audio model. (There is deliberately NO captions control: the captions on
+// these news streams are BURNED INTO THE VIDEO — open captions encoded into the
+// broadcast image — and are unremovable by hls.js or any client, web or native;
+// native's own caption row resolves to "not available" on these streams.) -----
 
 /**
  * Single-audible-tile model (native LineupStore.toggleAudible): the wall has at

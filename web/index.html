@@ -53,7 +53,40 @@
     </section>
   </main>
 
-  <!-- Settings (mouse-driven). Hidden by default. -->
+  <!-- Side menu — the web analog of the native MenuOverlay. Opened by the gear.
+       CHANNELS (one row per slot → its slot controls) + WALL (Settings, Resync). -->
+  <div class="modal-scrim menu-scrim hidden" id="menu-modal">
+    <div class="side-menu">
+      <div class="modal-head"><span>MENU</span><button class="x" id="menu-close" aria-label="Close">✕</button></div>
+      <div class="menu-body">
+        <div class="section-head">Channels</div>
+        <div id="menu-channels" class="menu-list"></div>
+        <div class="section-head">Wall</div>
+        <div class="menu-row" id="menu-settings" tabindex="0" role="button">
+          <div class="menu-row-main"><div class="menu-row-title">Settings</div>
+            <div class="menu-row-detail muted">layout · feed · ticker · sports</div></div></div>
+        <div class="menu-row" id="menu-resync" tabindex="0" role="button">
+          <div class="menu-row-main"><div class="menu-row-title">Resync all feeds</div>
+            <div class="menu-row-detail muted">reconnect every video tile</div></div></div>
+        <div class="menu-foot">MyMTS · LAN web client · read-only</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slot controls — the web analog of the native SlotControlsOverlay. Channel ·
+       Audio · Reconnect · Close. NO captions row: the captions on these news
+       streams are burned into the picture and unremovable by any client. -->
+  <div class="modal-scrim hidden" id="slot-modal">
+    <div class="modal slot-modal-card">
+      <div class="modal-head"><span><span id="slot-title">SLOT</span> · <span class="slot-channel" id="slot-channel"></span></span><button class="x" id="slot-close" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div id="slot-body" class="slot-list"></div>
+        <p class="note">Click a row. Captions aren't shown — these news streams carry captions burned into the picture (open captions), which no browser or the TV app can remove.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings (mouse-driven), reached from the side menu. Hidden by default. -->
   <div class="modal-scrim hidden" id="settings-modal">
     <div class="modal">
       <div class="modal-head"><span>WALL SETTINGS</span><button class="x" id="settings-close" aria-label="Close">✕</button></div>
@@ -82,6 +115,8 @@
           <input type="range" id="feed-width" min="18" max="58" step="1" /></label>
         <label class="row"><span>Feed text size</span>
           <select id="feed-font"><option value="0.88">Small</option><option value="1" selected>Default</option><option value="1.18">Large</option></select></label>
+        <label class="row"><span>Feed side</span>
+          <select id="feed-side"><option value="left">Feed left</option><option value="right">Feed right</option></select></label>
         <label class="row"><span>Feed recency</span>
           <select id="feed-recency"></select></label>
         <div class="row col"><span>Feed sources (uncheck to hide)</span>
@@ -97,28 +132,23 @@
             <option value="crawl">Crawl (continuous)</option>
             <option value="flip">Flip (one at a time)</option>
           </select></label>
-        <label class="row"><span>Scroll / flip speed</span>
-          <span class="range-with-val"><input type="range" id="ticker-scroll" min="40" max="200" step="20" /><span id="ticker-scroll-val" class="range-val"></span></span></label>
-        <label class="row"><span>Ticker news (3rd mode)</span>
-          <input type="checkbox" id="ticker-news" /></label>
-
-        <!-- ── Video ── -->
-        <div class="section-head">Video</div>
-        <label class="row"><span>Captions default</span>
-          <input type="checkbox" id="captions-default" /></label>
-        <!-- Captions honesty (soft vs burned-in): only soft (separate-track)
-             captions can be toggled; captions baked into the picture can't be
-             removed. The default applies to new tiles; each tile's hover/tap
-             controls override it (and show "CC —" when a stream has no soft track). -->
-        <p class="note">Default for video tiles. Toggle a single tile from its hover/tap controls (Change · CC · Audio · ↻). Only soft (separate-track) captions can be turned on/off — captions burned into the picture can't be removed.</p>
+        <!-- Scroll speed (crawl) and Flip speed (paged flip) are SEPARATE levers,
+             matching native — scroll paces the continuous crawl, flip paces the
+             one-at-a-time dwell. -->
+        <label class="row"><span>Scroll speed</span>
+          <span class="range-with-val"><input type="range" id="ticker-scroll" min="10" max="200" step="10" /><span id="ticker-scroll-val" class="range-val"></span></span></label>
+        <label class="row"><span>Flip speed</span>
+          <span class="range-with-val"><input type="range" id="ticker-flip" min="10" max="200" step="10" /><span id="ticker-flip-val" class="range-val"></span></span></label>
 
         <!-- ── Sports ── -->
         <div class="section-head">Sports</div>
         <div class="row col"><span id="leagues-label">Sports leagues (uncheck to hide)</span>
           <div id="league-toggles" class="toggles"></div></div>
+        <label class="row"><span>Ticker news (3rd mode)</span>
+          <input type="checkbox" id="ticker-news" /></label>
 
-        <p class="note">Tip: click a video cell to choose its channel. View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.
-          Panel-fit controls (display size, fit scale, vertical stretch, overscan, position, calibration) are TV-only — they correct a physical panel's overscan and have no meaning in a browser.</p>
+        <p class="note">Tip: click a video tile for its slot controls (channel · audio · reconnect). View settings are local to this browser (the wall's own settings live on the TV). LAN-only · credential-free · read-only view of the helper.
+          Panel-fit controls (display size, fit scale, vertical stretch, overscan, position, calibration) are TV-only — they correct a physical panel's overscan and have no meaning in a browser. Captions aren't offered — these news streams have captions burned into the picture, which no client can remove.</p>
       </div>
     </div>
   </div>

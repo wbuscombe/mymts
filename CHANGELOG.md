@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## refactor(web): rebuild the menu to match the native app; drop the captions control (2026-06-15)
+
+The bespoke flat web menu was less robust than the native app's, and the per-tile "CC —" button read as broken. **Native is the spec:** the web menu is rebuilt to mirror the native app's menu structure (adapted to mouse + touch — the web has no D-pad), and the non-functional captions control is removed.
+
+- **Captions control REMOVED (it was a permanent no-op here).** The captions on these news streams are **burned into the video** (open captions encoded into the broadcast image) — **unremovable by hls.js or any client, web or native**. (Honest note from the native audit: native *does* have a "Captions" row, but on these burned-in streams it resolves to `"not available on this channel"` — equally dead. A button that never does anything reads as broken, so the web omits it.) Removed: the per-tile CC toggle + "CC —" state, `prefs.captions` / the per-tile override, `captionState`/`captionLabel`, and **all** hls.js subtitle (`subtitleDisplay`/`subtitleTrack`/`subtitleTracks`) + native `textTracks` caption wiring in `video.mjs`. This **supersedes the captions control added earlier this cycle** (the entry below).
+- **Menu rebuilt to native's structure.** A **side menu** (web analog of native `MenuOverlay`) opened by the gear: a **CHANNELS** list (one row per slot → that slot's controls) + a **WALL** section (Settings, Resync all feeds). Per-tile **slot controls modal** (web analog of `SlotControlsOverlay`): **Channel · Audio · Reconnect · Close** — replacing the bespoke hover button-bar. Clicking a tile opens its slot controls; an empty cell opens the picker directly.
+- **Settings reorganized into native's sections** — Layout & Feed / Ticker / Sports — **excluding the TV-only Display & Fit calibration** (fit-scale / vertical-stretch / overscan / position-offset / calibration: they correct a physical panel and are meaningless in a browser).
+- **Added native-parity controls the web lacked:** **Feed side** (feed left | right — `prefs.feedSide`, via CSS flex order + side-aware divider drag/keyboard) and **Flip speed** (`prefs.tickerFlipPct`, a separate lever from Scroll speed, matching native). Ticker news moved into the Sports section.
+- **Ticker speed range now matches native (10–200%, step 10).** The sliders' floor was 40% via `clampTickerSpeedPct`; lowered to 10% so the full slider range is live (the bottom of the track is no longer dead) and the thumb can't desync from the readout.
+- **Kept:** the per-tile single-source **audio** (operator-requested) — now shown as a 🔊 badge on the audible tile, toggled from the slot controls. CSP / no-proxy / A1 / vendored-hls.js posture untouched; the ticker, divider, reconnect, and 3-column cap are untouched. Web suite green. Web-client only; PIA untouched.
+
 ## feat(web): per-tile controls surface — captions (soft tracks) + single-source audio (2026-06-15)
 
 Each playing video tile gains a transient controls surface (hover on desktop, tap on touch; hidden otherwise — no persistent chrome) — the web analog of the native `SlotControlsOverlay`. It holds **Change · CC · Audio · ↻ (reconnect)**, bringing two native-parity gaps to the browser.

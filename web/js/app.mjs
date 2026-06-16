@@ -21,7 +21,7 @@ import {
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
-  sectionChannels, captionState, captionLabel, nextAudible, isAudible, shouldReassertAudio,
+  sectionChannels, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -67,6 +67,14 @@ function applyPrefs() {
   document.documentElement.style.setProperty("--grid-rows", String(layout.rows));
   document.documentElement.style.setProperty("--feed-pct", prefs.feedPct + "%");
   document.documentElement.style.setProperty("--feed-font", String(prefs.feedFont));
+  // Feed side (native Feed side): the wall is a flex row; "right" visually swaps
+  // the feed pane to the right edge (CSS order) without moving it in the DOM.
+  const wall = el("wall");
+  if (wall) wall.classList.toggle("feed-right", prefs.feedSide === "right");
+  // The side menu docks on the feed's edge, like native (the menu slides in from
+  // the same side as the feed it acts on).
+  const menu = el("menu-modal");
+  if (menu) menu.classList.toggle("dock-right", prefs.feedSide === "right");
 }
 
 function node(tag, cls, text) {
@@ -313,7 +321,7 @@ function renderTickerFlip(track, built) {
   };
   show(0);
   if (built.length > 1) {
-    flipTimer = setInterval(() => { i = (i + 1) % built.length; show(i); }, tickerFlipDwellMs(prefs.tickerScrollPct));
+    flipTimer = setInterval(() => { i = (i + 1) % built.length; show(i); }, tickerFlipDwellMs(prefs.tickerFlipPct));
   }
 }
 
@@ -421,14 +429,6 @@ let autoFilled = false;
 let audibleIndex = -1;
 let audibleSlug = null;
 
-/** A tile's effective caption on/off: the per-tile SESSION override if the
- *  operator set one on this tile, else the persisted wall-wide default
- *  (prefs.captions). The override is intentionally not persisted (only the
- *  wall-wide default is) — per the chosen model. */
-function effectiveCaptions(cell) {
-  return cell && cell.captionsOverride != null ? cell.captionsOverride : prefs.captions === true;
-}
-
 async function pollChannels() {
   try {
     const snap = await api.channels(); everOk.channels = true;
@@ -469,6 +469,7 @@ function teardownCells() {
 function buildGrid() {
   teardownCells();
   audibleIndex = -1; audibleSlug = null;   // fresh cells → no stale audible pointer; the wall starts muted
+  if (slotModalIndex != null) closeSlotControls();   // the grid may shrink past the open slot
   applyPrefs();
   const grid = el("grid"); grid.replaceChildren();
   const layout = gridConfig();
@@ -505,71 +506,37 @@ function changeChip(cell) {
   cell.el.appendChild(chip);
 }
 
-// ----- per-tile controls surface (D — the web SlotControlsOverlay analog) -----
-// On a PLAYING video tile, a transient surface (hover on desktop / tap on touch)
-// exposes Change channel · Captions · Audio · Reconnect. Hidden otherwise, so the
-// ambient wall stays clean. Empty/TV-only/dead tiles keep their own affordances
-// (the centered ↻ on a dead tile; whole-tile click to pick on an empty one).
+// ----- per-tile audio indicator (the slot controls live in a modal — see
+// openSlotControls, the web analog of native's SlotControlsOverlay) -----
 
-/** Build the per-tile control surface for a video tile and stash the CC/Audio
- *  button refs on the cell (so updateTileControls can refresh their labels). */
-function buildTileControls(cell, label) {
-  const controls = node("div", "tile-controls");
-  controls.appendChild(node("div", "tc-name", label));
-  const actions = node("div", "tc-actions");
-  const mkBtn = (cls, text, title, onActivate) => {
-    const b = node("button", `tc-btn ${cls}`, text);
-    b.type = "button";
-    b.title = title; b.setAttribute("aria-label", title);
-    // stopPropagation so a button press doesn't also toggle the surface (the
-    // tile-body click handler). The click IS a user gesture (matters for audio).
-    b.addEventListener("click", (e) => { e.stopPropagation(); onActivate(); });
-    return b;
-  };
-  const cc = mkBtn("tc-cc", "CC", "Toggle captions on this tile", () => toggleCellCaptions(cell));
-  const audio = mkBtn("tc-audio", "🔇", "Play this tile's audio (mutes the others)", () => setCellAudio(cell));
-  actions.appendChild(mkBtn("tc-change", "Change", "Change this tile's channel", () => openPicker(cell.index)));
-  actions.appendChild(cc);
-  actions.appendChild(audio);
-  actions.appendChild(mkBtn("tc-reconnect", "↻", "Reconnect this tile", () => refreshCell(cell)));
-  controls.appendChild(actions);
-  cell.ccBtn = cc; cell.audioBtn = audio; cell.controlsEl = controls;
-  return controls;
-}
-
-/** A video tile's body click toggles the controls surface (the touch
- *  affordance; desktop also reveals it on hover via CSS). */
-function setVideoTileClick(cell) {
-  cell.el.onclick = () => { if (cell.controlsEl) cell.controlsEl.classList.toggle("show"); };
-}
-
-/** Refresh a tile's CC + Audio button labels/state from the live handle +
- *  session state. No-op once the tile is no longer a playing video. */
-function updateTileControls(cell) {
-  if (!cell || !cell.ccBtn || !cell.audioBtn || !cell.streamHandle) return;
-  let hasCc = false;
-  try { hasCc = cell.streamHandle.hasCaptions() === true; } catch { hasCc = false; }
-  const ccState = captionState(hasCc, effectiveCaptions(cell));   // "none" | "on" | "off"
-  cell.ccBtn.textContent = captionLabel(ccState);
-  cell.ccBtn.classList.toggle("on", ccState === "on");
-  cell.ccBtn.classList.toggle("unavailable", ccState === "none");
-  cell.ccBtn.setAttribute("aria-pressed", ccState === "on" ? "true" : "false");
-  // Indicator from the element's REALIZED mute state (ground truth), not just the
-  // session pointer — so it can never claim "audio on" while the tile is silent.
+/** Show/hide a small 🔊 badge on the tile reflecting its REALIZED audible state
+ *  (ground truth from the element), so the operator can see at a glance which
+ *  tile owns audio without opening its controls. */
+function updateTileAudioBadge(cell) {
+  if (!cell || !cell.el) return;
   let aud = false;
-  try { aud = cell.streamHandle.audible() === true; } catch { aud = false; }
-  cell.audioBtn.textContent = aud ? "🔊" : "🔇";
-  cell.audioBtn.classList.toggle("on", aud);
-  cell.audioBtn.setAttribute("aria-pressed", aud ? "true" : "false");
+  try { aud = !!cell.streamHandle && cell.streamHandle.audible() === true; } catch { aud = false; }
+  let badge = cell.audioBadge && cell.audioBadge.isConnected ? cell.audioBadge : null;
+  if (aud) {
+    if (!badge) {
+      badge = node("span", "tile-audio", "🔊");
+      badge.title = "Audio on (this tile) — others muted";
+      cell.el.appendChild(badge);
+      cell.audioBadge = badge;
+    }
+  } else if (badge) {
+    badge.remove();
+    cell.audioBadge = null;
+  }
+  // If this slot's controls modal is open, keep its Audio row in sync.
+  if (slotModalIndex === cell.index) refreshSlotControls();
 }
 
-/** Toggle THIS tile's captions (a per-tile session override of the wall-wide
- *  default). If the stream has no soft track the control shows the honest
- *  "CC —" and the toggle is a visual no-op (nothing to disable). */
-function toggleCellCaptions(cell) {
-  cell.captionsOverride = !effectiveCaptions(cell);
-  if (cell.streamHandle) { try { cell.streamHandle.setCaptions(cell.captionsOverride); } catch { /* no track */ } }
-  updateTileControls(cell);
+/** If this cell's slot-controls modal is open, re-render it — so a tile that goes
+ *  dead / reconnecting / empty / TV-only while its modal is open drops the stale
+ *  Audio row + header instead of letting a tap flip audio onto a silent slot. */
+function syncSlotModal(cell) {
+  if (cell && slotModalIndex === cell.index) refreshSlotControls();
 }
 
 /** Drop the audio pointer if this cell owns it but is becoming a non-playing
@@ -591,7 +558,7 @@ function setCellAudio(cell) {
   for (const c of cells) {
     if (!c.isVideo || !c.streamHandle) continue;
     try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
-    updateTileControls(c);
+    updateTileAudioBadge(c);
   }
 }
 
@@ -599,18 +566,22 @@ function renderCell(cell, slug, ch, bp) {
   const tile = cell.el;
   tile.replaceChildren();
   cell.isVideo = false;                 // only the playback branch sets this true
-  cell.streamHandle = null;             // per-tile control handle (set in the playback branch)
-  cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
-  tile.onclick = () => openPicker(cell.index);
+  cell.streamHandle = null;             // per-tile stream handle (set in the playback branch)
+  cell.audioBadge = null;
+  // Clicking a populated tile opens its SLOT CONTROLS (the native SlotControls
+  // analog); an empty cell opens the picker directly (one obvious action).
+  tile.onclick = () => openSlotControls(cell.index);
 
   if (!slug || !ch) {
-    // Empty cell — obvious affordance to pick a channel.
+    // Empty cell — obvious affordance to pick a channel (straight to the picker).
     clearAudioIfOwner(cell);   // a cleared slot no longer owns audio
+    tile.onclick = () => openPicker(cell.index);
     const s = node("div", "tile-state");
     s.appendChild(node("div", "big", "＋"));
     s.appendChild(node("div", "head", "Add channel"));
     s.appendChild(node("div", "sub", "Click to choose a channel for this cell"));
     tile.appendChild(s);
+    syncSlotModal(cell);
     return;
   }
 
@@ -629,6 +600,7 @@ function renderCell(cell, slug, ch, bp) {
     const dot = node("span", `tile-dot ${live ? "dot-tvonly" : "dot-offline"}`);
     tile.appendChild(dot);
     changeChip(cell);
+    syncSlotModal(cell);
     return;
   }
 
@@ -650,10 +622,9 @@ function renderCell(cell, slug, ch, bp) {
   const dot = node("span", "tile-dot dot-unknown");
   const lab = node("span", "tile-label", label);
   tile.append(video, dot, lab);
-  // Per-tile controls surface (D): Change · CC · Audio · Reconnect — appears on
-  // hover/tap, hidden otherwise (no persistent chrome over the video).
-  tile.appendChild(buildTileControls(cell, label));
-  setVideoTileClick(cell);   // tap toggles the surface (touch); hover shows it (CSS)
+  // Clicking the tile opens its SLOT CONTROLS modal (Change · Audio · Reconnect) —
+  // the web analog of native's SlotControlsOverlay. No persistent chrome over video.
+  tile.onclick = () => openSlotControls(cell.index);
 
   let playOverlay = null;
   const clearOverlay = () => { if (playOverlay) { playOverlay.remove(); playOverlay = null; } };
@@ -664,21 +635,14 @@ function renderCell(cell, slug, ch, bp) {
       cell.videoAttempt = 0;          // a clean (re)connect refills the retry budget
       clearCellRetry(cell);
       dot.className = "tile-dot dot-live"; video.style.visibility = ""; clearOverlay();
-      // Re-apply the per-session caption + audio state now that the stream is
-      // actually playing (tracks parsed; unmuting is allowed on a playing tile).
-      try { handle.setCaptions(effectiveCaptions(cell)); } catch { /* no track yet */ }
       // Audio re-asserts ONLY for the same slot+channel it was chosen for — so a
       // transient reconnect keeps audio, but a slot whose channel was replaced
       // never inherits it (no "audio teleport"). Clear a now-stale pointer.
       const keepAudio = shouldReassertAudio(audibleIndex, audibleSlug, cell.index, slug);
       if (!keepAudio && audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
       try { handle.setAudible(keepAudio); } catch { /* ignore */ }
-      updateTileControls(cell);
-      setVideoTileClick(cell);
-    } else if (state === "captions") {
-      // Soft-caption availability became known/changed → refresh the CC label
-      // ("CC on/off" vs the honest "CC —" when there's no soft track).
-      updateTileControls(cell);
+      updateTileAudioBadge(cell);
+      tile.onclick = () => openSlotControls(cell.index);
     } else if (state === "needgesture") {
       // Autoplay blocked — show a click-to-play affordance; click plays.
       dot.className = "tile-dot dot-unknown";
@@ -688,6 +652,7 @@ function renderCell(cell, slug, ch, bp) {
         tile.appendChild(playOverlay);
       }
       tile.onclick = (e) => { e.stopPropagation(); handle.play(); };
+      syncSlotModal(cell);   // a tile awaiting a play-gesture has no audio to toggle yet
     } else { // "stall" or "error" — a runtime failure. Classify, then decide.
       // THE CRUX: classifyVideoFailure separates a transient failure (CDN
       // blip / decode hiccup / freeze → worth a fresh attempt) from a
@@ -719,7 +684,7 @@ function renderCell(cell, slug, ch, bp) {
     }
   });
   cell.teardown = handle.teardown;
-  cell.streamHandle = handle;   // exposes setCaptions/hasCaptions/setAudible to the per-tile controls
+  cell.streamHandle = handle;   // exposes setAudible/audible() to the slot controls + audio badge
 }
 
 /** Honest "Reconnecting…" state while a transient failure backs off. Never
@@ -727,14 +692,15 @@ function renderCell(cell, slug, ch, bp) {
 function showReconnecting(cell, label, attempt) {
   const tile = cell.el;
   tile.replaceChildren();
-  cell.streamHandle = null; cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
+  cell.streamHandle = null; cell.audioBadge = null;
   const s = node("div", "tile-state reconnecting");
   s.appendChild(node("div", "big", "↻"));
   s.appendChild(node("div", "head", label));
   s.appendChild(node("div", "sub", `Reconnecting… (attempt ${attempt + 1})`));
   tile.appendChild(s);
   tile.appendChild(node("span", "tile-dot dot-unknown"));
-  tile.onclick = () => openPicker(cell.index);
+  tile.onclick = () => openSlotControls(cell.index);
+  syncSlotModal(cell);
 }
 
 /** Honest terminal state for a stream the browser couldn't play. Carries a
@@ -743,7 +709,7 @@ function showReconnecting(cell, label, attempt) {
 function showDeadVideo(cell, label, reason) {
   const tile = cell.el;
   tile.replaceChildren();
-  cell.streamHandle = null; cell.ccBtn = null; cell.audioBtn = null; cell.controlsEl = null;
+  cell.streamHandle = null; cell.audioBadge = null;
   clearAudioIfOwner(cell);   // a tile that gave up is silent → it no longer owns audio
   const s = node("div", "tile-state");
   s.appendChild(node("div", "big", "○"));
@@ -760,7 +726,8 @@ function showDeadVideo(cell, label, reason) {
   s.appendChild(refresh);
   tile.appendChild(s);
   tile.appendChild(node("span", "tile-dot dot-offline"));
-  tile.onclick = () => openPicker(cell.index);
+  tile.onclick = () => openSlotControls(cell.index);
+  syncSlotModal(cell);
 }
 
 /** Honest, reason-specific copy. A browser-fundamental limitation (DRM / codec
@@ -877,6 +844,96 @@ function assignCell(slug) {
   renderGrid();
 }
 
+// ----- slot controls modal (the web analog of native's SlotControlsOverlay) -----
+// Reached by clicking a tile, or from the side menu's CHANNELS list. Rows mirror
+// native: Channel (→ picker), Audio (single-source toggle), Reconnect, Close.
+// There is deliberately NO Captions row (burned-in captions are unremovable —
+// native's own caption row resolves to "not available" on these streams).
+let slotModalIndex = null;
+
+function openSlotControls(index) {
+  slotModalIndex = index;
+  refreshSlotControls();
+  el("slot-modal").classList.remove("hidden");
+}
+
+function closeSlotControls() {
+  slotModalIndex = null;
+  closeModal("slot-modal");
+}
+
+/** (Re)render the slot-controls rows for the open slot, adapting to its state. */
+function refreshSlotControls() {
+  if (slotModalIndex == null) return;
+  const idx = slotModalIndex;
+  const cell = cells[idx];
+  if (!cell) { closeSlotControls(); return; }   // grid shrank out from under the modal
+  const slug = prefs.assignments[idx] || null;
+  const ch = slug ? channelsBySlug.get(slug) : null;
+  const label = ch ? (ch.label || ch.slug) : "(empty)";
+  el("slot-title").textContent = `SLOT ${idx + 1}`;
+  el("slot-channel").textContent = label;
+  const body = el("slot-body"); body.replaceChildren();
+
+  const row = (title, detail, detailCls, onActivate) => {
+    const r = node("div", "slot-row");
+    const main = node("div", "slot-row-main");
+    main.appendChild(node("div", "slot-row-title", title));
+    if (detail) main.appendChild(node("div", `slot-row-detail${detailCls ? " " + detailCls : ""}`, detail));
+    r.appendChild(main);
+    r.tabIndex = 0; r.setAttribute("role", "button");
+    r.onclick = onActivate;
+    r.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(); } };
+    body.appendChild(r);
+  };
+
+  // Channel — always available (opens the sectioned picker for this slot).
+  row("Channel", "tap to choose", "muted", () => { closeSlotControls(); openPicker(idx); });
+
+  // Audio — only when this tile is a PLAYING video (a stream to unmute). Single-
+  // audible-tile model; toggling re-renders this row via updateTileAudioBadge.
+  if (cell.isVideo && cell.streamHandle) {
+    let aud = false;
+    try { aud = cell.streamHandle.audible() === true; } catch { aud = false; }
+    row("Audio", aud ? "audible — others muted" : "muted", aud ? "on" : "muted",
+      () => setCellAudio(cell));
+  }
+
+  // Reconnect — only when a channel is assigned (something to reload).
+  if (slug) row("Reconnect", "reload this stream", "muted", () => { closeSlotControls(); refreshCell(cell); });
+
+  row("Close", "back to menu", "muted", () => closeSlotControls());
+}
+
+// ----- side menu (the web analog of native's MenuOverlay) — CHANNELS + WALL -----
+function openMenu() {
+  buildMenuChannels();
+  el("menu-modal").classList.remove("hidden");
+}
+function closeMenu() { closeModal("menu-modal"); }
+
+/** Build the CHANNELS list — one row per slot (native MenuOverlay CHANNELS). */
+function buildMenuChannels() {
+  const root = el("menu-channels"); if (!root) return;
+  root.replaceChildren();
+  for (const cell of cells) {
+    const slug = prefs.assignments[cell.index] || null;
+    const ch = slug ? channelsBySlug.get(slug) : null;
+    const label = ch ? (ch.label || ch.slug) : "(empty)";
+    const status = ch ? channelStatus(ch).label : "—";
+    const r = node("div", "menu-row");
+    r.tabIndex = 0; r.setAttribute("role", "button");
+    const main = node("div", "menu-row-main");
+    main.appendChild(node("div", "menu-row-title", `Slot ${cell.index + 1} · ${label}`));
+    main.appendChild(node("div", `menu-row-detail status-${status}`, status));
+    r.appendChild(main);
+    const act = () => { closeMenu(); openSlotControls(cell.index); };
+    r.onclick = act;
+    r.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } };
+    root.appendChild(r);
+  }
+}
+
 // ----- settings modal + source toggles -----
 function rebuildSourceToggles(items) {
   const root = el("source-toggles"); if (!root) return;
@@ -934,7 +991,21 @@ function wireSettings() {
   // Whole-wall reconnect — a keyboard-accessible <button>, so Enter/Space work
   // for a remote/keyboard-driven wall, not just a mouse click.
   el("refresh-all").addEventListener("click", refreshAllVideo);
-  el("gear").addEventListener("click", () => el("settings-modal").classList.remove("hidden"));
+  // The gear opens the SIDE MENU (native MenuOverlay): CHANNELS list + WALL
+  // section (Settings, Resync all feeds). Settings is reached FROM the menu.
+  el("gear").addEventListener("click", openMenu);
+  el("menu-close").addEventListener("click", closeMenu);
+  el("menu-modal").addEventListener("click", (e) => { if (e.target === el("menu-modal")) closeMenu(); });
+  // Click + keyboard (Enter/Space) for the static WALL rows (they're role=button).
+  const wireRow = (id, fn) => {
+    const r = el(id); if (!r) return;
+    r.addEventListener("click", fn);
+    r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } });
+  };
+  wireRow("menu-settings", () => { closeMenu(); el("settings-modal").classList.remove("hidden"); });
+  wireRow("menu-resync", () => { refreshAllVideo(); closeMenu(); });
+  el("slot-close").addEventListener("click", closeSlotControls);
+  el("slot-modal").addEventListener("click", (e) => { if (e.target === el("slot-modal")) closeSlotControls(); });
   el("settings-close").addEventListener("click", () => closeModal("settings-modal"));
   el("settings-modal").addEventListener("click", (e) => { if (e.target === el("settings-modal")) closeModal("settings-modal"); });
   el("picker-close").addEventListener("click", () => closeModal("picker-modal"));
@@ -942,13 +1013,14 @@ function wireSettings() {
   el("story-close").addEventListener("click", () => closeStory());
   el("story-modal").addEventListener("click", (e) => { if (e.target === el("story-modal")) closeStory(); });
 
-  // Esc closes whichever modal is open (the story modal restores focus to the
-  // headline it was opened from — keyboard/remote accessibility for the wall).
+  // Esc closes the topmost open overlay (innermost first), mirroring native BACK.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (!el("story-modal").classList.contains("hidden")) closeStory();
-    else if (!el("settings-modal").classList.contains("hidden")) closeModal("settings-modal");
     else if (!el("picker-modal").classList.contains("hidden")) closeModal("picker-modal");
+    else if (!el("slot-modal").classList.contains("hidden")) closeSlotControls();
+    else if (!el("settings-modal").classList.contains("hidden")) closeModal("settings-modal");
+    else if (!el("menu-modal").classList.contains("hidden")) closeMenu();
   });
 
   // Grid rows × cols (native parity — independent dims, each 1–3). A dims
@@ -976,6 +1048,14 @@ function wireSettings() {
   const feedFont = el("feed-font"); feedFont.value = String(prefs.feedFont);
   feedFont.addEventListener("change", () => { prefs.feedFont = Number(feedFont.value); applyPrefs(); savePrefs(); });
 
+  // Feed side (native Feed side parity — feed on the left or right). Live-applied.
+  const feedSide = el("feed-side"); feedSide.value = prefs.feedSide;
+  feedSide.addEventListener("change", () => {
+    prefs.feedSide = feedSideOption(feedSide.value);
+    feedSide.value = prefs.feedSide;
+    applyPrefs(); savePrefs();
+  });
+
   // Feed recency window (native FeedRecency parity). Options are data-driven.
   const feedRecency = el("feed-recency");
   feedRecency.replaceChildren();
@@ -998,14 +1078,27 @@ function wireSettings() {
     savePrefs(); renderTicker();
   });
 
-  // Ticker scroll speed (native tickerScrollPct parity). Live-applied.
+  // Ticker scroll speed — crawl velocity (native Scroll speed / tickerScrollPct).
   const tickerScroll = el("ticker-scroll"); tickerScroll.value = String(prefs.tickerScrollPct);
   const scrollVal = el("ticker-scroll-val");
   const showScrollVal = () => { if (scrollVal) scrollVal.textContent = `${prefs.tickerScrollPct}%`; };
   showScrollVal();
   tickerScroll.addEventListener("input", () => {
     prefs.tickerScrollPct = clampTickerSpeedPct(Number(tickerScroll.value));
+    tickerScroll.value = String(prefs.tickerScrollPct);   // reflect the clamp (thumb can't desync)
     showScrollVal(); savePrefs(); renderTicker();
+  });
+
+  // Ticker flip speed — paged-flip dwell (native Flip speed / tickerFlipPct), a
+  // SEPARATE lever from scroll speed (matches native; only affects flip motion).
+  const tickerFlip = el("ticker-flip"); tickerFlip.value = String(prefs.tickerFlipPct);
+  const flipVal = el("ticker-flip-val");
+  const showFlipVal = () => { if (flipVal) flipVal.textContent = `${prefs.tickerFlipPct}%`; };
+  showFlipVal();
+  tickerFlip.addEventListener("input", () => {
+    prefs.tickerFlipPct = clampTickerSpeedPct(Number(tickerFlip.value));
+    tickerFlip.value = String(prefs.tickerFlipPct);   // reflect the clamp (thumb can't desync)
+    showFlipVal(); savePrefs(); renderTicker();
   });
 
   // Ticker news toggle (native tickerNewsEnabled, default OFF — load-bearing
@@ -1015,24 +1108,6 @@ function wireSettings() {
     prefs.tickerNews = tickerNews.checked;
     savePrefs(); pollTicker();
   });
-
-  // Captions DEFAULT (wall-wide, persisted; per-tile override lives on the tile
-  // controls and is session-only). Live-applied to tiles WITHOUT a per-tile
-  // override, so changing the default takes effect immediately on those tiles.
-  const captionsDefault = el("captions-default");
-  if (captionsDefault) {
-    captionsDefault.checked = prefs.captions === true;
-    captionsDefault.addEventListener("change", () => {
-      prefs.captions = captionsDefault.checked;
-      savePrefs();
-      for (const c of cells) {
-        if (c.isVideo && c.streamHandle && c.captionsOverride == null) {
-          try { c.streamHandle.setCaptions(prefs.captions); } catch { /* no track */ }
-          updateTileControls(c);
-        }
-      }
-    });
-  }
 
   rebuildLeagueToggles();
 }
@@ -1062,7 +1137,10 @@ function wireDivider() {
   divider.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     const r = wall.getBoundingClientRect();
-    setFeedPct(feedPctFromPointer(e.clientX, r.left, r.width));   // pure clamp in render.mjs
+    // When the feed is on the RIGHT, its width grows toward the right edge, so the
+    // pointer's distance is measured from the wall's RIGHT edge instead of the left.
+    const x = prefs.feedSide === "right" ? (r.left + (r.right - e.clientX)) : e.clientX;
+    setFeedPct(feedPctFromPointer(x, r.left, r.width));   // pure clamp in render.mjs
   });
   const endDrag = (e) => {
     if (!dragging) return;
@@ -1075,7 +1153,11 @@ function wireDivider() {
   divider.addEventListener("pointercancel", endDrag);
   divider.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    setFeedPct(clampFeedPct(prefs.feedPct + (e.key === "ArrowLeft" ? -2 : 2)));
+    // Move the divider in the ARROW's direction on either side: when the feed is
+    // on the right, growing it (ArrowLeft = divider left) means a LARGER feedPct,
+    // so invert the sign to mirror the (already side-aware) pointer-drag math.
+    const step = (e.key === "ArrowLeft" ? -2 : 2) * (prefs.feedSide === "right" ? -1 : 1);
+    setFeedPct(clampFeedPct(prefs.feedPct + step));
     savePrefs();
     e.preventDefault();
   });
