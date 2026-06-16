@@ -2,6 +2,7 @@ package com.mymts.ui.wall
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,11 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -217,23 +216,44 @@ private fun PagedTicker(
     }
 }
 
-/** Hard cap on the per-frame crawl delta: a stall (GC/jank) advances at most
- *  this much, so the crawl DROPS the missed motion instead of sprinting to catch
- *  up (~2 frames at 60fps / 1 at 30fps — frame-rate-independent but bounded). */
-internal const val CRAWL_MAX_FRAME_DELTA_MS = 33L
+/** End-of-crawl dwell ("slip time") — how long the strip stays STILL at the loop
+ *  point after a completed pass before the next pass begins. A calm beat that lets
+ *  the eye reset before the content streams again. Named constant, tunable. */
+internal const val CRAWL_DWELL_MS = 1500L
 
 /** Pure: crawl velocity in px/sec from the base dp/sec, the operator's speed
  *  percent, and the display density. Frame-rate-independent. Unit-tested. */
 internal fun crawlPxPerSec(baseDpPerSec: Float, scrollPct: Int, density: Float): Float =
     (baseDpPerSec * density * (scrollPct.coerceAtLeast(1) / 100f)).coerceAtLeast(1f)
 
-/** Pure: how far (px) the crawl advances this frame, with the frame delta
- *  CLAMPED to [maxFrameDeltaMs] so a long (stalled) frame can't sprint. This is
- *  the "drop, don't accumulate-and-sprint" lever. Unit-tested. */
-internal fun crawlAdvancePx(pxPerSec: Float, frameDeltaMs: Long, maxFrameDeltaMs: Long): Float {
-    val dt = frameDeltaMs.coerceIn(0L, maxFrameDeltaMs)
-    return pxPerSec * (dt / 1000f)
+/** Pure: the tween DURATION (ms) to crawl [distancePx] at [pxPerSec]. Because the
+ *  crawl is framework-timed (a real-clock `animateTo`), feeding it a distance/speed
+ *  duration makes the velocity CONSTANT regardless of frame load — under load the
+ *  framework renders fewer intermediate frames (less smooth) instead of varying
+ *  the speed. This REPLACES the old clamped-per-frame-delta accumulator, which lost
+ *  motion (looked slow/stalled) whenever the box's variable CPU load stretched a
+ *  frame past the clamp. Float math (no integer-px stutter); monotonic in distance,
+ *  inverse in speed. Returns 0 when there's nothing to crawl. Unit-tested. */
+internal fun crawlDurationMs(distancePx: Float, pxPerSec: Float): Int {
+    if (distancePx <= 0f) return 0
+    val v = pxPerSec.coerceAtLeast(1f)
+    return (distancePx / v * 1000f).toInt()
 }
+
+/** The gap BETWEEN the two marquee copies (and between cards) — the same spacing
+ *  used in the crawl Rows. It is part of the seamless-loop repeat period: the row
+ *  lays out `[copy1][CRAWL_GAP][copy2]`, so copy 2 begins one gap PAST copy 1's
+ *  width. The single source of truth for both the layout spacing and the period. */
+private val CRAWL_GAP = 8.dp
+
+/** Pure: the seamless-loop REPEAT PERIOD (px) = one copy's width PLUS the inter-copy
+ *  gap. Wrapping at the copy width ALONE (ignoring the gap) lands copy 2 one gap-width
+ *  off copy 1's origin, so the snap-back pops by a gap every cycle (the seam bug).
+ *  Wrapping at copyWidth + gap lands copy 2 exactly on copy 1's origin → truly
+ *  seamless. Floored so a degenerate measurement never yields a zero period.
+ *  Unit-tested. */
+internal fun crawlPeriodPx(copyWidthPx: Int, gapPx: Float): Float =
+    copyWidthPx.coerceAtLeast(1).toFloat() + gapPx.coerceAtLeast(0f)
 
 /**
  * CRAWL motion — all pages' cards laid out in ONE row (each behind its inline
@@ -253,8 +273,13 @@ private fun CrawlTicker(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current.density
-    var copyWidthPx by remember(pages) { mutableIntStateOf(0) }
-    var offsetPx by remember(pages) { mutableFloatStateOf(0f) }
+    // NOT keyed on `pages`: a ticker CONTENT refresh (a markets/scores poll → a
+    // new pages list) must NOT reset the crawl to the start. The measured copy
+    // width updates IN PLACE via onGloballyPositioned, and the offset persists
+    // across data refreshes (the new content integrates at the next cycle
+    // boundary). This was the visible "jumps back on every refresh" bug.
+    var copyWidthPx by remember { mutableIntStateOf(0) }
+    val offset = remember { Animatable(0f) }
     BoxWithConstraints(modifier = modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
         val viewportPx = with(LocalDensity.current) { maxWidth.roundToPx() }
         val overflow = copyWidthPx > 0 && copyWidthPx >= viewportPx
@@ -263,13 +288,15 @@ private fun CrawlTicker(
             // (graphicsLayer translationX) — NOT a horizontalScroll + animateScrollTo,
             // which re-lays-out the wide two-copy row every frame and starved video
             // decode on the modest S905Y4. `unbounded` lets the two-copy row exceed
-            // the viewport width; the surrounding Box clips the overflow.
+            // the viewport width; the surrounding Box clips the overflow. Reading the
+            // Animatable's float value INSIDE the graphicsLayer block updates the
+            // layer in the draw phase (sub-pixel, no recomposition, no rounding).
             modifier = Modifier
                 .fillMaxHeight()
                 .wrapContentWidth(align = Alignment.Start, unbounded = true)
-                .graphicsLayer { translationX = -offsetPx },
+                .graphicsLayer { translationX = -offset.value },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(CRAWL_GAP),
         ) {
             if (paused) PausedChip()
             CrawlContent(pages, modifier = Modifier.onGloballyPositioned { copyWidthPx = it.size.width })
@@ -278,19 +305,33 @@ private fun CrawlTicker(
         // Staleness flag pinned to the RIGHT edge (same as the flip motion).
         if (stale) StaleChip(modifier = Modifier.align(Alignment.CenterEnd))
 
-        // Single frame-paced driver: advance the translation by a CLAMPED per-frame
-        // delta (drop, don't sprint) and wrap at one copy-width for a seamless loop.
-        // No per-frame re-layout — leaves the main thread free for video decode.
-        LaunchedEffect(pages, scrollPct, paused, copyWidthPx, overflow) {
-            if (paused || !overflow || copyWidthPx <= 0) { offsetPx = 0f; return@LaunchedEffect }
+        // SINGLE framework-timed driver. The animation clock is REAL-TIME based
+        // (`animateTo` + LinearEasing), so the crawl holds a CONSTANT velocity
+        // regardless of frame load — under heavy load the framework renders fewer
+        // intermediate frames (slightly less smooth) instead of varying the speed.
+        // This replaces the clamped-per-frame-delta accumulator, which lost motion
+        // (looked slow/stalled) when the box's variable CPU load stretched a frame
+        // past the 33ms clamp. Re-keyed ONLY on the levers that change the timing
+        // (speed, pause, overflow) — NOT on `pages`, so a content refresh never
+        // restarts it. Each cycle: animate one copy-width, snap back (seamless —
+        // copy 2 sits exactly where copy 1 began), then DWELL (the slip time).
+        LaunchedEffect(scrollPct, paused, overflow) {
+            if (paused || !overflow) { offset.snapTo(0f); return@LaunchedEffect }
             val pxPerSec = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, scrollPct, density)
-            var lastNs = withFrameNanos { it }
+            val gapPx = CRAWL_GAP.value * density   // the inter-copy gap, in px (part of the loop period)
             while (true) {
-                val nowNs = withFrameNanos { it }
-                val frameDeltaMs = (nowNs - lastNs) / 1_000_000L
-                lastNs = nowNs
-                offsetPx += crawlAdvancePx(pxPerSec, frameDeltaMs, CRAWL_MAX_FRAME_DELTA_MS)
-                if (offsetPx >= copyWidthPx) offsetPx -= copyWidthPx.toFloat()
+                // The repeat PERIOD is one copy width + the inter-copy gap (read fresh
+                // each cycle, so new content integrates here). Wrapping at the full
+                // period lands copy 2 exactly on copy 1's origin — truly seamless.
+                val period = crawlPeriodPx(copyWidthPx, gapPx)
+                val start = offset.value.mod(period)                 // resume from current position (no jump)
+                if (offset.value != start) offset.snapTo(start)
+                val durationMs = crawlDurationMs(period - start, pxPerSec)
+                if (durationMs > 0) {
+                    offset.animateTo(period, tween(durationMillis = durationMs, easing = LinearEasing))
+                }
+                offset.snapTo(0f)            // seamless wrap: copy 2 sits exactly at copy 1's origin
+                delay(CRAWL_DWELL_MS)         // end-of-crawl dwell (slip time)
             }
         }
     }
@@ -303,7 +344,9 @@ private fun CrawlContent(pages: List<TickerPaging.Page>, modifier: Modifier = Mo
     Row(
         modifier = modifier.fillMaxHeight(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // Same gap as the inter-copy spacing, so the seam reads as just another
+        // card gap and the loop period (copy width + CRAWL_GAP) stays consistent.
+        horizontalArrangement = Arrangement.spacedBy(CRAWL_GAP),
     ) {
         pages.forEach { page ->
             CrawlMarker(page.markerLabel)

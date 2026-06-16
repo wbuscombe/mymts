@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(app): consistent ticker crawl velocity (framework-timed, sub-pixel) (2026-06-16)
+
+The native ticker **crawl** ran at an inconsistent speed — at 10% sometimes too
+fast, sometimes near-stalled. NATIVE only (the web crawl runs on ample hardware,
+not in scope).
+
+**Diagnosed causes** (of the four suspects):
+- **#1 (primary) — the clamped per-frame-delta driver × the box's variable CPU
+  load.** The crawl accumulated `pxPerSec × dt` each frame with `dt` **clamped to
+  33ms**. When a frame ran long (box busy), the clamp dropped the excess motion →
+  the crawl fell behind real time → looked slow/stalled; when idle it ran normally
+  → the speed *varied with load*. The frame delta was also taken as **integer ms**
+  (`(nowNs-lastNs)/1_000_000L`), truncating sub-ms each frame (extra jitter +
+  systematic slowdown).
+- **#3 — restart on ticker content updates.** `offset`/`copyWidthPx`/the driver
+  were `remember(pages)`/keyed on `pages`, so every markets/scores poll (a new
+  `pages` list) **reset the crawl to the start** — a visible jump every 2–3 min.
+- **#2 did NOT apply** — `translationX` was already a float (`-offsetPx`), no
+  integer-px rounding. **#4 did NOT apply** — already a single driver.
+
+**Fix — let the framework own the timing.** The per-frame accumulator (and its
+33ms clamp / `crawlAdvancePx` / `CRAWL_MAX_FRAME_DELTA_MS`) is gone. The crawl is
+now a single **framework-timed** driver: a remembered `Animatable<Float>` advanced
+by `animateTo(width, tween(durationMillis, LinearEasing))` where
+`durationMillis = (one copy-width − current offset) / pxPerSec × 1000` (new pure
+`crawlDurationMs`). Because the animation clock is **real-time based**, the speed
+stays **constant regardless of frame load** — under heavy load the framework
+renders fewer intermediate frames (slightly less smooth) instead of varying the
+speed. `pxPerSec` is still driven by the wired speed setting (`tickerScrollPct ×
+CRAWL_BASE_DP_PER_SEC`). Translation stays **float/sub-pixel**
+(`graphicsLayer { translationX = -offset.value }`). The driver re-keys ONLY on the
+timing levers (speed, pause, overflow) — **not on `pages`** — and `offset` persists
+(`remember{}`), so a content refresh **no longer restarts the crawl** (new content
+integrates at the next cycle boundary; position resumes via `offset.value.mod(period)`).
+
+Also fixed a **pre-existing seam pop**: the two-copy marquee lays out
+`[copy1][8dp gap][copy2]`, so the seamless repeat period is `copyWidth + gap`, but
+the old driver wrapped at `copyWidth` alone — landing copy 2 one gap-width off copy
+1's origin and popping ~8dp sideways every loop. The wrap now uses the full period
+(new pure `crawlPeriodPx` = copy width + inter-copy gap), with the gap a single
+named constant (`CRAWL_GAP`) shared by the layout spacing and the period so they
+can't drift — a genuinely seamless loop. (Found by an adversarial review pass.)
+
+**Honest tradeoff:** a framework-timed crawl holds a consistent speed and degrades
+*smoothness* (not speed) under load — after a rare long stall it may step forward
+once rather than vary speed; acceptable for "consistent," and rarer now that the
+audio-perf fix lowered load (~12→~8.5). The flip motion is untouched. Pure parts
+unit-tested (`crawlDurationMs` monotonic/inverse/float; speed-setting mapping);
+app suite green incl. the WallSettings round-trip (panel-fit untouched — the change
+adds no setting). Smoothness/feel are on-device (operator at the box).
+
 ## feat(helper): add YouTube-sourced channels (2026-06-16)
 
 Eight channels added via the new yt-dlp resolver (`kind='youtube'`), each
