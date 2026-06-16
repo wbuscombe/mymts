@@ -159,6 +159,32 @@ def test_api_channels_category_mirrors_native_taxonomy(phantom_client: TestClien
         assert c["category"] in CATEGORY_ORDER, f"{c['slug']} has unknown category {c['category']}"
 
 
+def test_api_channels_expanded_lineup(phantom_client: TestClient) -> None:
+    """The 2026-06 lineup expansion: the new free-direct-HLS channels are present
+    and correctly categorized, and the un-addable channels are OMITTED. (Ordering
+    is ORDER BY slug at the API; within-category prominence is a client concern.)"""
+    body = phantom_client.get("/api/channels").json()
+    by_slug = {c["slug"]: c["category"] for c in body["channels"]}
+
+    # New additions present + correctly categorized.
+    added = {
+        "abc-news-live": "US News", "nbc-news-now": "US News",
+        "news-nation": "US News", "scripps-news": "US News",
+        "abc-news-au": "Global News", "cna": "Global News",
+        "gb-news": "Global News", "nhk-world": "Global News",
+    }
+    for slug, cat in added.items():
+        assert slug in by_slug, f"new channel {slug} missing from lineup"
+        assert by_slug[slug] == cat, f"{slug} should be {cat}, got {by_slug.get(slug)}"
+
+    # Honestly-omitted channels must NOT be seeded (paywall / web-embed / YouTube-
+    # only / tokenized / no-HLS). cnn IS kept — already seeded; the omit is about
+    # not ADDING new paywalled duplicates.
+    for slug in ("pbs-newshour", "court-tv", "law-crime", "cbs-news", "euronews",
+                 "wion", "ndtv", "weathernation", "c-span-2", "fox-news", "msnbc"):
+        assert slug not in by_slug, f"omitted channel {slug} should NOT be seeded"
+
+
 # ---- SQLite cross-thread regression (feed-sources expansion) ----
 
 

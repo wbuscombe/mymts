@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): expand the channel lineup with free 24/7 direct-HLS sources (2026-06-16)
+
+Eight free, always-on news channels added to the helper seed (consumed by both the TV wall and the web client), each **validated `HTTP 200 + #EXTM3U` from the NAS prober's US vantage before seeding** — the `docs/findings/05` sourcing standard. All are **direct-origin** HLS (Akamai / CloudFront / Amagi / official), token-free, https-clean:
+
+- **US News:** ABC News Live, NBC News NOW, NewsNation, Scripps News.
+- **Global News:** ABC News Australia, CNA, GB News, NHK World Japan.
+
+Categorized in the `ChannelCategory` map (US News / Global News); existing/default channels are untouched (the native default lineup is a curated `PREFERRED` set, not seed-order, so defaults don't shift). Additive — `schema_version` unchanged.
+
+**Honestly OMITTED** (the helper is **direct-HLS-only** — there is no yt-dlp resolver; `kind='youtube'` is a future migration):
+- *YouTube-live-only (no direct HLS):* PBS NewsHour, C-SPAN main, Court TV, Law & Crime.
+- *Tokenized / third-party-redirect only* (against findings/05's direct-origin principle): CBS News 24/7, Euronews English, i24NEWS.
+- *No clean public endpoint:* WION, NDTV 24×7, CBS Sports Golazo; Arirang (http-only).
+- *Paywall / cable-auth:* CNN, Fox News, MSNBC, CBS Sports Network.
+- *Web-embed only (no HLS):* C-SPAN 2 & 3. *Known NAS-prober TLS failure:* WeatherNation.
+
+The prober is the final gate — any added channel it marks `unavailable` post-deploy degrades to the honest offline state (no broken tile).
+
 ## refactor(web): rebuild the menu to match the native app; drop the captions control (2026-06-15)
 
 The bespoke flat web menu was less robust than the native app's, and the per-tile "CC —" button read as broken. **Native is the spec:** the web menu is rebuilt to mirror the native app's menu structure (adapted to mouse + touch — the web has no D-pad), and the non-functional captions control is removed.

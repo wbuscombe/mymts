@@ -50,6 +50,29 @@ _BY_SLUG: dict[str, str] = {
     "cnbc": BUSINESS,
     "fox-weather": WEATHER,
     "accuweather-now": WEATHER,
+    # --- 2026-06 lineup expansion (free 24/7 direct-HLS origins; each validated
+    #     HTTP 200 + #EXTM3U from the NAS prober's US vantage before seeding,
+    #     matching the docs/findings/05 sourcing standard). Existing channels
+    #     stay first in their category (lower-id / earlier-seed = prominent). ---
+    "abc-news-live": US_NEWS,
+    "nbc-news-now": US_NEWS,
+    "news-nation": US_NEWS,
+    "scripps-news": US_NEWS,
+    "abc-news-au": GLOBAL_NEWS,
+    "cna": GLOBAL_NEWS,
+    "gb-news": GLOBAL_NEWS,
+    "nhk-world": GLOBAL_NEWS,
+    # Honestly OMITTED (no stable direct-HLS origin via the helper's direct-HLS-only
+    # model — there is no yt-dlp resolver; kind='youtube' is a future migration):
+    #   • YouTube-live-only (no direct HLS): PBS NewsHour, C-SPAN main, Court TV,
+    #     Law & Crime.
+    #   • Tokenized / third-party-redirect only (against findings/05's direct-origin
+    #     principle): CBS News 24/7, Euronews English, i24NEWS (expiring JWT).
+    #   • No clean public endpoint: WION, NDTV 24x7 (community redirect file only),
+    #     CBS Sports Golazo; Arirang (http:// only — fails HTTPS-only).
+    #   • Paywall / cable-auth: CNN, Fox News, MSNBC, CBS Sports Network.
+    #   • Web-embed only (no HLS): C-SPAN 2 & 3.
+    #   • Known NAS-prober TLS handshake failure: WeatherNation.
 }
 
 

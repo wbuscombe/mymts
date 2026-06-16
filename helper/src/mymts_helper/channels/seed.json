@@ -124,5 +124,53 @@
     "label": "AccuWeather NOW",
     "kind": "hls",
     "source_url": "https://cdn-ue1-prod.tsv2.amagi.tv/linear/amg00684-accuweather-accuweather-plex/playlist.m3u8"
+  },
+  {
+    "slug": "abc-news-live",
+    "label": "ABC News Live",
+    "kind": "hls",
+    "source_url": "https://pb-0n3n2ej0w8pl9.akamaized.net/ABCNewsLive_Disney.m3u8"
+  },
+  {
+    "slug": "nbc-news-now",
+    "label": "NBC News NOW",
+    "kind": "hls",
+    "source_url": "https://d1si3n1st4nkgb.cloudfront.net/10502/88896001/hls/master.m3u8?ads.xumo_channelId=88896001"
+  },
+  {
+    "slug": "news-nation",
+    "label": "NewsNation",
+    "kind": "hls",
+    "source_url": "https://d3qs3d2rkhfqrt.cloudfront.net/out/v1/6cd2f649739a45ca9de1daf81cc7d0f2/index.m3u8"
+  },
+  {
+    "slug": "scripps-news",
+    "label": "Scripps News",
+    "kind": "hls",
+    "source_url": "https://aegis-cloudfront-1.tubi.video/7e1c26b7-7975-4240-9a4f-480eaa8f3ea4/playlist.m3u8"
+  },
+  {
+    "slug": "abc-news-au",
+    "label": "ABC News Australia",
+    "kind": "hls",
+    "source_url": "https://abc-news-dmd-streams-1.akamaized.net/out/v1/701126012d044971b3fa89406a440133/index.m3u8"
+  },
+  {
+    "slug": "cna",
+    "label": "CNA",
+    "kind": "hls",
+    "source_url": "https://d2e1asnsl7br7b.cloudfront.net/7782e205e72f43aeb4a48ec97f66ebbe/index.m3u8"
+  },
+  {
+    "slug": "gb-news",
+    "label": "GB News",
+    "kind": "hls",
+    "source_url": "https://amg01076-lightningintern-gbnewsau-samsungau-et7fz.amagi.tv/playlist/amg01076-lightningintern-gbnewsau-samsungau/playlist.m3u8"
+  },
+  {
+    "slug": "nhk-world",
+    "label": "NHK World Japan",
+    "kind": "hls",
+    "source_url": "https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8"
   }
 ]
