@@ -273,19 +273,25 @@ class StreamPlayer(
 
         exo.volume = 0f
 
-        // Captions/subtitles off by default. Where the stream carries a
-        // soft text track (CEA-608/708 or WebVTT — declared via the
-        // HLS manifest's `#EXT-X-MEDIA:TYPE=SUBTITLES` /
-        // `TYPE=CLOSED-CAPTIONS` lines), Media3 would auto-select one
-        // for the device's default language; we disable the entire
-        // TEXT renderer instead, deterministically off until the
-        // operator toggles captions on per-tile from the menu. Burned-
-        // in captions (pixels in the video itself — e.g. LiveNOW from
-        // FOX's scrolling bar) are NOT a track and are unaffected;
-        // those are an entirely separate concern documented in the
-        // per-channel caption table.
+        // AUDIO + TEXT renderers OFF by default at creation.
+        //
+        // AUDIO: the wall is muted by default (no audible slot), and an inaudible
+        // tile must not DECODE audio (~16% CPU on a 4-tile wall, per the read-only
+        // perf pass). `setAudible(true)` re-enables this renderer for the single
+        // audible tile. Disabling it HERE (not just via the VideoGrid apply) closes
+        // the gap a recovery REINIT opened: createPlayer() runs without re-firing
+        // the VideoGrid audible-apply effect, so a freshly re-init'd tile (the
+        // flaky-channel churn) would otherwise resume decoding audio nobody hears —
+        // measured as media.swcodec bouncing 0→~15% as a tile re-init'd. Off-at-
+        // create keeps the win robust across the recovery ladder.
+        //
+        // TEXT: a stream's soft caption track (CEA-608/708 / WebVTT) would auto-
+        // select for the device language; we disable the whole TEXT renderer so
+        // captions are deterministically off until toggled. Burned-in captions
+        // (pixels in the video) are not a track and are unaffected.
         exo.trackSelectionParameters = exo.trackSelectionParameters
             .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             .build()
 

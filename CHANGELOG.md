@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## perf(app): disable the audio renderer at player creation (robust across recovery reinit) (2026-06-16)
+
+**Measure-first** (read-only adb on `.92`, the post-audio-fix build):
+- The audio-renderer-disable shipped earlier **relieved the CPU saturation** — load average ~12 → **~8.5**, idle headroom ~174% → **~262%**. Confirmed: that was the right lever.
+- The **LIVE→STALE→RECOVER decoder-reinit churn was NOT relieved** — but it isolates to **one flaky upstream (Fox Weather, slot-1)**; every other tile is stable. So the churn was **never CPU-starvation** (it persists with the new headroom) — it's the recovery ladder correctly handling a flaky stream. **No churn "fix" applied** — tuning the 15s stale threshold would only delay honest stall detection.
+- `media.swcodec` was seen **bouncing 0→~15%** instead of staying at 0 with no audible tile. **Root cause:** `createPlayer()` set `volume=0f` + disabled the TEXT renderer but **not** the AUDIO renderer, and a recovery REINIT runs `createPlayer()` without re-firing the VideoGrid audible-apply effect — so a re-init'd tile resumed decoding audio nobody hears, eroding the ~16% win during the churn.
+
+**Fix:** disable the **AUDIO renderer at `createPlayer`** (alongside the existing TEXT disable). A fresh/re-init'd tile decodes no audio until `setAudible(true)` enables it for the single audible tile — so the ~16% stays freed even as the flaky tile re-inits. App suite green (319); WallSettings round-trip intact (panel-fit untouched).
+
+**Honestly not addressed:** the GC churn (~16–23 MB freed every ~1 s) persists, but the obvious suspect (ticker paging) is already `remember`-memoized — the residual source is per-frame render churn that needs a *profiled* (Perfetto allocation) pass to pin, not a blind edit. Flagged for a future measured pass.
+
 ## feat(web): group feed sources by category in settings + default grid 2×3 (2026-06-16)
 
 - **Feed sources grouped by category.** Settings → Feed sources was one flat list; it now groups the source toggles under category headers (Sports / US News / Global News / Business / General) in the canonical order, empty categories omitted, uncheck-to-hide unchanged. The category comes from the **helper** (`feeds/category.py` maps each RSS outlet to the same taxonomy the channel picker uses, served additively as `source_category` per `/api/feed` item) — not an invented client heuristic. Pure `sectionFeedSources` unit-tested.
