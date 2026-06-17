@@ -64,11 +64,38 @@ entry point" CHANGELOG note (a *not-in-session* false-positive). The live entry 
 senate.gov's `convenedSessionStream`, missed before — so the free floor feed IS buildable
 when the chamber is in session, while the gated networks remain out of scope.
 
-**Generalizes (not built now):** the `cspan_resolver` recipe (read a .gov schedule/ISVP →
-build the open Akamai master, gated on in-session) extends to **other free C-SPAN-style
-government streams** — committee hearings, other federal events that publish the same ISVP
-shape. Only the Senate floor is built; the resolver is the reusable foundation if the
-operator wants more free gov feeds later (each a small per-feed add, no new threat surface).
+**Generalizes — ~~not built now~~ NOW BUILT (2026-06-17):** the `cspan_resolver` recipe
+(read a .gov schedule/ISVP → build the open Akamai master, gated on live) was generalized to
+**Senate committee hearings** (the `hearings.xml` schedule → the aggregate "U.S. Senate
+Committee Hearings" tile) plus **House committee + federal-event** feeds via official YouTube
+`/live`. See the CHANGELOG (gov-stream generalization, 2026-06-17) and the refinements entry
+below. The resolver remains the reusable foundation for any further free .gov ISVP feeds.
+
+## Free gov-stream feeds — refinements + caveats (2026-06-17)
+
+Follow-ons logged from the gov-stream generalization (committee hearings + federal events).
+None are blockers — the shipped feeds are honest + validated; these are quality refinements.
+
+- **Dedicated "Government" picker section.** The gov/committee/federal tiles (c-span, the two
+  floors, the committee aggregate, the House committees, White House / State / War / DHS / DOJ)
+  are categorized **US News** today. A dedicated **Government** category would group them
+  cleanly — but the taxonomy MIRRORS the native app's `ChannelCategory` (the native picker
+  keys off its own `BY_SLUG`/`ORDER` copy), so adding a server section needs **native +
+  web `CATEGORY_ORDER` parity** to avoid divergence. Reconsider with the next native parity pass.
+- **Committee tile — surface *which* committee is live.** The aggregate "U.S. Senate Committee
+  Hearings" tile shows one live committee (the resolver already carries the live committee name
+  in `CSpanResolution.detail`); the tile label stays static. A future enhancement: write the
+  live committee name through to the tile label (the prober/registry would update it per cycle).
+  Also: when multiple committees are live concurrently, it surfaces one (most-recently-scheduled
+  first); per-committee tiles or a rotation are a larger product call.
+- **Unmapped committee comms.** `intlnarc` (International Narcotics Control caucus) and
+  `agriculture` have no `streamInfo` row in the ISVP player, so those (rare) hearings
+  honest-offline rather than resolve. Add their streamIDs if they ever matter.
+- **Majority-branded House committee channels.** The House committee YouTube handles are the
+  committee's CURRENT-majority channel (each linked from the committee's own `.house.gov` site
+  today); a chamber flip can rename/move the canonical handle. A re-point is a one-line seed
+  fix when it happens (the same kind-authoritative upsert used elsewhere). Not a stability risk
+  now — flagged so the maintenance is expected, not a surprise.
 
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 
