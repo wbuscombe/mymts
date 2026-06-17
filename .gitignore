@@ -105,3 +105,9 @@ scripts/deploy.local.env
 
 # Local-only working artifact (perf telemetry) — kept on disk, never committed
 docs/perf-analysis-2026-06.md
+
+# Desktop packaging (PyInstaller) — built binaries + build artifacts, NEVER committed.
+# Only the tooling (spec/build script/launcher/docs) is tracked.
+tools/desktop/build/
+tools/desktop/dist/
+*.pyinstaller.spec.bak

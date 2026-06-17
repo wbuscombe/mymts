@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(packaging): PyInstaller spike — launchable helper executable (macOS) (2026-06-16)
+
+Package the helper as a self-contained desktop executable so a user can run the
+web wall with **no clone, no Docker, no Python install**. The bundle starts the
+helper on `http://127.0.0.1:PORT` (HTTP-localhost — a browser secure context, no
+TLS needed), serves the web client at `/app/`, seeds a default lineup into
+`~/Library/Application Support/MyMTS/` (never inside the read-only bundle), and
+opens the browser to the wall. Tooling lives in `tools/desktop/` (`launch.py` +
+PyInstaller `.spec` + `build.sh` + README); the built binary and `build/`/`dist/`
+are gitignored — only tooling is committed.
+
+The launcher reuses the helper's own `create_app()` (no new server logic) and
+binds localhost. Spike validation (macOS, Apple Silicon): works (cold start ≈9 s,
+~37 seed channels load, DB in the user-data dir, clean shutdown); bundle ≈53 MB
+(yt-dlp dominates); **yt-dlp survives freezing** (YouTube channels resolve from
+the frozen bundle). Caveats surfaced: channel-geo (US-vantage streams), and a
+frozen yt-dlp can't self-update (YouTube channels rot until a new build — the
+direct-HLS channels are unaffected).
+
 ## chore(app): double the end-of-crawl ticker dwell default (2026-06-16)
 
 The crawl's end-of-pass dwell ("slip time" — how long the strip stays still at the

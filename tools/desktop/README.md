@@ -1,0 +1,67 @@
+# MyMTS desktop — launchable helper executable
+
+Package the MyMTS helper (the Python/FastAPI backend) as a **self-contained
+desktop executable** so anyone can run the web wall **without cloning the repo,
+installing Python, or running Docker**. The executable starts the helper on
+`http://127.0.0.1:PORT`, serves the bundled web client at `/app/`, seeds a
+default lineup into a per-user data dir, and opens the browser to the wall.
+
+`localhost` is a browser **secure context**, so this runs over plain **HTTP with
+no TLS** — and an `http://127.0.0.1` page is still allowed to load the channels'
+`https://` video streams. No certificates, no trust prompts.
+
+## Build (macOS)
+
+Uses the helper's virtualenv (which already has FastAPI/uvicorn/yt-dlp + the
+`mymts_helper` package). PyInstaller is the only extra build dep:
+
+```sh
+helper/.venv/bin/python -m pip install pyinstaller
+tools/desktop/build.sh
+```
+
+Output: `tools/desktop/dist/mymts-helper/` (an `onedir` bundle — **gitignored**).
+
+## Run
+
+```sh
+tools/desktop/dist/mymts-helper/mymts-helper
+```
+
+The browser opens to `http://127.0.0.1:8091/app/`. The seeded SQLite DB and all
+writable state live in `~/Library/Application Support/MyMTS/` — **never** inside
+the (read-only) bundle. Ctrl-C to quit.
+
+## What's bundled
+
+- the launcher (`launch.py`) — reuses the helper's own `create_app()`; adds no
+  server logic, just a localhost bind + a browser-open convenience;
+- the helper package + its data (migrations, channel/feed seeds);
+- the web client (served at `/app/`);
+- FastAPI / uvicorn / **yt-dlp** + deps.
+
+## Spike findings (macOS, Apple Silicon)
+
+This started as a proof-of-concept to de-risk the approach. Validated:
+
+- **It works.** Cold start ≈ 9 s to a healthy server (first run includes DB
+  seeding + the heavy frozen import); the wall serves at `/app/`, the ~37 seed
+  channels load, the DB lands in the user-data dir, clean shutdown.
+- **Bundle size ≈ 53 MB** (`onedir`). yt-dlp (~12 MB of extractors) is the
+  dominant contributor, then the Python runtime + `libcrypto`/`pydantic_core`.
+- **yt-dlp survives freezing.** The YouTube channels resolve from inside the
+  frozen bundle (live ones go live; not-currently-live ones report honest
+  offline) — no missing-extractor breakage.
+- **Launch UX / Gatekeeper:** a locally-built binary runs with no Gatekeeper
+  prompt (no quarantine attribute); a *downloaded* unsigned/adhoc binary will
+  hit the "unidentified developer" prompt until it is signed + notarized (or
+  right-click → Open). PyInstaller adhoc-signs the arm64 binary so it runs at
+  all.
+
+## Caveats
+
+- **Channel geo:** the default lineup was sourced from a US vantage; some streams
+  may not resolve outside that region. The lineup is the helper's seed.
+- **yt-dlp staleness:** a frozen yt-dlp can't self-update, so YouTube channels
+  rot as YouTube changes extraction until a newer build ships. The ~30
+  direct-HLS channels are unaffected. (A self-update path addresses this.)
