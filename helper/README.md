@@ -16,10 +16,17 @@ curl -s http://127.0.0.1:8091/health | jq .
 
 ## Docker (the hardened-container shape)
 
-`docker-compose.yml` runs the container the way the NAS does — non-root, `read_only` rootfs, all caps dropped, tmpfs `/tmp`. Because the rootfs is read-only the helper needs a **writable data volume** for its SQLite DB, and the bare compose here does **not** mount one — so `docker compose up` on it is **not** a one-command demo (it will fail to create the DB and crash-loop).
+`docker-compose.yml` runs the container the way the NAS does — non-root, `read_only` rootfs, all caps dropped, tmpfs `/tmp` — and it's a **one-command clone-to-running** path:
 
-- For a quick local run, use the **`uv run` path above** (the supported demo path).
-- The production deploy uses the named-volume compose at [`deploy/docker-compose.nas.yml`](deploy/docker-compose.nas.yml).
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+brings up the helper on `http://localhost:8091` — migrations run on a fresh DB, `seed.json` loads, and `/health` + `/api/channels` + the web client at `/app/` all serve, **keyless** (channels + feed need no API keys). Because the rootfs is read-only the helper writes its SQLite state to a **writable named volume mounted at `/data`** (the Dockerfile chowns `/data` to uid 10001 so a fresh volume is writable with no host-side step). `docker compose down` keeps the volume; `down -v` wipes it for a true fresh first-run.
+
+- For a no-Docker local run, the **`uv run` path above** also works (per-user data dir, zero config).
+- The operator's production deploy uses the separate named-volume compose at [`deploy/docker-compose.nas.yml`](deploy/docker-compose.nas.yml) (HTTPS on `:8443`, host bind mounts) — not this file.
 
 ## Phantom (demo / offline) mode
 

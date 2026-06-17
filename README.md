@@ -34,10 +34,12 @@ Three paths, easiest first:
    data — see [Try it in 60 seconds](#try-it-in-60-seconds-no-secrets-no-nas) below.
 3. **Self-host the backend (the real wall).** Run the helper as a service for live
    data on a real TV — see [Run it for real](#run-it-for-real) →
-   [`ONBOARDING.md`](ONBOARDING.md). *(The bundled `helper/docker-compose.yml` is a
-   dev shape that still needs a writable data volume — see
-   [`helper/README.md`](helper/README.md); the documented `uv run` path is the
-   working quickstart.)*
+   [`ONBOARDING.md`](ONBOARDING.md). The generic `helper/docker-compose.yml` is now a
+   working **clone-to-running** path: `cd helper && cp .env.example .env && docker
+   compose up` brings up the helper on `http://localhost:8091` (migrations + seed on a
+   fresh DB; `/health`, `/api/channels`, and the web client at `/app/` all serve,
+   keyless), then point a stock TV APK at it. *(The operator's NAS deploy is the
+   separate `helper/deploy/docker-compose.nas.yml`.)*
 
 ---
 

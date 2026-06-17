@@ -75,6 +75,12 @@ secrets**:
 cd helper
 PORT=8091 uv run python -m mymts_helper     # PHANTOM_MODE unset → live public data
 ```
+Or run it as the hardened container — a one-command **clone-to-running** path that
+brings up the helper (migrations + seed on a fresh DB; `/health` + `/api/channels` +
+`/app/` all serve):
+```bash
+cd helper && cp .env.example .env && docker compose up --build   # → http://localhost:8091
+```
 Point the app at it the same way. See
 [`docs/onboarding/ONBOARD-02-LOCAL-HELPER.md`](docs/onboarding/ONBOARD-02-LOCAL-HELPER.md)
 for details (and to override the helper URL via `local.properties`).

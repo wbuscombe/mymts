@@ -111,10 +111,14 @@ operator's configured build resolves out-of-box (no regression). Verified on-dev
 CHANGELOG (2026-06-18) + ARCHITECTURE "Helper-host boundary".
 
 **Distribution items still open** (the make-or-break list, now shorter): publishing a **signed
-release APK** for end users (the keystore exists; nothing is published yet); the `docker compose up`
-DB **crash-loop** on a fresh self-host (helper still needs the documented run path); and a
+release APK** for end users (the keystore exists; nothing is published yet); and a
 **per-deployment channel lineup** (the seed is one operator's curation — a self-hoster gets that
 list until lineup editing is exposed). `versionCode` is now version-derived; signing is implemented.
+The runtime helper-URL config landed (the compile-time blocker). **CLOSED 2026-06-18:** the
+`docker compose up` clean-clone **crash-loop** — the generic `helper/docker-compose.yml` now mounts
+a writable `/data` state volume (the read-only rootfs had nowhere to create the SQLite DB → fixed),
+so `cp .env.example .env && docker compose up` brings up a working keyless helper; verified with a
+local clean-clone bring-up (reproduce → fix → idempotent re-up). See CHANGELOG (2026-06-18).
 
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 

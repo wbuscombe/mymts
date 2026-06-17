@@ -218,7 +218,7 @@ Contract tests pin every field name and the C3 invariant ("non-live channels exp
 
 - Image pinned by digest (`python:3.13.1-slim-bookworm@sha256:031ebf3cde…`). Tag stays in `FROM` for human readability; digest is the source of truth.
 - Container runs non-root (uid 10001), `read_only: true` rootfs, `cap_drop: [ALL]`, `no-new-privileges`, tmpfs `/tmp`, explicit `cpus`/`mem_limit`, no `docker.sock`.
-- State lives in a **named volume** (`mymts-helper-data`) — fresh volumes inherit ownership from the in-image `/data` (uid 10001), so no host-side privileged step is needed.
+- State lives in a **named volume** (`mymts-helper-data`) mounted at `/data` — fresh volumes inherit ownership from the in-image `/data` (uid 10001), so no host-side privileged step is needed. **Both** composes now provide it: the operator's `deploy/docker-compose.nas.yml` and (since 2026-06-18) the generic `docker-compose.yml`, so a clean clone's `docker compose up` brings up a working helper instead of crash-looping (the read-only rootfs had nowhere to create the SQLite DB without it). `config._default_data_dir()` prefers a writable `/data` and falls back to a per-user dir for a bare local run, so first-run init (migrate-to-head + seed) needs zero config either way.
 - Helper listens on host port `8091` (NAS LAN). The TV reaches it at `http://<nas-lan-ip>:8091/api/...`.
 - Deploy script `scripts/deploy-helper.sh` does the full `pull → rebuild → restart → /health verify` cycle and refuses to declare success until `/health.build_sha` matches the deployed SHA.
 - The unrelated host container is **never** referenced or networked into. The helper's compose declares its own dedicated bridge network (`mymts-net`) with no upstream link.
