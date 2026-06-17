@@ -37,6 +37,9 @@ for pkg in ("uvicorn", "yt_dlp", "pystray"):
 
 datas += collect_data_files("certifi")  # CA bundle httpx needs at runtime
 
+# The launcher's sibling modules (yt-dlp self-update) live next to launch.py.
+hiddenimports += ["ytdlp_update"]
+
 # Tray backend imports (resolved dynamically by pystray's backend selector).
 hiddenimports += ["PIL.Image", "PIL.ImageDraw"]
 if sys.platform == "darwin":
@@ -50,7 +53,7 @@ else:
 
 a = Analysis(
     ["launch.py"],
-    pathex=[],
+    pathex=[SPECPATH],   # so the sibling ytdlp_update module is importable
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

@@ -14,7 +14,9 @@ Two launch modes:
     auto-browser. Degrades gracefully — a missing tray never crashes the app.
 
 It adds NO server logic: it reuses the helper's own `create_app()` /
-`Config.from_env()` and binds uvicorn to localhost.
+`Config.from_env()` and binds uvicorn to localhost. Before the helper imports
+yt-dlp, it runs the yt-dlp self-update (see `ytdlp_update`) — official-source,
+verified, offline-safe — so the YouTube channels stay fresh in the frozen bundle.
 """
 
 from __future__ import annotations
@@ -219,7 +221,19 @@ def main() -> None:
     port = resolve_port(int(os.environ.get("MYMTS_DESKTOP_PORT", str(DEFAULT_PORT))))
     web_dir = _configure_env(port)
 
-    # Import AFTER env is set (Config.from_env reads it at construction).
+    # Keep yt-dlp current in the frozen bundle (official-source + verified +
+    # offline-safe) BEFORE the helper imports yt_dlp via create_app. Never fatal.
+    if os.environ.get("MYMTS_NO_YTDLP_UPDATE") != "1":
+        try:
+            from ytdlp_update import ensure_current_ytdlp
+
+            ver = ensure_current_ytdlp(user_data_dir())
+            if ver:
+                print(f"[MyMTS] yt-dlp {ver} active (preferred over the bundled copy).", flush=True)
+        except Exception as e:  # noqa: BLE001 — an update hiccup must never block launch
+            print(f"[MyMTS] yt-dlp self-update skipped: {e}", flush=True)
+
+    # Import AFTER env is set + the yt-dlp finder is in place.
     from mymts_helper.app import create_app
     from mymts_helper.config import Config
 

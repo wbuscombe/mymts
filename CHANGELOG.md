@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(packaging): yt-dlp self-update in the frozen bundle (2026-06-16)
+
+A frozen yt-dlp can't self-update, so the YouTube channels rot as YouTube changes
+extraction. The desktop app now keeps yt-dlp **current**: on launch (throttled by
+a 24 h TTL) it fetches the latest yt-dlp **from PyPI's official hosts over HTTPS**,
+verifies the wheel's **SHA256 against PyPI's published digest**, unzips it into the
+user-data dir, and **prefers it over the frozen copy** via a `meta_path` finder
+inserted ahead of PyInstaller's `FrozenImporter`. Every failure path falls back to
+the bundled yt-dlp (offline-safe, launch-safe — a copy that won't import is
+discarded). Only a pure-python `py3-none-any` wheel of the same trusted dependency
+is loaded; no native binary is downloaded or executed.
+
+Validated end-to-end: the frozen app updated 2026.03.17 → **2026.6.9** (the live
+PyPI latest), and YouTube channels resolve live with the updated copy — confirming
+the finder outranks the frozen importer. Pure decision logic (URL allowlist, wheel
+pick, version compare, TTL, SHA256, prefer/fallback) unit-tested (17 tests),
+including a fake-wheel integration test of the finder. The ~30 direct-HLS channels
+are unaffected by yt-dlp version.
+
 ## feat(packaging): tray launcher with headless fallback (2026-06-16)
 
 The desktop app is now a **menu-bar / system-tray** agent, not a console
