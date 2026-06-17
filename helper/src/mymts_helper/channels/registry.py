@@ -131,11 +131,41 @@ def validate_youtube_url(url: str) -> str:
     return url
 
 
+# Senate's own host — the only host a free-C-SPAN (`cspan`) source may point at.
+_CSPAN_HOSTS = frozenset({"www.senate.gov", "senate.gov"})
+
+
+def validate_cspan_url(url: str) -> str:
+    """Structured validation of a free C-SPAN/.gov government-stream source URL.
+
+    Same posture as the others: https, the Senate's own host, no userinfo,
+    default port, and an `/isvp` live path. The resolver reads the senate.gov
+    floor schedule from here — FREE content only, no auth ever sent. The
+    entitlement-gated C-SPAN networks live on c-span.org and are NOT admitted.
+    """
+    if not isinstance(url, str):
+        raise RegistryError("cspan_url_not_string")
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise RegistryError(f"cspan_url_scheme: {parsed.scheme!r} (https only)")
+    host = (parsed.hostname or "").lower()
+    if host not in _CSPAN_HOSTS:
+        raise RegistryError(f"cspan_url_host: {host!r}")
+    if parsed.username is not None or parsed.password is not None:
+        raise RegistryError("cspan_url_userinfo")
+    if parsed.port not in (None, 443):
+        raise RegistryError(f"cspan_url_port: {parsed.port}")
+    if "/isvp" not in parsed.path:
+        raise RegistryError(f"cspan_url_path_not_isvp: {parsed.path!r}")
+    return url
+
+
 # kind -> the validator that admits its source_url. Adding a kind means adding
-# its migration CHECK entry (003) AND a row here.
+# its migration CHECK entry (003/004) AND a row here.
 _KIND_VALIDATORS = {
     "hls": validate_hls_url,
     "youtube": validate_youtube_url,
+    "cspan": validate_cspan_url,
 }
 
 

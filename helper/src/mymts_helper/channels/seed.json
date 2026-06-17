@@ -226,5 +226,11 @@
     "label": "U.S. House Floor",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/channel/UCqU8qiVHYmLsF0JIMByCTvw/live"
+  },
+  {
+    "slug": "us-senate-floor",
+    "label": "U.S. Senate Floor",
+    "kind": "cspan",
+    "source_url": "https://www.senate.gov/isvp/?type=live&comm=stv"
   }
 ]

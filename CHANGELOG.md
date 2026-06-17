@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): free C-SPAN/.gov Senate-floor resolver + channel (2026-06-17)
+
+A new `kind='cspan'` resolver for C-SPAN's **free, no-login government livestreams**,
+powering the **U.S. Senate floor**. Strictly the free open feed — the entitlement-gated
+C-SPAN/C-SPAN2/C-SPAN3 networks (Adobe Pass / TV Everywhere) remain out of scope and are
+never built against.
+
+- **`channels/cspan_resolver.py`** (new) — resolves the Senate's own ISVP feed. Recon
+  found there is **no Akamai token** (and no auth, no DRM): the only moving part is the
+  daily per-session filename (`stv`+MMDDYY) the senate.gov `floor_schedule.json` publishes
+  in `convenedSessionStream`. So this is a *session/filename-refresh* resolver (mirroring
+  `youtube_resolver`'s shape), not a token resolver — TTL-cached (15 min), host-allowlisted
+  to senate.gov, polite UA, bounded body/time. Sends no credential, follows no auth handshake.
+- **U.S. Senate Floor** (new channel, US News) — `convenedSessionStream` present → build the
+  Akamai HLS master; the prober's existing master→variant fetch is the live gate. **Honest-
+  offline** when not in session: a null stream resolves `not_in_session`, and a torn-down
+  session's master `404`s → `unavailable` (no fake-live, no frozen VOD). Validated live
+  end-to-end through the real prober while the Senate was in session (browser-playable).
+- Migration **004** widens the channel `kind` CHECK to admit `cspan` (table-recreate, all
+  rows + state preserved); registry gains `validate_cspan_url` (senate.gov-host `/isvp`,
+  the gated c-span.org networks rejected).
+- **Corrects** the prior pass's "U.S. Senate Floor — frozen VOD, no live entry point" omission
+  (the 2026-06-17 Sky/House entry below): that was a *not-in-session* false-positive. The live
+  entry point is `floor_schedule.json`'s `convenedSessionStream`, missed before — so the feed
+  IS buildable when the chamber is in session.
+
+Lineup 38 → 39. API additive (the `/api/channels` contract `schema_version` is unchanged);
+the DB migration head moves 3 → 4 (an additive `kind` CHECK widen, no data change).
+
 ## feat(helper): re-point Sky News to YouTube + add U.S. House Floor (2026-06-17)
 
 A test-and-add sourcing pass — only feeds that empirically validated landed.

@@ -107,6 +107,23 @@ def test_channels_kind_youtube_admitted(tmp_path: Path) -> None:
     assert row["kind"] == "youtube"
 
 
+def test_channels_kind_cspan_admitted(tmp_path: Path) -> None:
+    # migration 004 widened the kind CHECK to admit 'cspan'; 'rtsp' still rejected.
+    p = tmp_path / "test.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    conn.execute(
+        "INSERT INTO channels(slug, label, kind, source_url) VALUES (?,?,?,?)",
+        ("sf", "Senate", "cspan", "https://www.senate.gov/isvp/?comm=stv"),
+    )
+    assert conn.execute("SELECT kind FROM channels WHERE slug='sf'").fetchone()["kind"] == "cspan"
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO channels(slug, label, kind, source_url) VALUES (?,?,?,?)",
+            ("z", "Z", "rtsp", "https://x/y"),
+        )
+
+
 def test_migration_003_preserves_rows_and_widens_kind(tmp_path: Path) -> None:
     """The 003 table-recreate must copy every channel row + all state verbatim,
     flip the kind CHECK to admit 'youtube', and still reject a bogus kind."""

@@ -180,6 +180,62 @@ def test_validate_youtube_url_rejects(url: str) -> None:
         registry.validate_youtube_url(url)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.senate.gov/isvp/?type=live&comm=stv",
+        "https://senate.gov/isvp/stv.html?comm=stv&filename=stv061726",
+    ],
+)
+def test_validate_cspan_url_accepts(url: str) -> None:
+    assert registry.validate_cspan_url(url) == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://www.senate.gov/isvp/?comm=stv",           # http
+        "https://www.c-span.org/networks/?channel=c-span-2",  # gated network host
+        "https://u:p@www.senate.gov/isvp/?comm=stv",      # userinfo
+        "https://www.senate.gov:8443/isvp/?comm=stv",     # odd port
+        "https://www.senate.gov/about/contact",           # not an /isvp path
+    ],
+)
+def test_validate_cspan_url_rejects(url: str) -> None:
+    with pytest.raises(registry.RegistryError):
+        registry.validate_cspan_url(url)
+
+
+def test_upsert_channel_accepts_cspan_kind(tmp_path: Path) -> None:
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    # kind='cspan' is admitted by migration 004 (free Senate-floor resolver).
+    # The source_url must be a senate.gov ISVP URL, not an m3u8.
+    cid = registry.upsert_channel(
+        conn, slug="sf", label="U.S. Senate Floor",
+        source_url="https://www.senate.gov/isvp/?type=live&comm=stv", kind="cspan",
+    )
+    assert cid > 0
+    rows = registry.list_channels(conn)
+    assert rows[0].kind == "cspan"
+    assert "/isvp" in rows[0].source_url
+
+
+def test_upsert_cspan_kind_rejects_gated_network_host(tmp_path: Path) -> None:
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    # A cspan-kind channel pointed at the entitlement-gated c-span.org host
+    # (the curated networks) is rejected — only senate.gov free feeds admitted.
+    with pytest.raises(registry.RegistryError, match="cspan_url_host"):
+        registry.upsert_channel(
+            conn, slug="net", label="C-SPAN 2",
+            source_url="https://www.c-span.org/networks/?channel=c-span-2",
+            kind="cspan",
+        )
+
+
 def test_update_status_live(tmp_path: Path) -> None:
     p = tmp_path / "x.db"
     db.migrate(p)

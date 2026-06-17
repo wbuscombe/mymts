@@ -45,6 +45,7 @@ from urllib.parse import urljoin
 from .. import db
 from ..fetcher import FetchError, Resolver, default_resolver, fetch
 from . import registry
+from .cspan_resolver import CSpanResolution, CSpanResolver
 from .youtube_resolver import (
     DEFAULT_RESOLVE_TIMEOUT,
     YouTubeResolution,
@@ -155,6 +156,7 @@ class ChannelProber:
         resolver: Resolver = default_resolver,
         youtube_resolver: YouTubeResolver | None = None,
         youtube_resolve_timeout_seconds: int = DEFAULT_RESOLVE_TIMEOUT,
+        cspan_resolver: CSpanResolver | None = None,
     ) -> None:
         self.db_path = db_path
         self.interval = interval_seconds
@@ -168,6 +170,10 @@ class ChannelProber:
         # extraction can't stall the probe loop. The executor thread still
         # finishes on yt-dlp's socket_timeout; we just stop awaiting it.
         self._youtube_deadline = youtube_resolve_timeout_seconds + 15
+        # Resolver for the free C-SPAN/.gov government floor feeds (kind='cspan').
+        # Injectable for tests; runs (blocking) in the executor like youtube.
+        self._cspan = cspan_resolver or CSpanResolver()
+        self._cspan_deadline = DEFAULT_RESOLVE_TIMEOUT + 15
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self.last_probe_at: str | None = None
@@ -225,6 +231,17 @@ class ChannelProber:
             if not resolved.ok or not resolved.hls_url:
                 await self._record(c.id, status="unavailable", current_url=None,
                                    error=f"yt:{resolved.error or 'unresolved'}",
+                                   success=False)
+                return
+            master_url = resolved.hls_url
+        elif c.kind == "cspan":
+            # Free Senate-floor: resolve the current session's HLS master; an
+            # offline (not-in-session) feed resolves to ok=False → honest
+            # unavailable. The master→variant fetch below is the final live gate.
+            resolved = await self._resolve_cspan(c.source_url)
+            if not resolved.ok or not resolved.hls_url:
+                await self._record(c.id, status="unavailable", current_url=None,
+                                   error=f"cspan:{resolved.error or 'unresolved'}",
                                    success=False)
                 return
             master_url = resolved.hls_url
@@ -304,6 +321,23 @@ class ChannelProber:
         except TimeoutError:
             log.warning("youtube_resolve_deadline", extra={"url": url})
             return YouTubeResolution(ok=False, error="resolve_timeout")
+
+    async def _resolve_cspan(self, url: str) -> CSpanResolution:
+        """Resolve the free Senate-floor stream off the event loop, bounded.
+
+        The resolver does a blocking HTTP read of the senate.gov floor schedule,
+        so it runs in the executor; `wait_for` caps the wait so a slow upstream
+        can't stall the probe loop (honest-offline this cycle on a timeout).
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(None, self._cspan.resolve, url),
+                timeout=self._cspan_deadline,
+            )
+        except TimeoutError:
+            log.warning("cspan_resolve_deadline", extra={"url": url})
+            return CSpanResolution(ok=False, error="resolve_timeout")
 
     async def _record(
         self, channel_id: int, *, status: str, current_url: str | None,
