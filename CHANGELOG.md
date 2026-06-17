@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(packaging): tray launcher with headless fallback (2026-06-16)
+
+The desktop app is now a **menu-bar / system-tray** agent, not a console
+executable. The helper (uvicorn) runs in a background thread; a tray menu offers
+**Open MyMTS** and **Quit** (clean shutdown via `should_exit`). The browser
+auto-opens once on launch. Built with PyInstaller `--windowed` → a proper
+`MyMTS.app` on macOS (an `LSUIElement` menu-bar agent — no Dock icon, no console).
+
+Cross-platform: tray on macOS + Windows; on **Linux / headless hosts** (no
+display, no tray backend, or `MYMTS_HEADLESS=1`) it falls back to **headless
+server mode** — run the helper, print the URL, no tray, no auto-browser. A
+missing tray backend degrades gracefully, never crashes. The tray-vs-headless
+decision is a pure, tested function. Validated on macOS (Apple Silicon): tray
+launch serves the wall with no console; headless mode serves + prints the URL;
+clean quit. Bundle ≈68 MB (adds pystray/Pillow/pyobjc).
+
 ## feat(packaging): PyInstaller spike — launchable helper executable (macOS) (2026-06-16)
 
 Package the helper as a self-contained desktop executable so a user can run the

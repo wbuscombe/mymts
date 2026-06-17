@@ -20,17 +20,28 @@ helper/.venv/bin/python -m pip install pyinstaller
 tools/desktop/build.sh
 ```
 
-Output: `tools/desktop/dist/mymts-helper/` (an `onedir` bundle — **gitignored**).
+Output (gitignored):
+- macOS: `tools/desktop/dist/MyMTS.app`
+- Linux/Windows (CI): `tools/desktop/dist/MyMTS/MyMTS[.exe]`
 
 ## Run
 
+**macOS / Windows (tray app):** open `MyMTS.app` (macOS) or run `MyMTS.exe`
+(Windows). It runs as a **menu-bar / system-tray** agent — no console window —
+with a tray menu: **Open MyMTS** (opens the wall) and **Quit**. The browser
+auto-opens to `http://127.0.0.1:8091/app/` once on launch.
+
 ```sh
-tools/desktop/dist/mymts-helper/mymts-helper
+open tools/desktop/dist/MyMTS.app      # macOS
 ```
 
-The browser opens to `http://127.0.0.1:8091/app/`. The seeded SQLite DB and all
-writable state live in `~/Library/Application Support/MyMTS/` — **never** inside
-the (read-only) bundle. Ctrl-C to quit.
+**Linux / headless (no display) / `MYMTS_HEADLESS=1`:** the helper runs in the
+foreground, prints the reachable URL, and does NOT open a browser or a tray —
+the server-mode fallback for headless hosts. Open the printed URL yourself.
+
+The seeded SQLite DB and all writable state live in the per-user data dir
+(macOS `~/Library/Application Support/MyMTS/`, Windows `%LOCALAPPDATA%/MyMTS`,
+Linux `~/.local/share/MyMTS`) — **never** inside the (read-only) bundle.
 
 ## What's bundled
 
