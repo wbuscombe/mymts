@@ -1,6 +1,6 @@
 # Security Practices
 
-> **Status (Stage 0):** Skeleton — the operator's standing security baseline restated for this project. Project-specific controls land per stage and are tracked in `docs/THREAT-MODEL.md`.
+> **Status:** Active — the operator's standing security baseline restated for this project, now carrying the project-specific controls that have landed (the helper's SSRF/egress shield, the desktop-executable localhost-bind / no-secrets posture, and TV-side APK release-signing). Threats and their mitigations are tracked stage-by-stage in `docs/THREAT-MODEL.md`.
 
 The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restates the operational rules a contributor must follow at every commit.
 
@@ -39,7 +39,7 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 ### App (TV side)
 - No credentials shipped in the APK.
 - Requests only the OS permissions it actually needs.
-- Signed installs with a documented keystore-management story (lands in Stage 6).
+- Release signing is implemented — a v1+v2+v3 `signingConfig` sourced from a **gitignored** `app/keystore.properties` (modeled on `app/keystore.properties.example`), an `IS_RELEASE_SIGNED` BuildConfig flag, and a deploy guard that refuses to push a debug-signed APK. *(The operator supplies the keystore; publishing a signed release build and bumping the pinned `versionCode` remain on the open distribution list.)*
 
 ### Desktop executable (packaged app — `tools/desktop/`)
 - **Localhost-only bind.** The packaged app serves the helper on `127.0.0.1` (a
