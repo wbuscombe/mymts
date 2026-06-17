@@ -18,15 +18,26 @@ SAMPLE-labeled because the demo serves no live data (that honesty is the whole p
 
 ---
 
-## Run the wall as a desktop app (no clone, no Docker, no Python)
+## Ways to run MyMTS
 
-The easiest way to run the **web wall** on your own computer: download the desktop
-app for your OS from **Releases**, open it, and it runs the wall in your browser at
-`http://127.0.0.1:8091/app/` — a small **menu-bar / tray** app, localhost-only, no
-setup. YouTube channels stay current automatically (verified yt-dlp self-update).
-Non-developer walkthrough: [`docs/DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md).
-Packaging/build tooling: [`tools/desktop/`](tools/desktop/README.md). *(Early
-builds are unsigned — a one-time right-click→Open / Run-anyway.)*
+Three paths, easiest first:
+
+1. **Desktop app — no clone, no Docker, no Python.** Download the build for your OS
+   from [**Releases**](https://github.com/wbuscombe/mymts/releases) and open it: a
+   small **menu-bar / tray** app that runs the web wall in your browser at
+   `http://127.0.0.1:8091/app/`, localhost-only, with the YouTube channels kept
+   current automatically (verified yt-dlp self-update). Non-developer walkthrough:
+   [`docs/DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md); build tooling:
+   [`tools/desktop/`](tools/desktop/README.md). *(Early builds are unsigned — a
+   one-time right-click→Open / Run-anyway.)*
+2. **Developer demo — clone + phantom mode.** A 60-second, zero-secret demo on mock
+   data — see [Try it in 60 seconds](#try-it-in-60-seconds-no-secrets-no-nas) below.
+3. **Self-host the backend (the real wall).** Run the helper as a service for live
+   data on a real TV — see [Run it for real](#run-it-for-real) →
+   [`ONBOARDING.md`](ONBOARDING.md). *(The bundled `helper/docker-compose.yml` is a
+   dev shape that still needs a writable data volume — see
+   [`helper/README.md`](helper/README.md); the documented `uv run` path is the
+   working quickstart.)*
 
 ---
 
