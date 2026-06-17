@@ -79,4 +79,5 @@ The operational guardrails every contribution must honor (load-bearing — read 
 - Tests green; no expected-to-fail tests in the tree.
 - `README.md`, `CHANGELOG.md`, and stage docs updated.
 - Threat-model entry added or updated for any new attack surface.
+- **Professionalization run as the closing step of a major phase** — the house `professionalize.md` protocol, including its §6 *Documentation Audit & Update* (docs-vs-reality drift, screenshot-gallery regen + verify-against-live-UI, links/CHANGELOG/architecture currency, proportional docs-only fixes, docs sign-off). The canonical Definition of Done lives in [`AGENTS.md`](AGENTS.md).
 - Committed, pushed, tagged if a release boundary.

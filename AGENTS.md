@@ -67,6 +67,16 @@ The **app** deploy is, in order, and with each gate enforced:
 
 The **helper** deploy rebuilds the image (`docker compose build --pull && up -d`) and verifies the running container's `/health` `build_sha` matches the deployed SHA — a bare restart never picks up code changes.
 
+## Definition of Done — closing a major phase
+
+A major development phase is **not complete** until all three hold:
+
+1. **Implemented + green.** The feature/code is done and ALL tests pass (`cd helper && uv run pytest` + `./gradlew :app:testReleaseUnitTest`) — zero flaky, zero expected-fail.
+2. **Professionalization run as the closing step.** Run the house `professionalize.md` protocol — which now includes its **§6 Documentation Audit & Update**: audit the docs against the *current* state for drift (README / CHANGELOG / ARCHITECTURE / run-paths / links), **regenerate the screenshot gallery + verify each shot against the live UI** (a UI rebuild silently breaks the capture's navigation — fix the capture script first, then regenerate), cut the dated CHANGELOG version on a release, and fix the currency minors. Proportional (deltas only), catch false flags, honest caveats over papering-over, **docs-only `git diff`** (code fixes are a separate task), and end on a docs **sign-off**.
+3. **Shipped clean.** Conventional bisectable commits; docs-hygiene + secret-scan green; pushed (and the helper/app deployed where the phase warrants, per the Deploy invariant above).
+
+**Corollary (self-enforcing):** every major MyMTS feature prompt ends with this professionalization + documentation-audit closing phase — an agent that finishes the feature but skips the docs audit has **not** finished the phase. The RITUAL companion is `docs/PHASE-END-CHECKLIST.md`; the ENFORCED backstop is the `MAINTENANCE-CHARTER.md` docs-hygiene CI gate.
+
 ## Scope & uncertainty
 
 - Make the **smallest safe change**. Don't refactor unrelated code "while you're in there."
