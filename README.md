@@ -18,6 +18,18 @@ SAMPLE-labeled because the demo serves no live data (that honesty is the whole p
 
 ---
 
+## Run the wall as a desktop app (no clone, no Docker, no Python)
+
+The easiest way to run the **web wall** on your own computer: download the desktop
+app for your OS from **Releases**, open it, and it runs the wall in your browser at
+`http://127.0.0.1:8091/app/` — a small **menu-bar / tray** app, localhost-only, no
+setup. YouTube channels stay current automatically (verified yt-dlp self-update).
+Non-developer walkthrough: [`docs/DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md).
+Packaging/build tooling: [`tools/desktop/`](tools/desktop/README.md). *(Early
+builds are unsigned — a one-time right-click→Open / Run-anyway.)*
+
+---
+
 ## Try it in 60 seconds (no secrets, no NAS)
 
 The helper has a **demo / phantom mode** that serves mock data with **zero network egress** —

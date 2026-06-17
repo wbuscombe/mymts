@@ -66,6 +66,12 @@ AC_API_KEY_ID, AC_API_KEY_PATH, AC_API_ISSUER                     # App Store Co
 APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD                       # Apple-ID app-specific password
 ```
 
+Set `CODESIGN_IDENTITY` **explicitly** if more than one Developer ID Application
+identity is in the keychain (auto-detect picks the first). In **CI**, also provide
+the cert itself as a base64-encoded `.p12` secret `MACOS_CERT_P12` (+
+`MACOS_CERT_PASSWORD`) — the release workflow imports it into a temp keychain
+before signing; without it the macOS build is unsigned (and the job still passes).
+
 Windows (`sign-windows.ps1`): set `WINDOWS_CERT_PFX` (+ `WINDOWS_CERT_PASSWORD`)
 to sign with `signtool`; otherwise unsigned (SmartScreen caveat).
 

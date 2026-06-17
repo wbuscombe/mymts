@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## chore(packaging): professionalize + adversarial-review fixes (2026-06-16)
+
+Professionalized the desktop packaging surface and fixed the adversarial review's
+findings (3 lenses: self-update security, launcher correctness, CI/signing).
+
+- **Launcher:** detect a failed server start (`wait_ready` — a bind failure or
+  never-ready `/health` is surfaced, not a silent dead tray); guard the tray
+  runtime so a backend that imports but fails to start falls back to headless;
+  non-blocking tray Quit.
+- **yt-dlp self-update:** sanitize the PyPI version string before using it as a
+  path component; anchor the zip-slip guard (no sibling-prefix escape);
+  self-clean a broken install (no re-download churn); `hmac.compare_digest`.
+- **CI:** a per-OS **headless smoke test** (the bundle must serve `/health`, not
+  just build — catches missing runtime deps); a gated macOS keychain-import so
+  signing works once a cert + `MACOS_CERT_P12` secret exist; Windows signing by
+  cert thumbprint (password off the command line); `sign-macos.sh` no longer
+  leaves a stray zip.
+- **Docs/tests:** non-developer `docs/DOWNLOAD-AND-RUN.md` + README section;
+  `SECURITY-PRACTICES.md` desktop-executable section; audit addendum; 35
+  pure/integration tests (`tools/desktop/tests/`). docs-hygiene green; helper
+  suite unaffected.
+
 ## ci(packaging): multi-OS desktop release pipeline (2026-06-16)
 
 A tag-triggered GitHub Actions workflow (`.github/workflows/release.yml`, also

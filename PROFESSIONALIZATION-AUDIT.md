@@ -91,3 +91,33 @@ Note: `<LAN_IP>` are RFC1918 **private** addresses — useless to anyone outside
 - Keystore-password rotation (transcript-only exposure; operator's call; not a repo issue).
 
 **Out-of-scope / manual:** history rewrite (not needed — clean); unrelated host services (untouchable); panel-fit values (locked); on-device wall deploy (this is a repo pass).
+
+---
+
+## Addendum — desktop packaging surface (`tools/desktop/`, 2026-06)
+
+The PyInstaller desktop app (tray launcher + yt-dlp self-update + gated signing +
+multi-OS CI release) was built to the same standard. Scored against §4:
+
+- **Security — PASS.** Localhost-only bind (`127.0.0.1`, never `0.0.0.0`); no
+  secrets in the bundle (credential-free; signing creds in env/CI secrets, never
+  printed/committed); writable state outside the read-only bundle; the only
+  launcher egress (yt-dlp self-update) is official-source-only (PyPI hosts,
+  HTTPS, host-allowlisted) + SHA256-verified + offline-safe. Documented in
+  `SECURITY-PRACTICES.md` (Desktop executable). Adversarial review run (3 lenses);
+  findings fixed (version-string path sanitization, anchored zip-slip guard,
+  self-cleaning broken installs, `hmac.compare_digest`, dead-server detection,
+  tray runtime fallback, CI keychain-import + headless smoke test).
+- **Docs — PASS.** `tools/desktop/README.md` (build/run/sign) + a non-developer
+  `docs/DOWNLOAD-AND-RUN.md` + a README section. Audience-aware; docs-hygiene green.
+- **Testing — PASS.** 35 pure/integration tests (`tools/desktop/tests/`) cover the
+  tray decision, port, data dir, and the self-update logic (allowlist, SHA256,
+  TTL, prefer/fallback, zip-slip, version sanitization). Helper suite unaffected.
+  CI smoke-tests every OS artifact (headless serve + `/health`).
+- **Build/release — PASS (CI-gated).** `tools/desktop/build.sh` +
+  `.github/workflows/release.yml` (matrix build → tag → GitHub Release).
+- **Signing — PARTIAL (honest).** Signing/notarization is wired + gated; no
+  Developer ID cert is available, so builds are unsigned/adhoc with a documented
+  right-click→Open first-run and pre-release marking. Activates automatically once
+  a cert is provided.
+- Built binaries + `build/`/`dist/` gitignored — only tooling/workflows/docs committed.

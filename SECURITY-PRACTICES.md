@@ -41,6 +41,29 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 - Requests only the OS permissions it actually needs.
 - Signed installs with a documented keystore-management story (lands in Stage 6).
 
+### Desktop executable (packaged app — `tools/desktop/`)
+- **Localhost-only bind.** The packaged app serves the helper on `127.0.0.1` (a
+  browser secure context — no TLS needed), never `0.0.0.0`. It is not exposed to
+  the LAN or the internet; only the same machine can reach it. (The container
+  entrypoint binds `0.0.0.0` behind Docker NAT; the desktop launcher does not.)
+- **No secrets in the bundle.** The bundle carries only code, the web client, and
+  the public channel/feed seeds. There are no keys, tokens, or credentials baked
+  in (the app is credential-free, like the rest of MyMTS). Code-signing secrets
+  live in env/CI secrets, never in the repo or the bundle, and are never printed.
+- **Writable state outside the bundle.** The (read-only) bundle is never written
+  to; the seeded DB + any cached state live in the per-user data dir.
+- **yt-dlp self-update network use.** The only outbound traffic the launcher
+  itself makes is the yt-dlp self-update: it fetches ONLY from PyPI's official
+  hosts (`pypi.org`, `files.pythonhosted.org`) over **HTTPS** (host-allowlisted),
+  verifies the wheel's **SHA256 against PyPI's published digest** before use, and
+  loads only a pure-python wheel of the same trusted dependency — no arbitrary
+  URL, no native binary. Every failure falls back to the bundled yt-dlp. Trust
+  root: PyPI + TLS. (The helper's own upstream egress is unchanged + still
+  SSRF-guarded.)
+- **Signing posture.** Builds are signed + notarized when credentials are present
+  (gated) and honestly unsigned otherwise, with a documented right-click→Open
+  first-run path; unsigned releases are marked pre-release.
+
 ### Validation
 - Everything the helper accepts from outside is validated by structured parsing, not loose regex.
 - Network input is treated as hostile until proven safe. The burden is on the input.
