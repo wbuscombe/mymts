@@ -94,6 +94,23 @@ def test_upsert_channel_renames(tmp_path: Path) -> None:
     assert rows[0].source_url.endswith("b.m3u8")
 
 
+def test_upsert_channel_repoints_kind(tmp_path: Path) -> None:
+    # Re-seeding a channel with a different kind (e.g. a dead direct-HLS source
+    # re-pointed to its YouTube live) updates the kind too — seed.json is the
+    # full source of truth, so the upsert must change kind, not just label/url.
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+    registry.upsert_channel(conn, slug="x", label="X", kind="hls",
+                            source_url="https://x.test/a.m3u8")
+    registry.upsert_channel(conn, slug="x", label="X", kind="youtube",
+                            source_url="https://www.youtube.com/@x/live")
+    rows = registry.list_channels(conn)
+    assert len(rows) == 1
+    assert rows[0].kind == "youtube"
+    assert rows[0].source_url.endswith("/live")
+
+
 def test_upsert_channel_accepts_youtube_kind(tmp_path: Path) -> None:
     p = tmp_path / "x.db"
     db.migrate(p)

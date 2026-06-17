@@ -73,6 +73,11 @@ _BY_SLUG: dict[str, str] = {
     "pbs-newshour": US_NEWS,
     "court-tv": US_NEWS,
     "law-crime": US_NEWS,
+    # U.S. House floor proceedings via the House Clerk's YouTube live (the
+    # free, openly-resolvable C-SPAN1-equivalent); honest-offline when the House
+    # is not in session. The C-SPAN linear networks themselves are MVPD-gated
+    # (Adobe Pass) and the Senate ISVP feed is session-dated/fragile — omitted.
+    "us-house-floor": US_NEWS,
     "euronews": GLOBAL_NEWS,
     "wion": GLOBAL_NEWS,
     "ndtv": GLOBAL_NEWS,

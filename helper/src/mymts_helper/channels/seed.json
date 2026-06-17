@@ -98,8 +98,8 @@
   {
     "slug": "sky-news",
     "label": "Sky News",
-    "kind": "hls",
-    "source_url": "https://linear417-gb-hls1-prd-ak.cdn.skycdp.com/100e/Content/HLS_001_1080_30/Live/channel(skynews)/index_1080-30.m3u8"
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@SkyNews/live"
   },
   {
     "slug": "cgtn-en",
@@ -220,5 +220,11 @@
     "label": "CBS Sports Golazo",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/@cbssportsgolazo/live"
+  },
+  {
+    "slug": "us-house-floor",
+    "label": "U.S. House Floor",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/channel/UCqU8qiVHYmLsF0JIMByCTvw/live"
   }
 ]

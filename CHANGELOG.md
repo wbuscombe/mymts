@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): re-point Sky News to YouTube + add U.S. House Floor (2026-06-17)
+
+A test-and-add sourcing pass — only feeds that empirically validated landed.
+
+- **Sky News** — the seeded direct-HLS source (skycdp) is dead (HTTP 404); re-pointed
+  to the official free YouTube live (`kind='youtube'`, validated live + browser-playable).
+  A dead channel fixed, not a duplicate.
+- **U.S. House Floor** (new) — the House Clerk's YouTube live (the free, openly-resolvable
+  C-SPAN1-equivalent floor feed); **honest-offline** when the House isn't in session
+  (validated: resolves a clean not-live, not a dead host). Categorized US News.
+- Registry: the seed upsert now updates `kind` too (not just label/source_url), so a
+  channel can be re-pointed across kinds (the Sky News hls→youtube case) — tested.
+- **GB News** left as-is (its current direct-HLS source validated healthy).
+
+**Empirically OMITTED (test-and-report — no dead / fake-live / fragile / illegal feeds):**
+- **C-SPAN1/2/3** — MVPD-auth-gated (Adobe Pass / TV Everywhere) + tokenized Akamai
+  (~120-min expiry); no open re-fetchable HLS.
+- **U.S. Senate Floor (ISVP .gov)** — session-dated filename; the only constructible URL
+  is a frozen VOD (would fake-live an archived clip); no stable live entry point.
+- **3 EarthCam Chicago cams** (Wrigley ×2, Field Museum) — Referer-gated (403 without an
+  `earthcam.com` Referer the wall's prober + hls.js/ExoPlayer can't send); not playable.
+- **WGN Chicago (WGN+)** — DRM-protected (Nexstar/Anvato) + mandatory My-Nexstar sign-in;
+  automatic no on the DMCA §1201 line.
+
+Lineup 37 → 38. API additive (`schema_version` unchanged). The premium DRM sports feeds
+are recorded in `docs/BACKLOG.md` (blocked, not buildable).
+
 ## [0.1.1] - 2026-06-16
 
 First tagged release — the launchable **desktop executable** (tray launcher,

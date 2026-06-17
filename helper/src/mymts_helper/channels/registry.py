@@ -155,7 +155,7 @@ def upsert_channel(
     conn.execute(
         "INSERT INTO channels(slug, label, kind, source_url) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(slug) DO UPDATE SET "
-        "label=excluded.label, source_url=excluded.source_url",
+        "label=excluded.label, kind=excluded.kind, source_url=excluded.source_url",
         (slug, label, kind, source_url),
     )
     row = conn.execute("SELECT id FROM channels WHERE slug=?", (slug,)).fetchone()
