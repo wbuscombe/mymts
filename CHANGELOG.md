@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-16
+
+First tagged release — the launchable **desktop executable** (tray launcher,
+yt-dlp self-update, gated signing, the multi-OS GitHub Release) plus the wall
+work it bundles (the yt-dlp YouTube resolver + ~37-channel lineup, captions-off,
+the rebuilt native-style web menu, category-grouped feed sources, the 2×3 web
+default, the audio-renderer perf, and the framework-timed ticker crawl). The
+entries below are this release; v0.1.0 was the same content whose release run
+failed at 0s (a CI workflow-validation bug), re-tagged as v0.1.1.
+
 ## chore(packaging): professionalize + adversarial-review fixes (2026-06-16)
 
 Professionalized the desktop packaging surface and fixed the adversarial review's
