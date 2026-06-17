@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(packaging): macOS signing + notarization, gated on credentials (2026-06-16)
+
+The build now signs + notarizes when credentials are present, and falls back to
+an honest unsigned build otherwise. `sign-macos.sh` (invoked by `build.sh`):
+codesign (hardened runtime) → `notarytool` submit --wait → `stapler staple`,
+**gated** on `CODESIGN_IDENTITY` + a notarization set (App Store Connect API key
+or Apple-ID app-specific password) via env/CI secrets. With no identity it leaves
+the PyInstaller adhoc-signed app and prints the right-click→Open caveat (build
+still succeeds). `sign-windows.ps1` does the same via `signtool`, gated on
+`WINDOWS_CERT_PFX` (else the SmartScreen caveat). No secrets are printed.
+
+This pass: **no Developer ID identity is available locally**, so local builds are
+unsigned/adhoc — documented with the user first-run workaround. Signing activates
+automatically once a cert is provided.
+
 ## feat(packaging): yt-dlp self-update in the frozen bundle (2026-06-16)
 
 A frozen yt-dlp can't self-update, so the YouTube channels rot as YouTube changes

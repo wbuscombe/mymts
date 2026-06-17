@@ -51,6 +51,28 @@ Linux `~/.local/share/MyMTS`) — **never** inside the (read-only) bundle.
 - the web client (served at `/app/`);
 - FastAPI / uvicorn / **yt-dlp** + deps.
 
+## Signing & notarization (gated on credentials)
+
+Signing is **automatic when credentials are present** and a no-op otherwise (the
+build still succeeds; the app is left PyInstaller adhoc-signed). `build.sh` runs
+`sign-macos.sh`, which signs + notarizes + staples when these are set (env
+locally / CI secrets), else prints the unsigned caveat:
+
+```
+CODESIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)"   # enables signing
+# and ONE notarization set:
+AC_API_KEY_ID, AC_API_KEY_PATH, AC_API_ISSUER                     # App Store Connect API key (preferred)
+# or
+APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD                       # Apple-ID app-specific password
+```
+
+Windows (`sign-windows.ps1`): set `WINDOWS_CERT_PFX` (+ `WINDOWS_CERT_PASSWORD`)
+to sign with `signtool`; otherwise unsigned (SmartScreen caveat).
+
+**Unsigned-build first-run (users):** a downloaded *unsigned* app trips Gatekeeper
+("unidentified developer") / SmartScreen. Once: macOS — right-click the app →
+**Open** → **Open**; Windows — **More info** → **Run anyway**.
+
 ## Spike findings (macOS, Apple Silicon)
 
 This started as a proof-of-concept to de-risk the approach. Validated:

@@ -27,6 +27,10 @@ echo "==> building (windowed onedir) ..."
 "$VENV/bin/pyinstaller" mymts-helper.spec --noconfirm --clean
 
 case "$(uname -s)" in
-    Darwin) echo "==> built: $HERE/dist/MyMTS.app   (open it: open '$HERE/dist/MyMTS.app')" ;;
-    *)      echo "==> built: $HERE/dist/MyMTS/MyMTS" ;;
+    Darwin)
+        # Sign + notarize — self-gated on credentials (unsigned fallback otherwise).
+        bash "$HERE/sign-macos.sh" "$HERE/dist/MyMTS.app" || true
+        echo "==> built: $HERE/dist/MyMTS.app   (open it: open '$HERE/dist/MyMTS.app')"
+        ;;
+    *)  echo "==> built: $HERE/dist/MyMTS/MyMTS" ;;
 esac
