@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-17
+
+Free **government-stream** lineup expansion since v0.1.1 — all helper-side, all
+honest-offline, no MVPD/token/DRM/page-embeds. Sky News fixed (dead HLS → YouTube);
+the U.S. **House + Senate floors**; a new `cspan` resolver (senate.gov ISVP, no token)
+generalized from the Senate floor to **Senate committee hearings** (frozen-VOD-rejecting);
+**House committee** + **federal-agency** (White House / State / Pentagon / DHS / DOJ) feeds;
+the kind-authoritative seed upsert. Lineup **37 → 49**; `schema_version` unchanged (additive).
+
 ## feat(helper): generalize the free gov-stream resolver to hearings + federal events (2026-06-17)
 
 Extends the free gov-stream sourcing (no MVPD, no token, no DRM, no page embeds — every
