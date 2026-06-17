@@ -35,6 +35,41 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 
 Recorded so the "why aren't my paid sports on the wall?" question has a standing, honest answer (DRM, not a TODO), and the no-DRM-circumvention line stays explicit.
 
+## C-SPAN sourcing — the FREE/GATED boundary (conclusion, 2026-06-17)
+
+A standing decision-record for "what about C-SPAN?", drawing the line once so it isn't
+re-litigated. C-SPAN content splits cleanly into two buckets with opposite verdicts:
+
+- **FREE, no-login government feeds → BUILDABLE (and built).** C-SPAN streams the
+  House/Senate floor, hearings, and federal events with no login, no DRM, no token. We
+  source these directly from the government's own players, not C-SPAN's:
+  - **U.S. Senate floor** — `kind='cspan'` resolver (`channels/cspan_resolver.py`): reads
+    senate.gov's `floor_schedule.json` → `convenedSessionStream` (a daily `stv`+MMDDYY
+    filename) → the Akamai HLS master. No Akamai token, no auth handshake, no `EXT-X-KEY`.
+    Honest-offline when not in session. **Shipped** (this entry's CHANGELOG, 2026-06-17).
+  - **U.S. House floor** — the House Clerk's free YouTube live (`kind='youtube'`), also
+    honest-offline. **Shipped** (the Sky/House entry, 2026-06-17).
+- **The three entitlement-gated C-SPAN linear networks (C-SPAN / C-SPAN2 / C-SPAN3) →
+  STRUCTURAL WON'T-DO.** Their free web player is MVPD-auth-gated (Adobe Pass / TV
+  Everywhere) over tokenized Akamai; obtaining a playable manifest requires a TV-provider
+  login the helper will never drive (it sends no credential, follows no auth handshake).
+  This is the same closed door as the premium DRM sports entry above — a boundary, not a
+  TODO. The existing `c-span` channel in the lineup is the **separate** open cspan1 akamai
+  direct-HLS feed, unrelated to the gated networks.
+
+**Corrects two earlier honest-but-now-superseded omissions:** the "CNN International /
+C-SPAN — no public free linear HLS" entry below (which read C-SPAN's *session-token web
+player* as the only path) and the prior pass's "U.S. Senate Floor — frozen VOD, no live
+entry point" CHANGELOG note (a *not-in-session* false-positive). The live entry point is
+senate.gov's `convenedSessionStream`, missed before — so the free floor feed IS buildable
+when the chamber is in session, while the gated networks remain out of scope.
+
+**Generalizes (not built now):** the `cspan_resolver` recipe (read a .gov schedule/ISVP →
+build the open Akamai master, gated on in-session) extends to **other free C-SPAN-style
+government streams** — committee hearings, other federal events that publish the same ISVP
+shape. Only the Senate floor is built; the resolver is the reusable foundation if the
+operator wants more free gov feeds later (each a small per-feed add, no new threat surface).
+
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 
 **Done.** Automated **Playwright** capture of the demo (phantom-mode) web wall → `docs/screenshots/web/` (the wall, markets/sports/news ticker, settings, channel picker), a manual `workflow_dispatch` CI job that uploads the gallery as an **artifact** (no auto-committed binaries), a `docs/screenshots/device/` dir with **labeled placeholders + a filename spec** for the operator's native-TV hero shots, and the README rewritten into an honest showcase (hero shot, feature highlights w/ inline screenshots, mermaid architecture, the engineering story, the 60-second demo quickstart). Topology-clean, claims true-to-shipped, secret-free (demo helper only). See CHANGELOG (2026-06-13, Campaign 4), `tools/screenshots/`, `docs/screenshots/`.
