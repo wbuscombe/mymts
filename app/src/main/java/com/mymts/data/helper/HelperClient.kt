@@ -235,6 +235,9 @@ class HelperClient(
                     slug = o.requireString("slug"),
                     label = o.optString("label", o.requireString("slug")),
                     kind = o.optString("kind", "hls"),
+                    // Server-authoritative picker section; blank against an older
+                    // helper, where the picker falls back to its compiled map.
+                    category = o.optString("category", ""),
                     currentUrl = o.optStringOrNull("current_url"),
                     status = parseStatus(o.optString("status", "")),
                     lastSuccessAt = o.optStringOrNull("last_success_at"),

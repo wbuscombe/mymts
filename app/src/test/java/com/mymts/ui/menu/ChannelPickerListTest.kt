@@ -11,16 +11,26 @@ import org.junit.Test
  */
 class ChannelPickerListTest {
 
-    private fun ch(slug: String, playable: Boolean = true): Channel = Channel(
+    private fun ch(
+        slug: String,
+        playable: Boolean = true,
+        category: String = ChannelCategory.of(slug),
+    ): Channel = Channel(
         slug = slug,
         label = slug,
         kind = "hls",
+        category = category,
         currentUrl = if (playable) "https://example.com/$slug.m3u8" else null,
         status = if (playable) Channel.Status.LIVE else Channel.Status.UNAVAILABLE,
         lastSuccessAt = null,
         lastError = null,
         errorCount = 0,
     )
+
+    /** Mirrors the picker's real grouping path: server `category`, falling back to
+     *  the compiled map only when blank. */
+    private fun pickerSections(list: List<Channel>) =
+        ChannelCategory.sectionedByCategory(list) { it.category.ifBlank { ChannelCategory.of(it.slug) } }
 
     private val channels = listOf(ch("cnn"), ch("bbc-news"), ch("nasa-tv", playable = false))
 
@@ -55,7 +65,7 @@ class ChannelPickerListTest {
     @Test fun `initialFocusIndex is the flat LazyColumn index of the target, counting section headers`() {
         // Sections (taxonomy order): Sports[cbs-sports-hq], US News[cnn, livenow-fox], Weather[fox-weather]
         val list = listOf(ch("cbs-sports-hq"), ch("cnn"), ch("livenow-fox"), ch("fox-weather"))
-        val sections = ChannelCategory.sectioned(list) { it.slug }
+        val sections = pickerSections(list)
         // flat: 0=Sports hdr, 1=cbs-sports-hq, 2=US News hdr, 3=cnn, 4=livenow-fox, 5=Weather hdr, 6=fox-weather
         assertEquals(1, initialFocusIndex(sections, "cbs-sports-hq")) // first channel, first section
         assertEquals(3, initialFocusIndex(sections, "cnn"))           // first in a multi-channel section
@@ -66,7 +76,7 @@ class ChannelPickerListTest {
     }
 
     @Test fun `initialFocusIndex is -1 for a null, missing, or empty target`() {
-        val sections = ChannelCategory.sectioned(listOf(ch("bbc-news"))) { it.slug }
+        val sections = pickerSections(listOf(ch("bbc-news")))
         assertEquals(-1, initialFocusIndex(sections, null))
         assertEquals(-1, initialFocusIndex(sections, "no-such-channel"))
         assertEquals(-1, initialFocusIndex(emptyList(), "bbc-news"))
@@ -74,7 +84,7 @@ class ChannelPickerListTest {
 
     @Test fun `channelToFocus and initialFocusIndex agree — the focused slug resolves to a real row`() {
         val list = listOf(ch("cbs-sports-hq"), ch("cnn"), ch("fox-weather"))
-        val sections = ChannelCategory.sectioned(list) { it.slug }
+        val sections = pickerSections(list)
         // whatever channelToFocus picks (current, or first fallback) must have a real index.
         for (sel in listOf("fox-weather", null, "no-such")) {
             val slug = channelToFocus(list, sel)
@@ -86,7 +96,7 @@ class ChannelPickerListTest {
         val list = listOf(
             ch("fox-weather"), ch("cbs-sports-hq"), ch("bbc-news"), ch("cnn"),
         )
-        val sections = ChannelCategory.sectioned(list) { it.slug }
+        val sections = pickerSections(list)
         // Order: Sports, US News, Global News, (no Business), Weather — General empty/dropped.
         assertEquals(
             listOf("Sports", "US News", "Global News", "Weather"),
@@ -94,5 +104,52 @@ class ChannelPickerListTest {
         )
         assertEquals(listOf("cbs-sports-hq"), sections[0].second.map { it.slug })
         assertEquals(listOf("fox-weather"), sections.last().second.map { it.slug })
+    }
+
+    // ---- server-authoritative grouping (the durable fix) ----
+
+    @Test fun `new gov feeds group by SERVER category even though the compiled map omits them`() {
+        // us-senate-floor / us-house-oversight / us-state-dept are NOT in the compiled
+        // BY_SLUG map (of() would dump them in General). With the helper-served
+        // category "US News" they group correctly — the exact drift this fix closes.
+        val list = listOf(
+            ch("us-senate-floor", category = "US News"),
+            ch("us-house-oversight", category = "US News"),
+            ch("us-state-dept", category = "US News"),
+            ch("bbc-news", category = "Global News"),
+        )
+        val sections = pickerSections(list)
+        assertEquals(listOf("US News", "Global News"), sections.map { it.first })
+        assertEquals(
+            listOf("us-senate-floor", "us-house-oversight", "us-state-dept"),
+            sections[0].second.map { it.slug },
+        )
+        // Sanity: the compiled map alone WOULD have mis-sorted these to General.
+        assertEquals(ChannelCategory.GENERAL, ChannelCategory.of("us-senate-floor"))
+    }
+
+    @Test fun `server category wins over the compiled slug map`() {
+        // of("cnn") is US News, but if the helper says Global News, the server wins.
+        val sections = pickerSections(listOf(ch("cnn", category = "Global News")))
+        assertEquals(listOf("Global News"), sections.map { it.first })
+    }
+
+    @Test fun `an unrecognized server category is shown, ordered just before General`() {
+        // A future server-side section (e.g. "Government") the app doesn't know must
+        // still appear — appended before General — never silently dropped.
+        val list = listOf(
+            ch("cbs-sports-hq", category = "Sports"),
+            ch("us-senate-floor", category = "Government"),
+            ch("redbull-tv", category = "General"),
+        )
+        val sections = pickerSections(list)
+        assertEquals(listOf("Sports", "Government", "General"), sections.map { it.first })
+    }
+
+    @Test fun `blank server category falls back to the compiled slug map`() {
+        // An older helper that doesn't serve `category` → graceful degradation, not
+        // everything-in-General: cnn still lands in US News via of().
+        val sections = pickerSections(listOf(ch("cnn", category = "")))
+        assertEquals(listOf("US News"), sections.map { it.first })
     }
 }

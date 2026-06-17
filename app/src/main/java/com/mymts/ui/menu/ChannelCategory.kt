@@ -1,10 +1,17 @@
 package com.mymts.ui.menu
 
 /**
- * Channel taxonomy (2026-06-11) — the sections the channel picker groups by, and
- * (shared naming with the future news-genre tree) the category each channel
- * belongs to. Pure + unit-tested; mapped by slug since the `Channel` model has
- * no category field. An unmapped slug falls to [GENERAL] (honest — never hidden).
+ * Channel taxonomy — the sections the channel picker groups by.
+ *
+ * **Server-authoritative (2026-06-18):** the picker groups by the `category` the
+ * helper assigns each channel (`/api/channels` → `Channel.category`), via
+ * [sectionedByCategory]. The helper is the authority, so a channel added
+ * server-side groups correctly with **no app rebuild** — closing the drift where
+ * channels missing from the compiled map landed in General. The compiled [BY_SLUG]
+ * map / [of] survive only as a *fallback* for an older helper that doesn't serve a
+ * category. [ORDER] still drives section render order; an unrecognized server
+ * category (e.g. a future "Government" section) is shown rather than hidden. Pure +
+ * unit-tested. An unmapped slug (in the fallback) falls to [GENERAL] — never hidden.
  */
 object ChannelCategory {
     const val SPORTS = "Sports"
@@ -39,16 +46,28 @@ object ChannelCategory {
         // redbull-tv, nasa-tv, iss-feed → GENERAL (the fallback)
     )
 
+    /** Fallback only: the compiled slug→section map for an older helper that
+     *  doesn't serve a `category`. The primary path is the server category. */
     fun of(slug: String): String = BY_SLUG[slug] ?: GENERAL
 
     /**
-     * Group channels into sections in [ORDER], preserving the input order
-     * within each section (the caller sorts live-first), and dropping empty
-     * sections. Returns `(category, channels)` pairs ready to render with
+     * Group channels into sections by their **server-provided category** — the
+     * durable path. [categoryOf] yields each item's section (callers pass the
+     * helper's `Channel.category`, falling back to [of] only when it's blank).
+     * Known sections render in [ORDER]; any category the app doesn't recognize
+     * (e.g. a future server-side "Government" section) is appended just before
+     * [GENERAL] so it still shows rather than vanishing. Empty sections are
+     * dropped and input order is preserved within each (the caller sorts
+     * live-first). Returns `(category, channels)` pairs ready to render with
      * headers. Pure — unit-tested.
      */
-    fun <T> sectioned(items: List<T>, slugOf: (T) -> String): List<Pair<String, List<T>>> {
-        val byCat = items.groupBy { of(slugOf(it)) }
-        return ORDER.mapNotNull { cat -> byCat[cat]?.let { cat to it } }
+    fun <T> sectionedByCategory(
+        items: List<T>,
+        categoryOf: (T) -> String,
+    ): List<Pair<String, List<T>>> {
+        val byCat = items.groupBy { categoryOf(it).ifBlank { GENERAL } }
+        val known = ORDER.filterNot { it == GENERAL }
+        val unknown = byCat.keys.filterNot { it in ORDER }.sorted()
+        return (known + unknown + GENERAL).mapNotNull { cat -> byCat[cat]?.let { cat to it } }
     }
 }

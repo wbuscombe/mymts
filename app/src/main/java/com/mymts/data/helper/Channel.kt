@@ -13,6 +13,15 @@ data class Channel(
     val slug: String,
     val label: String,
     val kind: String,
+    /**
+     * The picker section this channel belongs to, **assigned by the helper**
+     * (`/api/channels` → `category`). The helper is authoritative, so a channel
+     * added server-side groups correctly with no app rebuild. May be blank only
+     * against an older helper that doesn't serve it — the picker then falls back
+     * to its compiled `ChannelCategory.of(slug)` map. See [ChannelCategory].
+     * Defaults blank for non-picker constructors; the parser always sets it.
+     */
+    val category: String = "",
     val currentUrl: String?,
     val status: Status,
     val lastSuccessAt: String?,

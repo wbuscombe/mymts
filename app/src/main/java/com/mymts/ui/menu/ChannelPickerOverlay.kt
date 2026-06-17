@@ -88,9 +88,13 @@ fun ChannelPickerOverlay(
     val focusSlug = remember(channels, currentSelection) {
         channelToFocus(channels, currentSelection)
     }
-    // Group into category sections in taxonomy order (live-first preserved).
+    // Group into category sections by the helper's server-assigned category
+    // (authoritative — new channels group without an app rebuild); fall back to
+    // the compiled map only if an older helper omits it. Live-first preserved.
     val sections = remember(channels) {
-        ChannelCategory.sectioned(channels) { it.slug }
+        ChannelCategory.sectionedByCategory(channels) { ch ->
+            ch.category.ifBlank { ChannelCategory.of(ch.slug) }
+        }
     }
     val listState = rememberLazyListState()
 
