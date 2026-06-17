@@ -75,12 +75,18 @@ jobs:
 
       # --- signing, gated on secrets (unsigned fallback if unset) ---
       - name: Import macOS signing cert into a keychain (gated)
-        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12 != ''
+        if: runner.os == 'macOS'
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         run: |
+          # Gated: skip when no cert secret is configured (the build stays unsigned).
+          # (secrets.* can't be used in a step `if:`, so the check lives here.)
+          if [ -z "$MACOS_CERT_P12" ]; then
+            echo "no MACOS_CERT_P12 secret — skipping keychain import (unsigned build)"
+            exit 0
+          fi
           # Materialise the base64 .p12 secret into a temp keychain so codesign
           # can find the Developer ID identity. No secret is printed.
           KC="$RUNNER_TEMP/mymts-signing.keychain-db"
