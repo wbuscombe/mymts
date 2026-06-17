@@ -139,9 +139,84 @@ jobs:
           path: tools/desktop/${{ matrix.artifact }}
           if-no-files-found: error
 
+  # --- native Android APK (sideload), built on the same `v*` tag ---
+  android:
+    name: build (android apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirror ci.yml's Android toolchain (ci.yml is NOT modified).
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # Build + sign the release APK. Signing is GATED on the Android keystore
+      # secrets — mirroring the macOS-notarization gating above:
+      #   present -> sign, then verify + attach the SIGNED APK;
+      #   absent  -> build for VALIDATION ONLY, attach NOTHING (an unsigned APK
+      #              won't install, so shipping one is worse than nothing).
+      # The gradle signingConfig reads MYMTS_RELEASE_* from the environment when
+      # app/keystore.properties is absent (CI) and from that file when present
+      # (the operator's local flow — untouched). No secret is ever printed; the
+      # keystore lives only in the ephemeral runner temp and is removed after use.
+      - name: Build + sign release APK (gated on keystore secrets)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "no ANDROID_KEYSTORE_BASE64 secret — building release APK for VALIDATION ONLY."
+            echo "(unsigned APKs don't install, so none is attached; local-sign + attach per the docs.)"
+            ./gradlew :app:assembleRelease --no-daemon
+            echo "ANDROID_SIGNED=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Materialise the keystore into the EPHEMERAL runner temp — never
+          # committed, never echoed; the runner is destroyed after the job.
+          KS="$RUNNER_TEMP/mymts-release.keystore"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KS"
+          # Gradle reads these from env (keystore.properties is absent in CI).
+          export MYMTS_RELEASE_STORE_FILE="$KS"
+          export MYMTS_RELEASE_STORE_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+          export MYMTS_RELEASE_KEY_ALIAS="$ANDROID_KEY_ALIAS"
+          export MYMTS_RELEASE_KEY_PASSWORD="$ANDROID_KEY_PASSWORD"
+          ./gradlew :app:assembleRelease --no-daemon
+          rm -f "$KS"
+          echo "ANDROID_SIGNED=1" >> "$GITHUB_ENV"
+
+      - name: Verify signature + stage the signed APK
+        if: env.ANDROID_SIGNED == '1'
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -name apksigner | sort -V | tail -n1)"
+          # Confirms the APK is properly signed (prints "Verifies"; no secret).
+          "$APKSIGNER" verify --verbose "$APK" | head -n 5
+          VER="${GITHUB_REF_NAME#v}"
+          case "$GITHUB_REF" in refs/tags/*) : ;; *) VER="dev-${GITHUB_SHA::7}" ;; esac
+          cp "$APK" "mymts-${VER}.apk"
+          echo "staged signed APK: mymts-${VER}.apk"
+
+      - name: Upload signed APK (only when signing was active)
+        if: env.ANDROID_SIGNED == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mymts-android-apk
+          path: mymts-*.apk
+          if-no-files-found: error
+
   release:
     name: publish GitHub Release
-    needs: build
+    needs: [build, android]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -169,3 +244,10 @@ jobs:
             - macOS: right-click the app -> Open -> Open (once).
             - Windows: More info -> Run anyway (once).
             Signing/notarization activates automatically once a cert is provided.
+
+            **Android TV app (`mymts-*.apk`)** — attached only when the Android keystore
+            secrets are configured (an unsigned APK won't install). It's a *stock,
+            runtime-configurable* build: on first launch it asks for your helper's LAN
+            address (no rebuild needed). Sideloading needs "unknown sources" enabled;
+            this is not a Play Store distribution. If no APK is attached, the maintainer
+            signs one locally and adds it (see DOWNLOAD-AND-RUN.md).

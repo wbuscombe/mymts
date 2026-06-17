@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## ci(app): build + publish the signed Android APK on release (gated) (2026-06-18)
+
+`release.yml` now builds the native Android APK on every `v*` tag and publishes it to the
+GitHub Release alongside the desktop executables — making a stock, runtime-configurable APK
+actually downloadable (distribution make-or-break #3).
+
+- New `android` job (mirrors `ci.yml`'s toolchain: JDK 17 + Android SDK): `./gradlew
+  :app:assembleRelease`.
+- **Signing GATED on keystore secrets**, mirroring the macOS-notarization gating: with the four
+  `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` /
+  `ANDROID_KEY_PASSWORD` repo secrets present, CI decodes the keystore into the ephemeral runner
+  temp, signs, `apksigner verify`s, and attaches `mymts-<version>.apk`; **absent → builds for
+  validation only and attaches nothing** (an unsigned APK won't install). No secret is ever echoed;
+  the keystore lives only as a secret + the runner temp (removed after use).
+- No gradle change: the signing config already reads `MYMTS_RELEASE_*` from env in CI and from the
+  gitignored `app/keystore.properties` locally — **the operator's local signing flow is untouched**.
+  The CI APK has no baked helper URL (a stock build → first-run setup), so the one file works for anyone.
+- `ci.yml` untouched. Verified locally (`assembleRelease` → `apksigner verify: Verifies`, v1+v2+v3)
+  + workflow-YAML/gating validation; **no tag was cut** (no dud tags). Documented both signing paths
+  (CI-sign vs local-sign + manual-attach) + the sideload install reality in SECURITY-PRACTICES /
+  DOWNLOAD-AND-RUN. Takes effect on the next `v*` tag.
+
 ## fix(helper): generic compose writable data volume — clean-clone crash-loop fixed (2026-06-18)
 
 The backend half of distributability. A fresh clone's generic `helper/docker-compose.yml`
