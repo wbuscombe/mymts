@@ -68,7 +68,9 @@ Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBO
 
 ### 📺 A live video wall
 A configurable grid (independent **rows × columns**, 1–9 tiles — native parity, the same on both
-screens) of public live-TV HLS streams, played in the **native player** (Media3/ExoPlayer on the
+screens) of public live channels — direct-HLS news/sports/weather origins, YouTube-resolved feeds,
+and free **U.S. government** streams (the Senate floor, live Senate committee hearings, House
+committees, and federal-agency briefings) — played in the **native player** (Media3/ExoPlayer on the
 TV; vendored `hls.js` on the web). Click a tile to pick its channel from the honest lineup —
 **live · plays here / live · on the TV wall only / offline** — never a black box pretending to be
 live. On the web, a tile that drops **self-heals**: a transient failure reconnects on a backoff,
