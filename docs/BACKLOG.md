@@ -110,15 +110,26 @@ screen + a Settings "Helper URL" field, reachability-tested against `/health`) *
 operator's configured build resolves out-of-box (no regression). Verified on-device (`.92`). See
 CHANGELOG (2026-06-18) + ARCHITECTURE "Helper-host boundary".
 
-**Distribution items still open** (the make-or-break list, now shorter): publishing a **signed
-release APK** for end users (the keystore exists; nothing is published yet); and a
-**per-deployment channel lineup** (the seed is one operator's curation — a self-hoster gets that
-list until lineup editing is exposed). `versionCode` is now version-derived; signing is implemented.
-The runtime helper-URL config landed (the compile-time blocker). **CLOSED 2026-06-18:** the
-`docker compose up` clean-clone **crash-loop** — the generic `helper/docker-compose.yml` now mounts
-a writable `/data` state volume (the read-only rootfs had nowhere to create the SQLite DB → fixed),
-so `cp .env.example .env && docker compose up` brings up a working keyless helper; verified with a
-local clean-clone bring-up (reproduce → fix → idempotent re-up). See CHANGELOG (2026-06-18).
+**Distribution make-or-break — status.** Three of the four are now closed; the runtime
+helper-URL config (the compile-time blocker), the clean-clone `docker compose up` crash-loop
+(a writable `/data` volume), and **signed-APK publishing** (below) all landed; the remaining open
+item is a **per-deployment channel lineup** (the seed is one operator's curation — a self-hoster
+gets that list until lineup editing is exposed).
+
+**ADDRESSED 2026-06-18 — signed-APK publishing pipeline.** `release.yml` now builds the Android
+APK on every `v*` tag and, **gated on the Android keystore secrets** (present → sign + `apksigner
+verify` + attach `mymts-<version>.apk`; absent → build for validation only, attach nothing), can
+publish a downloadable, *runtime-configurable* stock APK alongside the desktop executables. The
+pipeline is in place; whether CI signs is **the operator's signing-key decision** — either add the
+four `ANDROID_*` repo secrets (CI-sign) or local-sign + manually attach (keystore stays local). See
+SECURITY-PRACTICES (the two paths) + CHANGELOG. The only honest caveat left is *install reality*: a
+sideloaded APK needs "unknown sources" + isn't a Play Store distribution (a deliberate posture for a
+personal/small distribution, not a gap). `versionCode` is version-derived; v1+v2+v3 signing implemented.
+
+**CLOSED 2026-06-18 — clean-clone compose crash-loop.** The generic `helper/docker-compose.yml` now
+mounts a writable `/data` state volume (the read-only rootfs had nowhere to create the SQLite DB →
+fixed), so `cp .env.example .env && docker compose up` brings up a working keyless helper; verified
+with a local clean-clone bring-up (reproduce → fix → idempotent re-up). See CHANGELOG (2026-06-18).
 
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 

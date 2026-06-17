@@ -38,8 +38,10 @@ Three paths, easiest first:
    working **clone-to-running** path: `cd helper && cp .env.example .env && docker
    compose up` brings up the helper on `http://localhost:8091` (migrations + seed on a
    fresh DB; `/health`, `/api/channels`, and the web client at `/app/` all serve,
-   keyless), then point a stock TV APK at it. *(The operator's NAS deploy is the
-   separate `helper/deploy/docker-compose.nas.yml`.)*
+   keyless), then point a stock TV APK at it — the signed `mymts-<version>.apk` is
+   published on the [GitHub Release](https://github.com/wbuscombe/mymts/releases) (a
+   sideload; see [`DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md)). *(The operator's
+   NAS deploy is the separate `helper/deploy/docker-compose.nas.yml`.)*
 
 ---
 
