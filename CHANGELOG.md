@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): generalize the free gov-stream resolver to hearings + federal events (2026-06-17)
+
+Extends the free gov-stream sourcing (no MVPD, no token, no DRM, no page embeds — every
+feed validated live before seeding) to **committee hearings** and **federal-event** briefings.
+Lineup **39 → 49**. All honest-offline between sessions/briefings.
+
+- **U.S. Senate Committee Hearings** (new `cspan` tile) — the real `cspan_resolver`
+  generalization: one first-party schedule (`hearings.xml`, the committee analog of the
+  floor's `convenedSessionStream`) drives the **same** token-free Akamai master shape as the
+  floor. A single aggregate tile that shows whichever Senate committee is live: among today's
+  scheduled hearings it builds each Akamai master and returns the first that is **genuinely
+  live** — the decisive check is the variant's `#EXT-X-ENDLIST` (a finished hearing's master
+  still 200s but its variant is a **frozen VOD**, which is rejected, so an ended hearing is
+  never shown live). Validated live end-to-end (picked the live committee; honest-offline once
+  all the day's hearings ended). Mapped 21 committee comm→streamIDs from the ISVP player.
+- **House committee hearings** (5 new `youtube` tiles, is_live-gated, honest-offline) — the
+  House has no aggregate `.gov` committee feed, so these are the committees' own official
+  YouTube `/live`: Oversight, Judiciary, Appropriations, Armed Services, Financial Services.
+- **Federal-event** briefings (4 new `youtube` tiles) — State Department, Department of War
+  (Pentagon; channel-ID-pinned, churn-proof across the DoD→War rename), Homeland Security,
+  Justice Department. Each verified official (cross-checked against the agency's own `.gov`
+  social directory) with a real briefing track record.
+- **White House** — the seeded `wh.gov/live/playlist.m3u8` direct-HLS is **DEAD** (301→404);
+  re-pointed `white-house-tv` to the official `@WhiteHouse` YouTube live (`hls`→`youtube`). A
+  dead tile fixed, not a duplicate.
+- Resolver: `cspan_resolver` now serves both floor and committee modes (selected by the
+  source's `schedule=committees` marker); committee XML parsed with **defusedxml**; the
+  filename guard widened for letter-suffixed committee codes (`armedA062316`); a bounded,
+  TTL-cached, host-allowlisted (senate.gov + the Senate's own Akamai CDN) candidate probe.
+
+**Recon-omitted (test-and-report):** Senate committees' *own* YouTube channels (partisan
+majority-branded, majority-flip-fragile) — superseded by the neutral first-party ISVP aggregate.
+House `.gov` has no token-free committee/event stream (committees are YouTube-only). The
+entitlement-gated C-SPAN networks remain out of scope. Categorized US News (a dedicated
+**Government** picker section is a logged future refinement — needs native/web taxonomy parity).
+
 ## feat(helper): free C-SPAN/.gov Senate-floor resolver + channel (2026-06-17)
 
 A new `kind='cspan'` resolver for C-SPAN's **free, no-login government livestreams**,

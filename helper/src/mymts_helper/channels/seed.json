@@ -62,8 +62,8 @@
   {
     "slug": "white-house-tv",
     "label": "White House TV",
-    "kind": "hls",
-    "source_url": "https://wh.gov/live/playlist.m3u8"
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@WhiteHouse/live"
   },
   {
     "slug": "newsmax",
@@ -232,5 +232,65 @@
     "label": "U.S. Senate Floor",
     "kind": "cspan",
     "source_url": "https://www.senate.gov/isvp/?type=live&comm=stv"
+  },
+  {
+    "slug": "us-senate-committees",
+    "label": "U.S. Senate Committee Hearings",
+    "kind": "cspan",
+    "source_url": "https://www.senate.gov/isvp/?type=live&schedule=committees"
+  },
+  {
+    "slug": "us-house-oversight",
+    "label": "House Oversight Committee",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@OversightandGovernmentReform/live"
+  },
+  {
+    "slug": "us-house-judiciary",
+    "label": "House Judiciary Committee",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@USHouseJudiciaryGOP/live"
+  },
+  {
+    "slug": "us-house-appropriations",
+    "label": "House Appropriations Committee",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/channel/UCMaSlF09S0fpoRshS2t_7XA/live"
+  },
+  {
+    "slug": "us-house-armed-services",
+    "label": "House Armed Services Committee",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@HouseArmedServices/live"
+  },
+  {
+    "slug": "us-house-financial-services",
+    "label": "House Financial Services Committee",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@USHouseFSC/live"
+  },
+  {
+    "slug": "us-state-dept",
+    "label": "U.S. State Department",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@StateDept/live"
+  },
+  {
+    "slug": "us-dept-of-war",
+    "label": "Department of War",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/channel/UCpuofAxlrUAgnu7QEwKQwxw/live"
+  },
+  {
+    "slug": "us-dhs",
+    "label": "Homeland Security",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@ushomelandsecurity/live"
+  },
+  {
+    "slug": "us-doj",
+    "label": "Justice Department",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@TheJusticeDepartment/live"
   }
 ]

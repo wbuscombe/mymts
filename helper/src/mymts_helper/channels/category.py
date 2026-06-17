@@ -79,6 +79,25 @@ _BY_SLUG: dict[str, str] = {
     # The entitlement-gated C-SPAN linear networks (Adobe Pass) are NOT sourced.
     "us-house-floor": US_NEWS,
     "us-senate-floor": US_NEWS,
+    # --- 2026-06 free gov-stream generalization: committee hearings + federal events
+    #     (all honest-offline between sessions/briefings; all free, token-free,
+    #     DRM-free, verified live before seeding). Senate committee hearings ride the
+    #     SAME `cspan` resolver via the committee hearings.xml schedule (a single
+    #     aggregate tile that shows whichever Senate committee is live); House
+    #     committees + federal agencies stream on their own official YouTube /live
+    #     (kind='youtube', is_live-gated). Grouped under US News for now; a dedicated
+    #     "Government" picker section is a logged future refinement (needs native
+    #     ChannelCategory + web CATEGORY_ORDER parity). ---
+    "us-senate-committees": US_NEWS,
+    "us-house-oversight": US_NEWS,
+    "us-house-judiciary": US_NEWS,
+    "us-house-appropriations": US_NEWS,
+    "us-house-armed-services": US_NEWS,
+    "us-house-financial-services": US_NEWS,
+    "us-state-dept": US_NEWS,
+    "us-dept-of-war": US_NEWS,
+    "us-dhs": US_NEWS,
+    "us-doj": US_NEWS,
     "euronews": GLOBAL_NEWS,
     "wion": GLOBAL_NEWS,
     "ndtv": GLOBAL_NEWS,
