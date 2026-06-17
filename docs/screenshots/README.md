@@ -23,7 +23,7 @@ screenshots show exactly that.
 | `menu.png` | The **native-style side menu** (the gear opens it) — a CHANNELS list (one row per slot) + WALL actions (Settings, Resync), mirroring the TV app's MenuOverlay (the old flat WALL SETTINGS modal is gone). |
 | `settings.png` | The settings modal (reached from the side menu) — grid rows×cols (**2×3 default**), feed width/size/recency, feed-source toggles **grouped by category**, the **captions-off** toggle, ticker speed/motion, sports-league toggles. |
 | `slot-controls.png` | The **per-slot controls** (click a tile / a menu channel row) — Channel · Audio · Reconnect · Close, the web analog of the native SlotControlsOverlay. No captions row (these streams' captions are burned-in / unremovable). |
-| `channel-picker.png` | The channel picker (opened from a slot's Channel row) — the channel lineup **sectioned by category** (Sports / US News / Global News / …) with the honest **live / on-the-TV-wall-only / offline** legend. |
+| `channel-picker.png` | The channel picker (opened from a slot's Channel row) — the channel lineup **sectioned by category** (Sports / US News / Global News / …) with the honest **live / on-the-TV-wall-only / offline** legend. The US News section now includes the free **government** feeds (Senate floor, live Senate committee hearings, House committees, federal agencies). |
 | `feed-story-highlighted.png` | A feed headline **selected** (accent-bar highlight) — the highlight→select interaction, keyboard/remote-friendly. |
 | `feed-story-expanded.png` | The **news-story detail** (expand) — the item's own source / time / title / summary (inert plain text) + a "Read at source ↗" link-out. MyMTS never fetches the article itself (A1). |
 
