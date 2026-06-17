@@ -25,6 +25,16 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
+## Premium DRM sports feeds — BLOCKED by DRM, not buildable as wall feeds (2026-06-17)
+
+**Structural "won't-do," not a deferred feature.** The operator holds legitimate paid subscriptions (MLB.tv / MLB Network, Marquee, CHSN via Comcast, Hulu Live TV incl. NFL Network / ESPN, NBA League Pass). The blocker is **NOT authentication** — it's **DRM** (Widevine / FairPlay), the standard for premium sports. Ingesting these into the wall's generic players (hls.js / ExoPlayer) would require **circumventing the DRM** to obtain decryption keys — DMCA §1201 anti-circumvention + ToS violation — which is **out of scope and will not be built**. The subscriptions do not change this; it's a legal/structural barrier, not a missing feature.
+
+**Legit-buildable adjacent ideas (if ever pursued):**
+- **(a) Free YouTube shoulder content** from these networks — highlights / pressers / studio shows, **not** live games — via the existing yt-dlp resolver (`kind='youtube'`, gated on `is_live`).
+- **(b) Schedule / score surfacing** in the ticker or feed for the operator's teams — sports *awareness* on the wall without DRM video. Candidate integration with the operator's **Rabbit Ears** sports tracker.
+
+Recorded so the "why aren't my paid sports on the wall?" question has a standing, honest answer (DRM, not a TODO), and the no-DRM-circumvention line stays explicit.
+
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 
 **Done.** Automated **Playwright** capture of the demo (phantom-mode) web wall → `docs/screenshots/web/` (the wall, markets/sports/news ticker, settings, channel picker), a manual `workflow_dispatch` CI job that uploads the gallery as an **artifact** (no auto-committed binaries), a `docs/screenshots/device/` dir with **labeled placeholders + a filename spec** for the operator's native-TV hero shots, and the README rewritten into an honest showcase (hero shot, feature highlights w/ inline screenshots, mermaid architecture, the engineering story, the 60-second demo quickstart). Topology-clean, claims true-to-shipped, secret-free (demo helper only). See CHANGELOG (2026-06-13, Campaign 4), `tools/screenshots/`, `docs/screenshots/`.
