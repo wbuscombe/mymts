@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(helper): generic compose writable data volume — clean-clone crash-loop fixed (2026-06-18)
+
+The backend half of distributability. A fresh clone's generic `helper/docker-compose.yml`
+**crash-looped**: the container is `read_only: true` with no writable volume, so the helper's
+SQLite init failed — `_default_data_dir()` found `/data` unwritable and fell back to
+`~/.local/share` (= `/app/.local/share`), also on the read-only rootfs → `OSError: Read-only
+file system` → restart loop. (Reproduced locally: `Restarting (1)`, the exact error.)
+
+- The generic compose now mounts a **writable named volume at `/data`** (`mymts-helper-data`)
+  + sets `DATA_DIR=/data`; the Dockerfile already chowns `/data` to uid 10001, so a fresh
+  volume is writable by the non-root user with no host-side step. It also bind-mounts the
+  repo `web/` at `/app/web` (read-only) + sets `WEB_CLIENT_DIR`, so `/app/` serves.
+- **Clone-to-running**: `cd helper && cp .env.example .env && docker compose up` →
+  migrations run on a fresh DB (→ head 004), `seed.json` loads (49 channels + 21 feed
+  sources), and `/health` + `/api/channels` + the web client at `/app/` all serve, **keyless**.
+- Kept hardened: `read_only` rootfs, non-root (10001), `cap_drop: [ALL]`, no-new-privileges,
+  digest-pinned image; the only writable paths are the `/data` volume + the `/tmp` tmpfs.
+- **Verified with a local clean-clone bring-up** (Mac/colima, not the NAS): reproduced the
+  crash-loop on the old compose → fixed compose comes up clean → idempotent re-up (volume
+  reused, migrations NO-OP at head, seed idempotent). The DB lands on `/data` owned by uid
+  10001. Added `test_data_dir.py` pinning the `/data`-writable → fallback resolution.
+- The operator's `deploy/docker-compose.nas.yml` is **untouched** (this is the generic path only).
+
 ## feat(app): runtime helper-URL config — first-run setup + Settings field (2026-06-18)
 
 Closes the #1 distribution blocker. The app resolved its helper address from the

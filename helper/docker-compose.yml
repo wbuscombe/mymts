@@ -1,14 +1,22 @@
-# Local-only stand-up for development. NOT the NAS deploy file — Stage 2 will
-# add the NAS-side compose with bind mounts and the operator's standard labels.
+# Generic clean-clone / self-host stand-up. From a fresh clone:
+#
+#     cd helper && cp .env.example .env && docker compose up --build
+#
+# brings up a WORKING helper on http://localhost:8091 — migrations run on a fresh
+# DB, seed.json loads, and /health + /api/channels + the web client (/app/) all
+# serve, KEYLESS (channels + feed need no API keys; the YouTube / cspan / .gov
+# resolvers are keyless). This is the GENERIC path; the operator's NAS deploy is
+# `deploy/docker-compose.nas.yml` (HTTPS, host bind mounts) — a SEPARATE file this
+# one never touches.
 #
 # Hard isolation choices (Trust Bar A2 / A4):
-#   - Container runs read-only (helper writes nothing to disk in v1; if a stage
-#     needs writes, it bind-mounts a specific path).
-#   - All capabilities dropped.
-#   - no-new-privileges so suid escalation cannot happen mid-flight.
+#   - read-only rootfs; the ONLY writable paths are the named DATA volume (/data,
+#     the SQLite state) and a small /tmp tmpfs. Everything else is immutable.
+#   - All capabilities dropped; no-new-privileges (no suid escalation mid-flight);
+#     non-root user (10001); image pinned by digest in the Dockerfile.
 #   - cpus/memory caps so a runaway never starves the host.
-#   - Unrelated services on the host are NEVER referenced or networked into;
-#     the helper runs on its own bridge network only — standing rule.
+#   - The helper runs on its own bridge network only; it NEVER references or
+#     networks into other services on the host — standing rule.
 
 services:
   helper:
@@ -34,6 +42,30 @@ services:
       PHANTOM_MODE: ${PHANTOM_MODE:-0}
       PORT: 8091
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # SQLite state lives on the writable named volume mounted below. Without a
+      # writable data dir the read-only rootfs has nowhere to create the DB on
+      # first run — which is exactly what made a clean clone crash-loop.
+      DATA_DIR: /data
+      # Serve the LAN web client at /app/ from the repo's web/ tree (mounted
+      # read-only below). Set WEB_CLIENT_DIR= (empty) in .env to disable it.
+      WEB_CLIENT_DIR: ${WEB_CLIENT_DIR:-/app/web}
+    volumes:
+      # Writable, Docker-managed STATE volume — the fix for the clean-clone
+      # crash-loop. The Dockerfile chowns /data to uid 10001, so Docker's
+      # initialize-from-image rule makes a FRESH volume writable by the non-root
+      # user on first start, with no host-side privileged step.
+      - mymts-helper-data:/data:rw
+      # The static LAN web client (repo-root web/, a sibling of helper/), mounted
+      # read-only. Inert static files only — no secret, never written to.
+      - ../web:/app/web:ro
     ports:
-      # Local-dev only; the NAS compose binds to an internal network instead.
+      # Local-dev / self-host: HTTP on the LAN. HTTPS is the optional TLS upgrade
+      # — set the SSL_* trio + mount the cert/key (see .env.example), as the NAS
+      # deploy does on :8443. The just-shipped runtime helper-URL config accepts
+      # http://, so a stock TV APK can point straight at this.
       - "8091:8091"
+
+volumes:
+  # Docker-managed named volume for the helper's SQLite state. Survives
+  # `docker compose down` (use `down -v` to wipe it for a true fresh first-run).
+  mymts-helper-data:
