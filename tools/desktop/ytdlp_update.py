@@ -27,12 +27,15 @@ is pure and unit-tested.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib
 import importlib.abc
 import importlib.machinery
 import io
 import json
 import logging
+import re
+import shutil
 import sys
 import time
 import zipfile
@@ -106,12 +109,26 @@ def should_check(now: float, last_checked: float | None, ttl_seconds: float) -> 
     return (now - last_checked) >= ttl_seconds
 
 
+# A version string we'll trust as a filesystem path component. yt-dlp versions
+# are date-based (e.g. 2026.6.9); reject anything with a separator / traversal.
+_SAFE_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.+_-]{0,31}$")
+
+
+def is_safe_version(version: str) -> bool:
+    """True iff `version` is safe to use as a single path component (no slash,
+    backslash, '..', or os-sep). PyPI metadata is attacker-influenced if PyPI is
+    compromised, so the version (used to build the install dir) is validated."""
+    if not isinstance(version, str) or not _SAFE_VERSION_RE.match(version):
+        return False
+    return ".." not in version and "/" not in version and "\\" not in version
+
+
 def verify_sha256(data: bytes, expected_hex: str) -> bool:
-    """Constant-ish comparison of the data's SHA256 against the expected hex."""
+    """Compare the data's SHA256 against the expected hex (constant-time)."""
     if not expected_hex:
         return False
     actual = hashlib.sha256(data).hexdigest()
-    return actual.lower() == expected_hex.strip().lower()
+    return hmac.compare_digest(actual.lower(), expected_hex.strip().lower())
 
 
 def select_preferred(frozen_version: str | None, installed: dict[str, Path]) -> str | None:
@@ -191,12 +208,15 @@ def _frozen_ytdlp_version() -> str | None:
 
 
 def _unzip_wheel(data: bytes, dest: Path) -> None:
-    """Extract a wheel (zip) into `dest`. Guards against path traversal."""
+    """Extract a wheel (zip) into `dest`. Guards against path traversal — every
+    member must land AT or UNDER `dest` (anchored, so a sibling-prefix dir like
+    `<dest>-evil` can't pass)."""
     dest.mkdir(parents=True, exist_ok=True)
+    base = dest.resolve()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         for member in zf.namelist():
             target = (dest / member).resolve()
-            if not str(target).startswith(str(dest.resolve())):
+            if target != base and base not in target.parents:
                 raise ValueError(f"unsafe wheel path: {member}")
         zf.extractall(dest)
 
@@ -258,6 +278,9 @@ def ensure_current_ytdlp(
             return version
         log.warning("ytdlp_external_bad_import", extra={"version": version})
         _uninstall_finders()  # discard a copy that won't import -> frozen wins
+        # Self-clean: remove the broken install so we don't re-validate /
+        # re-download the same incompatible copy on every launch.
+        shutil.rmtree(ext_root, ignore_errors=True)
         return None
 
     try:
@@ -278,6 +301,9 @@ def ensure_current_ytdlp(
             except Exception as e:  # noqa: BLE001 — offline / parse error -> keep frozen/installed
                 log.info("ytdlp_check_skipped", extra={"reason": str(e)[:120]})
                 rel = None
+            if rel is not None and not is_safe_version(rel[0]):
+                log.warning("ytdlp_unsafe_version", extra={"version": rel[0][:40]})
+                rel = None  # refuse a version we won't use as a path component
             if rel is not None:
                 version, url, sha = rel
                 current_best = active or frozen_version

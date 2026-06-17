@@ -52,7 +52,48 @@ jobs:
         working-directory: tools/desktop
         run: pyinstaller mymts-helper.spec --noconfirm --clean
 
+      # --- smoke test: the artifact must actually RUN, not just build (catches
+      #     missing runtime deps / hidden imports — the Linux risk especially) ---
+      - name: Smoke test (headless serve + /health)
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            macOS)   BIN="tools/desktop/dist/MyMTS.app/Contents/MacOS/MyMTS" ;;
+            Windows) BIN="tools/desktop/dist/MyMTS/MyMTS.exe" ;;
+            *)       BIN="tools/desktop/dist/MyMTS/MyMTS" ;;
+          esac
+          MYMTS_HEADLESS=1 MYMTS_NO_YTDLP_UPDATE=1 "$BIN" &
+          PID=$!
+          ok=""
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8091/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          kill "$PID" 2>/dev/null || true
+          [ -n "$ok" ] || { echo "SMOKE FAILED: the bundle did not serve /health"; exit 1; }
+          echo "smoke OK: the bundled app serves /health headless"
+
       # --- signing, gated on secrets (unsigned fallback if unset) ---
+      - name: Import macOS signing cert into a keychain (gated)
+        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12 != ''
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          # Materialise the base64 .p12 secret into a temp keychain so codesign
+          # can find the Developer ID identity. No secret is printed.
+          KC="$RUNNER_TEMP/mymts-signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
       - name: Sign + notarize (macOS, gated)
         if: runner.os == 'macOS'
         env:
@@ -61,9 +102,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: bash tools/desktop/sign-macos.sh tools/desktop/dist/MyMTS.app
-        # NOTE: full signing in CI also requires importing the Developer ID cert
-        # into the runner keychain — a follow-up when a cert exists. With no
-        # identity, sign-macos.sh leaves the adhoc build and exits 0.
+        # With no MACOS_CERT_P12 secret the keychain step is skipped and
+        # sign-macos.sh leaves the adhoc build (exit 0) — an honest unsigned build.
 
       - name: Sign (Windows, gated)
         if: runner.os == 'Windows'

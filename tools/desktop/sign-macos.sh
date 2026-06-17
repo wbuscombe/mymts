@@ -47,7 +47,10 @@ echo "==> codesign (hardened runtime) with a Developer ID identity"
 codesign --deep --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
-ZIP="$(dirname "$APP")/MyMTS.zip"
+# Notarization needs a zip of the .app — a TEMP file (not left in dist/, where the
+# packaging step writes the real artifact). Cleaned up on exit.
+ZIP="$(mktemp -t mymts-notarize).zip"
+trap 'rm -f "$ZIP"' EXIT
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 if [ -n "${AC_API_KEY_ID:-}" ] && [ -n "${AC_API_KEY_PATH:-}" ] && [ -n "${AC_API_ISSUER:-}" ]; then

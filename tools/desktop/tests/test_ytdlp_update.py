@@ -90,6 +90,50 @@ def test_parse_release_rejects_non_official_or_missing():
     assert U.parse_release({}) is None
 
 
+@pytest.mark.parametrize(
+    "version,ok",
+    [
+        ("2026.6.9", True), ("2026.10.1", True), ("1.0+build", True),
+        ("../evil", False), ("..", False), ("/abs/evil", False),
+        ("a/../../b", False), ("a\\b", False), ("", False), ("x" * 40, False),
+    ],
+)
+def test_is_safe_version(version, ok):
+    assert U.is_safe_version(version) is ok
+
+
+def test_unzip_wheel_rejects_traversal_and_sibling_prefix(tmp_path):
+    dest = tmp_path / "1.0"
+    # member with .. -> rejected
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("../escape.txt", "x")
+    with pytest.raises(ValueError, match="unsafe"):
+        U._unzip_wheel(buf.getvalue(), dest)
+    # absolute member -> rejected
+    buf2 = io.BytesIO()
+    with zipfile.ZipFile(buf2, "w") as zf:
+        zf.writestr("/etc/evil", "x")
+    with pytest.raises(ValueError, match="unsafe"):
+        U._unzip_wheel(buf2.getvalue(), dest)
+
+
+def test_ensure_refuses_unsafe_pypi_version(tmp_path, restore_imports):
+    wheel = _fake_wheel("2099.9.9")
+    sha = hashlib.sha256(wheel).hexdigest()
+    url = "https://files.pythonhosted.org/packages/yt_dlp-x-py3-none-any.whl"
+
+    def fake_get(u):
+        # PyPI reports a traversal version string
+        return json.dumps(_pypi_json("../../../evil", url, sha)).encode()
+
+    assert U.ensure_current_ytdlp(tmp_path, now=1000.0, http_get=fake_get) is None
+    # No install dir was created (the unsafe version was refused before any unzip).
+    ytdlp_dir = tmp_path / "ytdlp"
+    version_dirs = [p for p in ytdlp_dir.iterdir() if p.is_dir()] if ytdlp_dir.exists() else []
+    assert version_dirs == []
+
+
 def test_select_preferred():
     inst = {"2026.3.17": object(), "2026.5.1": object()}
     assert U.select_preferred("2026.1.1", inst) == "2026.5.1"     # newest beats frozen

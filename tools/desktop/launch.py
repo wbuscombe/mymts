@@ -140,13 +140,34 @@ class HelperServer:
         )
         self.server = uvicorn.Server(config)
         self._thread: threading.Thread | None = None
+        self.error: BaseException | None = None  # set if serve() fails (e.g. bind)
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="mymts-helper", daemon=True)
         self._thread.start()
 
     def _run(self) -> None:
-        asyncio.run(self.server.serve())
+        try:
+            asyncio.run(self.server.serve())
+        except BaseException as e:  # noqa: BLE001 — capture a bind/startup failure
+            self.error = e
+
+    def wait_ready(self, health_url: str, timeout_s: float = 40.0) -> bool:
+        """Return True once /health answers; False if the server thread DIES
+        (e.g. the port couldn't be bound) or never becomes ready in time — so a
+        failed server is surfaced instead of a silent dead tray."""
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            if self.error is not None or (self._thread is not None and not self._thread.is_alive()):
+                return False
+            try:
+                with urllib.request.urlopen(health_url, timeout=1.0) as r:  # noqa: S310 — own localhost url
+                    if r.status == 200:
+                        return True
+            except Exception:  # noqa: BLE001 — not up yet
+                pass
+            time.sleep(0.2)
+        return False
 
     def stop(self) -> None:
         self.server.should_exit = True  # uvicorn polls this and shuts down cleanly
@@ -156,21 +177,6 @@ class HelperServer:
     def join(self) -> None:
         if self._thread is not None:
             self._thread.join()
-
-
-def _open_when_ready(wall_url: str, health_url: str, timeout_s: float = 40.0) -> None:
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        try:
-            # health_url is our own hardcoded http://127.0.0.1 endpoint (not user input).
-            with urllib.request.urlopen(health_url, timeout=1.5) as r:  # noqa: S310
-                if r.status == 200:
-                    webbrowser.open(wall_url)
-                    return
-        except Exception:  # noqa: BLE001 — server not up yet
-            pass
-        time.sleep(0.4)
-    webbrowser.open(wall_url)
 
 
 def _make_icon():
@@ -194,7 +200,10 @@ def _run_tray(srv: HelperServer, wall_url: str) -> None:
         webbrowser.open(wall_url)
 
     def on_quit(icon, item):  # noqa: ARG001
-        srv.stop()
+        # Non-blocking: signal uvicorn to exit, then dismiss the tray immediately
+        # (don't join the server thread on the UI thread). main() joins after the
+        # tray loop returns; the daemon thread is reaped on process exit regardless.
+        srv.server.should_exit = True
         icon.stop()
 
     menu = pystray.Menu(
@@ -247,13 +256,29 @@ def main() -> None:
     print(f"[MyMTS] web client: {web_dir}", flush=True)
     print(f"[MyMTS] wall       : {wall_url}", flush=True)
 
+    # Surface a failed start (e.g. the port couldn't be bound) instead of a silent
+    # dead tray / a browser opened on nothing.
+    if not srv.wait_ready(health_url):
+        print(f"[MyMTS] FATAL: the helper failed to start: {srv.error or 'timed out'}", flush=True)
+        srv.stop()
+        sys.exit(1)
+
     if _tray_available():
-        # Desktop: open the browser once, then own the main thread with the tray.
-        threading.Thread(
-            target=_open_when_ready, args=(wall_url, health_url), daemon=True
-        ).start()
+        # Desktop: the server is up — open the browser once, then own the main
+        # thread with the tray. If the tray backend fails to initialise at
+        # RUNTIME (imports but can't start), fall back to headless rather than crash.
+        webbrowser.open(wall_url)
         print("[MyMTS] tray mode — use the menu-bar / tray icon to Open or Quit.", flush=True)
-        _run_tray(srv, wall_url)
+        try:
+            _run_tray(srv, wall_url)
+        except Exception as e:  # noqa: BLE001 — tray runtime failure -> headless fallback
+            print(f"[MyMTS] tray unavailable ({e}); serving headless. Ctrl-C to quit.", flush=True)
+            try:
+                srv.join()
+            except KeyboardInterrupt:
+                srv.stop()
+        else:
+            srv.stop()  # tray quit -> graceful server shutdown
     else:
         # Headless: foreground server, no tray, no auto-browser.
         print(f"[MyMTS] headless mode — open {wall_url} in a browser. Ctrl-C to quit.", flush=True)

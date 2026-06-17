@@ -24,8 +24,19 @@ if (-not $env:WINDOWS_CERT_PFX -or -not (Test-Path $env:WINDOWS_CERT_PFX)) {
 $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue)
 if (-not $signtool) { Write-Error "signtool.exe not found (install the Windows SDK)"; exit 1 }
 
-Write-Host "==> signtool sign (+ RFC3161 timestamp)"
-& signtool sign /f $env:WINDOWS_CERT_PFX /p $env:WINDOWS_CERT_PASSWORD `
-    /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $Exe
-& signtool verify /pa $Exe
-Write-Host "==> signed."
+# Import the PFX into the current-user store and sign by THUMBPRINT, so the
+# password is never passed on a command line (no process-argv exposure).
+$securePwd = ConvertTo-SecureString $env:WINDOWS_CERT_PASSWORD -AsPlainText -Force
+$cert = Import-PfxCertificate -FilePath $env:WINDOWS_CERT_PFX `
+    -CertStoreLocation Cert:\CurrentUser\My -Password $securePwd
+try {
+    Write-Host "==> signtool sign (+ RFC3161 timestamp)"
+    & signtool sign /sha1 $cert.Thumbprint `
+        /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $Exe
+    & signtool verify /pa $Exe
+    Write-Host "==> signed."
+}
+finally {
+    # Remove the imported cert from the store after signing.
+    Remove-Item -Path ("Cert:\CurrentUser\My\" + $cert.Thumbprint) -ErrorAction SilentlyContinue
+}
