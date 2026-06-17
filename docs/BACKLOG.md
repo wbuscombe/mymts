@@ -100,6 +100,22 @@ None are blockers — the shipped feeds are honest + validated; these are qualit
   fix when it happens (the same kind-authoritative upsert used elsewhere). Not a stability risk
   now — flagged so the maintenance is expected, not a surprise.
 
+## ~~Native helper URL was compile-time only (the #1 distribution blocker)~~ — CLOSED (2026-06-18)
+
+**Closed.** The app resolved its helper address from the compile-time `BuildConfig.HELPER_BASE_URL`
+(only overridable by an adb extra), so every user had to rebuild the APK with their own URL. Now
+the URL is resolved at **runtime** (`HelperUrl.resolve`): a persisted user value (a first-run setup
+screen + a Settings "Helper URL" field, reachability-tested against `/health`) **>** the adb extra
+**>** the configured BuildConfig default. A stock APK points at any helper with no rebuild; the
+operator's configured build resolves out-of-box (no regression). Verified on-device (`.92`). See
+CHANGELOG (2026-06-18) + ARCHITECTURE "Helper-host boundary".
+
+**Distribution items still open** (the make-or-break list, now shorter): publishing a **signed
+release APK** for end users (the keystore exists; nothing is published yet); the `docker compose up`
+DB **crash-loop** on a fresh self-host (helper still needs the documented run path); and a
+**per-deployment channel lineup** (the seed is one operator's curation — a self-hoster gets that
+list until lineup editing is exposed). `versionCode` is now version-derived; signing is implemented.
+
 ## ~~Screenshot gallery + victory-lap README (Campaign 4 — the showcase)~~ — DONE (2026-06-13)
 
 **Done.** Automated **Playwright** capture of the demo (phantom-mode) web wall → `docs/screenshots/web/` (the wall, markets/sports/news ticker, settings, channel picker), a manual `workflow_dispatch` CI job that uploads the gallery as an **artifact** (no auto-committed binaries), a `docs/screenshots/device/` dir with **labeled placeholders + a filename spec** for the operator's native-TV hero shots, and the README rewritten into an honest showcase (hero shot, feature highlights w/ inline screenshots, mermaid architecture, the engineering story, the 60-second demo quickstart). Topology-clean, claims true-to-shipped, secret-free (demo helper only). See CHANGELOG (2026-06-13, Campaign 4), `tools/screenshots/`, `docs/screenshots/`.

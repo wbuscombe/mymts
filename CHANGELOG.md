@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(app): runtime helper-URL config — first-run setup + Settings field (2026-06-18)
+
+Closes the #1 distribution blocker. The app resolved its helper address from the
+compile-time `BuildConfig.HELPER_BASE_URL` (only overridable by an adb extra), so every
+user had to **rebuild the APK** with their own helper URL. Now it's resolved at **runtime**
+(`HelperUrl.resolve`) through a precedence chain — a user-set, persisted value **>** the adb
+`helper` extra **>** the BuildConfig default (used only when actually configured at build time,
+a new `HELPER_URL_CONFIGURED` flag; a stock APK's localhost fallback is not a resolution).
+
+- **First-run setup** (`HelperSetupScreen`): shown only when nothing resolves (a stock APK);
+  a TV/leanback URL field + a bounded `/health` reachability test that validates the address
+  is actually a MyMTS helper (a `build_sha` must be present — not a bare 200) **before** it
+  persists. Never a blank/broken wall.
+- **Settings → "Helper URL"** reuses the same screen as an editor (reachability-tested);
+  saving re-resolves the wall reactively. Input accepts host / host:port / full URL and never
+  silently forces https.
+- The operator's configured build resolves out-of-box and skips setup — **no regression**;
+  the adb extra still works.
+
+**Verified on-device (`.92`)**: operator build loads the wall directly; the Settings field
+opens pre-filled, a bad address fails the reachability test clearly (wall intact, not persisted),
+a valid one saves + reconnects, and the value survives a cold relaunch. `versionCode` unchanged
+(still the version-derived `102`); WallSettings/panel-fit locked levers untouched.
+
 ## feat(app): native picker groups by server-authoritative category (2026-06-18)
 
 Closes the native channel-menu drift. The TV picker grouped by a **compiled** slug→section

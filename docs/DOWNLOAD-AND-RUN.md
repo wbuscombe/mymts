@@ -76,4 +76,7 @@ with the `MYMTS_HEADLESS=1` environment variable.
 
 This desktop app runs the **web** wall. The Android TV app (the 10-foot couch
 experience on a TV) and self-hosting the backend as a service are separate paths —
-see the main `README.md`.
+see the main `README.md`. The TV app no longer has to be rebuilt with your helper
+address baked in: on first run a **stock APK asks for your helper's LAN address**
+(reachability-tested before it saves), and you can change it any time under
+**Settings → "Helper URL"**.

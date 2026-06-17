@@ -39,7 +39,7 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 ### App (TV side)
 - No credentials shipped in the APK.
 - Requests only the OS permissions it actually needs.
-- Release signing is implemented — a v1+v2+v3 `signingConfig` sourced from a **gitignored** `app/keystore.properties` (modeled on `app/keystore.properties.example`), an `IS_RELEASE_SIGNED` BuildConfig flag, and a deploy guard that refuses to push a debug-signed APK. *(The operator supplies the keystore; publishing a signed release build and bumping the pinned `versionCode` remain on the open distribution list.)*
+- Release signing is implemented — a v1+v2+v3 `signingConfig` sourced from a **gitignored** `app/keystore.properties` (modeled on `app/keystore.properties.example`), an `IS_RELEASE_SIGNED` BuildConfig flag, and a deploy guard that refuses to push a debug-signed APK. *(The operator supplies the keystore. `versionCode` is now version-derived and the helper URL is runtime-configurable — so a stock APK no longer needs a rebuild; publishing a signed release build for end users is what remains on the open distribution list.)*
 
 ### Desktop executable (packaged app — `tools/desktop/`)
 - **Localhost-only bind.** The packaged app serves the helper on `127.0.0.1` (a

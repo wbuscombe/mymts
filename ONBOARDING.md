@@ -48,7 +48,10 @@ You can also open the **web client** at <http://localhost:8091/app>.
 
 **2. Build + run the TV app**, pointed at your local helper.
 The app's helper URL defaults to `http://localhost:8091`, so no config is needed
-for the demo. On an **emulator**, the host's `localhost` is `10.0.2.2`, so pass:
+for the demo. *(A **stock** build with no configured URL instead shows a one-time
+first-run setup screen to enter + reachability-test a helper address — you can also
+change it any time under Settings → "Helper URL"; no rebuild needed.)* On an
+**emulator**, the host's `localhost` is `10.0.2.2`, so pass:
 ```bash
 # from repo root, with an Android TV emulator running:
 ./gradlew :app:installDebug

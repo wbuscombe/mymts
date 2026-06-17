@@ -379,7 +379,7 @@ Result is capped at `tileCount`. If fewer than `tileCount` channels resolve acro
 
 ### Helper-host boundary
 
-The wall's only inbound is the helper at `BuildConfig.HELPER_BASE_URL` (sourced from `MYMTS_HELPER_BASE_URL` in `gradle.properties`). `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host on the wall is HTTPS-only by Android policy. TLS to the helper is deferred to Stage 6 hardening (with operator-issued internal-CA pinning); documented in `THREAT-MODEL.md T-T4`.
+The wall's only inbound is the helper, whose base URL is resolved at **runtime** (2026-06-18, `HelperUrl.resolve`) through a precedence chain, first valid wins: a user-set, persisted value (the first-run setup screen / the Settings "Helper URL" field, reachability-tested against `/health`) **>** an adb `helper` intent-extra **>** the compile-time `BuildConfig.HELPER_BASE_URL` — the last used only when actually configured at build time (`BuildConfig.HELPER_URL_CONFIGURED`; a stock APK's `localhost` demo fallback is not a resolution). This closed the compile-time-only blocker: a **stock APK can be pointed at any helper with no rebuild**, while the operator's configured build (`MYMTS_HELPER_BASE_URL` in `gradle.properties` / `local.properties`) resolves out-of-box and skips setup. `network_security_config.xml` allows cleartext **only** for `<LAN_IP>`; every other host on the wall is HTTPS-only by Android policy. TLS to the helper is deferred to Stage 6 hardening (with operator-issued internal-CA pinning); documented in `THREAT-MODEL.md T-T4`.
 
 ## 10. Stage 5 — in-app menu + channel/lineup control
 
