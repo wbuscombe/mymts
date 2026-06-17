@@ -20,8 +20,10 @@ screenshots show exactly that.
 | `ticker-markets.png` | The markets ticker — indices / FX / gold / oil / yield / crypto, each with the honest `SAMPLE` tag (the demo poller isn't started, so every quote is sample). |
 | `ticker-sports.png` | The sports ticker — team game cards (MLB / NBA / NHL) with the ESPN-style league markers + status blocks, `sample`-tagged. |
 | `ticker-news.png` | News in the ticker (the 3rd mode) — source-labeled headline cards. |
-| `settings.png` | The settings modal — grid rows×cols, feed width/size/recency, source toggles, ticker speed, sports-league toggles. |
-| `channel-picker.png` | The channel picker — the real channel lineup with the honest **live / on-the-TV-wall-only / offline** legend. |
+| `menu.png` | The **native-style side menu** (the gear opens it) — a CHANNELS list (one row per slot) + WALL actions (Settings, Resync), mirroring the TV app's MenuOverlay (the old flat WALL SETTINGS modal is gone). |
+| `settings.png` | The settings modal (reached from the side menu) — grid rows×cols (**2×3 default**), feed width/size/recency, feed-source toggles **grouped by category**, the **captions-off** toggle, ticker speed/motion, sports-league toggles. |
+| `slot-controls.png` | The **per-slot controls** (click a tile / a menu channel row) — Channel · Audio · Reconnect · Close, the web analog of the native SlotControlsOverlay. No captions row (these streams' captions are burned-in / unremovable). |
+| `channel-picker.png` | The channel picker (opened from a slot's Channel row) — the channel lineup **sectioned by category** (Sports / US News / Global News / …) with the honest **live / on-the-TV-wall-only / offline** legend. |
 | `feed-story-highlighted.png` | A feed headline **selected** (accent-bar highlight) — the highlight→select interaction, keyboard/remote-friendly. |
 | `feed-story-expanded.png` | The **news-story detail** (expand) — the item's own source / time / title / summary (inert plain text) + a "Read at source ↗" link-out. MyMTS never fetches the article itself (A1). |
 

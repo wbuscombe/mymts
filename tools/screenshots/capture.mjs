@@ -3,7 +3,8 @@
 // no real upstreams) so it is reproducible and safe to run anywhere — locally
 // or in CI. It drives the LAN web client at /app/ and saves a set of PNGs
 // covering the feature surface (the wall, the markets/sports/news ticker, the
-// settings modal, the honest channel picker).
+// rebuilt native-style side menu + per-slot controls, the settings modal, the
+// honest channel picker).
 //
 //   Usage:  HELPER_URL=http://127.0.0.1:8091 node capture.mjs
 //   (the helper must already be running in PHANTOM_MODE=1 — see README)
@@ -104,8 +105,19 @@ async function main() {
   await waitMode(page, "NEWS", 45000);
   await tickerShot(page, "ticker-news.png");
 
-  // 5. Settings modal (grid, feed, ticker, sports-league controls).
+  // 5. Side menu — the rebuilt native-style MenuOverlay (CHANNELS list + WALL:
+  // Settings, Resync), opened by the gear. The old flat WALL SETTINGS modal is
+  // gone — the gear now opens this side menu, and Settings is reached through it.
   await page.click("#gear");
+  await page.waitForSelector("#menu-modal:not(.hidden)", { timeout: 5000 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(OUT_DIR, "menu.png") });
+  console.log("captured menu.png");
+
+  // 6. Settings modal — reached from the side menu (WALL → Settings). Shows the
+  // grid (2×3 default), feed sources grouped BY CATEGORY, the ticker + sports
+  // controls, and the captions-OFF toggle.
+  await page.click("#menu-settings");
   await page.waitForSelector("#settings-modal:not(.hidden)", { timeout: 5000 });
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(OUT_DIR, "settings.png") });
@@ -113,30 +125,45 @@ async function main() {
   await page.click("#settings-close");
   await page.waitForTimeout(200);
 
-  // 6. Channel picker — the honest live / TV-only / offline legend (best-effort:
-  // most tile states open the picker on click; if a tile is in a play-gesture
-  // state it won't, so we try a few and skip the shot rather than fail).
-  try {
+  // 7. Slot controls — the web analog of native's SlotControlsOverlay (Channel /
+  // Audio / Reconnect / Close), opened by clicking a video tile. The channel
+  // picker (8) opens from its Channel row. Best-effort across tiles.
+  let slotOpened = false;
+  {
     const tiles = page.locator("#grid .tile");
     const count = await tiles.count();
-    let opened = false;
-    for (let i = 0; i < count && !opened; i++) {
+    for (let i = 0; i < count && !slotOpened; i++) {
       await tiles.nth(i).click({ timeout: 2000 }).catch(() => {});
-      opened = await page
-        .waitForSelector("#picker-modal:not(.hidden)", { timeout: 1500 })
+      slotOpened = await page
+        .waitForSelector("#slot-modal:not(.hidden)", { timeout: 1500 })
         .then(() => true)
         .catch(() => false);
     }
-    if (opened) {
+  }
+  if (slotOpened) {
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(OUT_DIR, "slot-controls.png") });
+    console.log("captured slot-controls.png");
+
+    // 8. Channel picker — opened from the slot controls' Channel row (the first
+    // row); the honest live / TV-only / offline legend.
+    await page.locator("#slot-body .slot-row").first().click().catch(() => {});
+    const pickerOpened = await page
+      .waitForSelector("#picker-modal:not(.hidden)", { timeout: 2000 })
+      .then(() => true)
+      .catch(() => false);
+    if (pickerOpened) {
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(OUT_DIR, "channel-picker.png") });
       console.log("captured channel-picker.png");
     } else {
-      console.log("skipped channel-picker.png (no tile opened the picker)");
+      console.log("skipped channel-picker.png (Channel row did not open the picker)");
     }
-  } catch (e) {
-    console.log("skipped channel-picker.png:", e.message);
+  } else {
+    console.log("skipped slot-controls.png + channel-picker.png (no tile opened slot controls)");
   }
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(200);
 
   // 7. News-story expand — highlight a headline, then select it to expand the
   // detail view (the Campaign 4.1 feature). Best-effort: if the demo feed is

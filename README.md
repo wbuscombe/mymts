@@ -94,14 +94,18 @@ sports ticker shows team games only — the four individual-sport cards need liv
 up on the real wall (see the device gallery below).</sub>
 
 ### ⚙️ Settings — and they're TV↔web peers
-Grid size, feed width/text-size/recency, per-source toggles, sports-league toggles, ticker
-speed, and **ticker motion** (continuous *crawl* or paged *flip* — both motions on both clients,
-each defaulting to its platform's established feel; the TV side ships with the next on-device
-release) — configurable on the TV (D-pad) and in the browser (mouse), persisted per client. The
-TV-only panel-fit levers (fit scale / overscan / position) correct a physical panel and are
-honestly absent from the web.
+The gear opens a **native-style side menu** (a CHANNELS list + WALL actions) mirroring the TV
+app; Settings and the per-slot controls (Channel · Audio · Reconnect) hang off it. Grid size
+(2×3 default), feed width/text-size/recency, per-source toggles **grouped by category**,
+sports-league toggles, ticker speed, and **ticker motion** (continuous *crawl* or paged *flip* —
+both motions on both clients, each defaulting to its platform's established feel; the TV side
+ships with the next on-device release) — configurable on the TV (D-pad) and in the browser
+(mouse), persisted per client. The TV-only panel-fit levers (fit scale / overscan / position)
+correct a physical panel and are honestly absent from the web.
 
-![The settings modal](docs/screenshots/web/settings.png)
+![The native-style side menu — a CHANNELS list + WALL actions, mirroring the TV app](docs/screenshots/web/menu.png)
+
+![The settings modal — 2×3 grid default, category-grouped feed sources, captions off by default](docs/screenshots/web/settings.png)
 
 ### 🟢 Honest degradation — a design value, not an afterthought
 This is the differentiator. **The wall never fakes liveness.** Sample data wears a `SAMPLE`
