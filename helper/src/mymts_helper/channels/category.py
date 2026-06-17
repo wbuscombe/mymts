@@ -1,12 +1,13 @@
 """Channel category taxonomy — the authoritative source the clients group by.
 
-This MIRRORS the native app's ``ChannelCategory`` (the Compose wall's
-``ChannelPickerOverlay`` groups its picker by exactly these sections, in this
-order). The native side has its own copy keyed by slug; the helper exposes the
-SAME taxonomy on ``/api/channels`` so the LAN web client can build an identical
-sectioned picker without inventing its own categories. Keeping the mapping
-server-side means both browser clients agree on one taxonomy; the native app
-keeps its own copy until it, too, consumes the served field (a parity follow-up).
+This is the **authoritative** section each channel groups under, served on
+``/api/channels`` as ``category``. **Both** clients consume it: the LAN web
+client and (since 2026-06) the native Compose wall's ``ChannelPickerOverlay``,
+which now groups by this served field (``ChannelCategory.sectionedByCategory``)
+instead of its own compiled slug map — so a channel added here groups correctly
+on the TV with no app rebuild (the parity follow-up that closed the General-drift).
+The native ``ChannelCategory.BY_SLUG`` survives only as a fallback for an older
+helper. The render ORDER still mirrors native's ``ChannelCategory.ORDER``.
 
 The category is DERIVED FROM THE SLUG (a pure function over a static map) — it is
 NOT stored in the DB, so there is no migration: a channel's section is a property
@@ -66,10 +67,9 @@ _BY_SLUG: dict[str, str] = {
     #     now turns each /live URL into an HLS manifest — see youtube_resolver.py).
     #     Each was resolved + probed from the NAS's residential vantage before
     #     seeding; non-24/7 feeds (Court TV / Law&Crime / PBS) ride the honest-
-    #     offline path (shown offline between shows, live when live). NOTE: the
-    #     native picker groups by its OWN ChannelCategory.BY_SLUG (it doesn't yet
-    #     consume the served `category`), so these show under General on the TV
-    #     until that parity follow-up; the web picker groups them correctly here.
+    #     offline path (shown offline between shows, live when live). Both the web
+    #     AND native pickers now group these by the served `category` (the native
+    #     parity follow-up shipped 2026-06), so they section correctly on the TV.
     "pbs-newshour": US_NEWS,
     "court-tv": US_NEWS,
     "law-crime": US_NEWS,

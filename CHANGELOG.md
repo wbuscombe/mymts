@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(app): native picker groups by server-authoritative category (2026-06-18)
+
+Closes the native channel-menu drift. The TV picker grouped by a **compiled** slug→section
+map, so any channel missing from it — the ~10 gov feeds + the earlier YouTube/HLS additions —
+fell to **General**. The picker now groups by the `category` the helper already serves on
+`/api/channels` (`ChannelCategory.sectionedByCategory`), so a channel added server-side
+sections correctly with **no app rebuild**, and an unrecognized server category is shown
+(appended before General) rather than hidden. The compiled map survives only as a fallback
+for an older helper. **Verified on-device (`.92`)**: the gov feeds (Senate floor + committee
+hearings, House committees, White House / State / War / DHS / DOJ) and the earlier additions
+now group under **US News**, not General — live-first ordering preserved, honest-offline intact
+(`U.S. Senate Floor` live; the rest honest-offline). `versionCode` bumped off the stale `1` →
+`102` (version-derived). WallSettings/panel-fit locked levers untouched.
+
 ## [0.1.2] - 2026-06-17
 
 Free **government-stream** lineup expansion since v0.1.1 — all helper-side, all

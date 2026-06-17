@@ -79,9 +79,12 @@ None are blockers — the shipped feeds are honest + validated; these are qualit
 - **Dedicated "Government" picker section.** The gov/committee/federal tiles (c-span, the two
   floors, the committee aggregate, the House committees, White House / State / War / DHS / DOJ)
   are categorized **US News** today. A dedicated **Government** category would group them
-  cleanly — but the taxonomy MIRRORS the native app's `ChannelCategory` (the native picker
-  keys off its own `BY_SLUG`/`ORDER` copy), so adding a server section needs **native +
-  web `CATEGORY_ORDER` parity** to avoid divergence. Reconsider with the next native parity pass.
+  cleanly. **The native-parity blocker is now CLOSED (2026-06-18):** the native picker reads
+  the server `category` (`ChannelCategory.sectionedByCategory`) and *shows* any unrecognized
+  category (appended before General), so a new server-side section just works on the TV. What
+  remains is the small, deliberate step of (a) adding the `Government` category server-side in
+  `category.py` + remapping those slugs, and (b) giving the **web** picker the same render
+  order. Reconsider when the operator wants the gov feeds visually split out of US News.
 - **Committee tile — surface *which* committee is live.** The aggregate "U.S. Senate Committee
   Hearings" tile shows one live committee (the resolver already carries the live committee name
   in `CSpanResolution.detail`); the tile label stays static. A future enhancement: write the
