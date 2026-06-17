@@ -78,8 +78,9 @@ forever** — with a per-tile and whole-wall ↻ to force a fresh attempt.
 ![Channel picker with honest live / TV-only / offline status](docs/screenshots/web/channel-picker.png)
 
 ### 📰 An agnostic news feed — select a story to expand it
-One newest-first river across ~13 public RSS sources (BBC World, Al Jazeera, Guardian, NPR, the
-wire-service spread + ESPN sports-news), each headline tagged with its source and age. Rendered as
+One newest-first river across ~20 public RSS sources (BBC World, Al Jazeera, Guardian, NPR,
+Bloomberg, CBS/NBC News, PBS NewsHour, Politico, opinion outlets, plus ESPN league feeds), each
+headline tagged with its source and age. Rendered as
 **native text** — never a WebView, never HTML from an upstream — with per-source and recency
 filters. The helper strips markup and quarantines hostile input; the TV only ever sees plain text.
 

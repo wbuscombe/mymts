@@ -34,7 +34,7 @@ The operational guardrails every contribution must honor (load-bearing — read 
 
 - `main` is the long-lived branch. Stage milestones land in `main`.
 - Per-stage work happens in branches named `stage-N/<short-slug>`. Each ends green (tests passing) before merge.
-- Releases are **semver**, **tagged**, and **only created when a stage gate is met**. v0.1.0 lands when Stage 1's GATE clears.
+- Releases are **semver** and **tagged**. **`v0.1.1`** is the first tagged release — the launchable desktop executable (a multi-OS GitHub Release; see `CHANGELOG.md`).
 
 ## Tests
 
