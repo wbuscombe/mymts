@@ -46,10 +46,10 @@ if sys.platform == "darwin":
     hiddenimports += ["pystray._darwin", "AppKit", "Foundation", "objc", "PyObjCTools.MachSignals"]
 elif sys.platform == "win32":
     hiddenimports += ["pystray._win32"]
-else:
-    # Linux: appindicator/gtk/xorg backends — best-effort; the launcher falls
-    # back to HEADLESS mode when no tray backend / display is available.
-    hiddenimports += ["pystray._xorg", "pystray._appindicator", "pystray._gtk"]
+# Linux: do NOT force the xorg/gtk/appindicator backends — their system deps
+# (Xlib/GTK) may be absent on a build host, and forcing them would FAIL the build.
+# collect_all("pystray") already gathers whatever is importable; at runtime the
+# launcher falls back to HEADLESS mode when no tray backend / display is available.
 
 a = Analysis(
     ["launch.py"],

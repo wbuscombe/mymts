@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## ci(packaging): multi-OS desktop release pipeline (2026-06-16)
+
+A tag-triggered GitHub Actions workflow (`.github/workflows/release.yml`, also
+`workflow_dispatch`) builds the desktop app on **macOS / Windows / Linux** with
+PyInstaller (matrix, `fail-fast: false`), packages each (macOS `.app`→zip,
+Windows dir→zip, Linux dir→tar.gz), and on a `v*` tag publishes a **GitHub
+Release** with the three artifacts (pre-release while unsigned). Signing is gated
+on CI secrets (unsigned otherwise). Additive — the existing `ci.yml` test +
+docs-hygiene gate is untouched. The spec no longer force-imports the Linux tray
+backends (their GTK/Xlib deps may be absent on a build host, and Linux runs
+headless anyway) — `collect_all` gathers whatever is importable.
+
 ## feat(packaging): macOS signing + notarization, gated on credentials (2026-06-16)
 
 The build now signs + notarizes when credentials are present, and falls back to
