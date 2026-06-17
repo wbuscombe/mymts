@@ -104,6 +104,7 @@ fun SettingsOverlay(
     onCycleTickerMotion: () -> Unit,
     onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
+    onOpenHelperUrl: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -144,6 +145,7 @@ fun SettingsOverlay(
                 onCycleTickerMotion = onCycleTickerMotion,
                 onRefreshAllVideo = onRefreshAllVideo,
                 onToggleCalibration = onToggleCalibration,
+                onOpenHelperUrl = onOpenHelperUrl,
                 onCancel = onCancel,
             )
         }
@@ -174,6 +176,7 @@ private fun SettingsCard(
     onCycleTickerMotion: () -> Unit,
     onRefreshAllVideo: () -> Unit,
     onToggleCalibration: () -> Unit,
+    onOpenHelperUrl: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -310,6 +313,13 @@ private fun SettingsCard(
             title = "Refresh all video",
             valueLabel = "reload",
             onCycle = onRefreshAllVideo,
+        )
+        // Runtime helper address — point a stock build at any helper, no rebuild.
+        // SELECT opens the URL editor (reachability-tested before it's saved).
+        SettingRow(
+            title = "Helper URL…",
+            valueLabel = "change…",
+            onCycle = onOpenHelperUrl,
         )
 
         // ── Ticker ───────────────────────────────────────────────────────

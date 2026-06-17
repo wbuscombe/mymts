@@ -105,6 +105,7 @@ fun WallScreen(
     buildVersion: String,
     buildSha: String,
     menu: MenuState = rememberMenuState(),
+    onOpenHelperUrl: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -596,6 +597,7 @@ fun WallScreen(
                 onCycleTickerMotion = { lineupStore.cycleTickerMotion() },
                 onRefreshAllVideo = { requestReconnect(-1) },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
+                onOpenHelperUrl = { menu.dismissSelection(); onOpenHelperUrl() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )

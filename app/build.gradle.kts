@@ -52,14 +52,19 @@ val defaultMaxTiles: Int =
 // local.properties (where the operator keeps their real helper host — kept OUT
 // of the shared repo), then a localhost default for a collaborator / demo (a
 // locally-run helper). No internal topology is hardcoded or committed.
-val helperBaseUrl: String = run {
+val helperBaseUrlRaw: String? = run {
     val local = Properties()
     val localFile = rootProject.file("local.properties")
     if (localFile.exists()) localFile.inputStream().use { local.load(it) }
     (project.findProperty("MYMTS_HELPER_BASE_URL") as? String)
         ?: local.getProperty("MYMTS_HELPER_BASE_URL")
-        ?: "http://localhost:8091"
 }
+// True iff a real helper URL was supplied at build time (the operator's build, a
+// `-P` override, or local.properties). When false, HELPER_BASE_URL is only the
+// localhost demo fallback — a STOCK APK — so the app shows its runtime first-run
+// setup instead of silently resolving to a localhost the TV can't reach.
+val helperBaseUrlConfigured: Boolean = helperBaseUrlRaw != null
+val helperBaseUrl: String = helperBaseUrlRaw ?: "http://localhost:8091"
 
 // Release signing — Stage 6 update path.
 //
@@ -184,6 +189,10 @@ android {
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
         buildConfigField("int", "DEFAULT_MAX_TILES", "$defaultMaxTiles")
         buildConfigField("String", "HELPER_BASE_URL", "\"$helperBaseUrl\"")
+        // Whether HELPER_BASE_URL is a real configured value (vs the localhost
+        // demo fallback). The runtime resolver treats the BuildConfig default as
+        // valid only when this is true; otherwise a stock APK falls to first-run setup.
+        buildConfigField("boolean", "HELPER_URL_CONFIGURED", "$helperBaseUrlConfigured")
         // Stage 6 update path — the deploy script reads this to confirm
         // that a signed release came out of a configured (not fallback)
         // signing config. `true` means "the keystore was wired up at

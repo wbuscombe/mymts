@@ -58,6 +58,20 @@ class HelperClient(
     suspend fun fetchSportsTicker(): Result<TickerSnapshot> =
         request("/api/ticker/sports") { json -> parseTicker(json) }
 
+    /**
+     * Reachability probe for the first-run setup + the Settings "Helper URL" field.
+     * GETs `/health` (bounded by the same connect/read timeouts) and validates the
+     * body LOOKS like a MyMTS helper — a `build_sha` must be present — so a random
+     * server answering 200 doesn't false-pass. Any failure → [Result.Err].
+     */
+    suspend fun checkHealth(): Result<HealthInfo> = request("/health") { json ->
+        val sha = json.optString("build_sha", "")
+        if (sha.isBlank()) {
+            throw HelperException("reachable, but not a MyMTS helper (no build_sha)")
+        }
+        HealthInfo(buildSha = sha, schemaVersion = json.optInt("schema_version", -1))
+    }
+
     private suspend fun <T> request(path: String, parse: (JSONObject) -> T): Result<T> = try {
         val body = openGet(path)
         val obj = JSONObject(body)

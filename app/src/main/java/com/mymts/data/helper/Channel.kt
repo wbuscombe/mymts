@@ -49,6 +49,16 @@ data class ChannelsSnapshot(
 }
 
 /**
+ * Parsed `/health` response — used by the runtime helper-URL setup/Settings to
+ * confirm a candidate address is actually a MyMTS helper (a `buildSha` is present),
+ * not merely a server that answered HTTP 200.
+ */
+data class HealthInfo(
+    val buildSha: String,
+    val schemaVersion: Int,
+)
+
+/**
  * One row from the helper's `/api/feed` response. The helper guarantees
  * inert plain text (HTML stripped at parse time) — the TV renders
  * everything as native Text and never instantiates a WebView.
