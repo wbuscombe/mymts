@@ -22,8 +22,8 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from . import db, phantom
-from .channels import registry as channels_registry
 from .channels.api import get_router as channels_router
+from .channels.override import seed_lineup
 from .channels.prober import ChannelProber
 from .config import Config
 from .feeds.api import get_router as feed_router
@@ -61,6 +61,12 @@ def _resolve_feed_seed_path() -> Path:
     return Path(str(pkg))
 
 
+def _resolve_lineup_override_path(cfg: Config) -> Path:
+    # OPTIONAL per-deployment override (gitignored), in the writable data dir —
+    # NOT the shipped seed. Absent → the shipped lineup loads unchanged.
+    return Path(cfg.data_dir) / "lineup.local.json"
+
+
 def create_app(
     config: Config | None = None,
     *,
@@ -82,13 +88,17 @@ def create_app(
     schema_version = db.migrate(db_path)
     log.info("db_ready", extra={"path": str(db_path), "schema_version": schema_version})
 
-    # Seed channels + feed sources (idempotent).
+    # Seed channels + feed sources (idempotent). Channels go through the lineup
+    # reconcile so an OPTIONAL operator override (lineup.local.json in the data
+    # dir) can add/disable/recategorize on top of the shipped seed — absent → the
+    # shipped curated lineup, identical to today.
     seed_path = _resolve_seed_path()
     feed_seed_path = _resolve_feed_seed_path()
+    override_path = _resolve_lineup_override_path(cfg)
     conn = db.connect(db_path)
     try:
-        seeded = channels_registry.seed_from_file(conn, seed_path)
-        log.info("channels_seeded", extra={"count": seeded})
+        result = seed_lineup(conn, seed_path, override_path)
+        log.info("channels_seeded", extra={"count": result["seeded"], **result})
         seeded_feeds = seed_feeds_from_file(conn, feed_seed_path)
         log.info("feed_sources_seeded_total", extra={"count": seeded_feeds})
     finally:

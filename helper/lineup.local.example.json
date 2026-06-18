@@ -1,0 +1,35 @@
+{
+  "_README": [
+    "OPTIONAL per-deployment lineup override. Copy this to 'lineup.local.json' in",
+    "the helper's DATA DIR (/data in the container — the writable volume; or",
+    "$DATA_DIR locally). It is gitignored and is NOT the shipped seed.json, which",
+    "you never edit. The helper loads the shipped curated lineup, then reconciles",
+    "this on top. No file present => the shipped lineup, identical to today.",
+    "Reconcile precedence: 'override' field-merges win over shipped values;",
+    "'disable' removes a shipped channel from the picker + prober; 'add' appends a",
+    "new channel (a slug that collides with a shipped one is skipped — use",
+    "'override' for shipped changes). Every effective channel is validated + probed",
+    "like any channel (free/honest-offline rules apply); a bad entry is skipped",
+    "with a logged reason, never crashing the whole lineup. Categories: any string",
+    "(e.g. Sports / US News / Global News / Business / Weather / Cameras / Nature /",
+    "Space / General, or a new one — the clients show unrecognized sections too).",
+    "Delete the keys you don't use. The '_README' key is ignored by the loader."
+  ],
+
+  "add": [
+    {
+      "slug": "my-local-cam",
+      "label": "My Local Camera",
+      "kind": "youtube",
+      "source_url": "https://www.youtube.com/@SomeOfficialChannel/live",
+      "category": "Cameras"
+    }
+  ],
+
+  "disable": ["cbs-golazo", "newsmax"],
+
+  "override": {
+    "bbc-news": { "label": "BBC News (UK)", "category": "Global News" },
+    "iss-feed": { "label": "ISS Earth View" }
+  }
+}

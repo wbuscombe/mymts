@@ -23,6 +23,7 @@ def _ch(
         kind="hls",
         source_url=f"https://x.test/{slug}.m3u8",
         enabled=True,
+        category=None,
         current_url=current_url,
         status=status,
         last_check_at=None,

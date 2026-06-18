@@ -43,6 +43,9 @@ class ChannelRow:
     kind: str
     source_url: str
     enabled: bool
+    # Stored category OVERRIDE (lineup.local.json add/recategorize); None = use the
+    # shipped category_of(slug) taxonomy. See migration 005 + channels/override.py.
+    category: str | None
     current_url: str | None
     status: str
     last_check_at: str | None
@@ -176,17 +179,25 @@ def upsert_channel(
     label: str,
     source_url: str,
     kind: str = "hls",
+    category: str | None = None,
+    enabled: bool = True,
 ) -> int:
     validate_slug(slug)
     validator = _KIND_VALIDATORS.get(kind)
     if validator is None:
         raise RegistryError(f"unsupported_kind: {kind!r}")
     validator(source_url)
+    # `category` + `enabled` are reconcile-authoritative: the lineup reconcile
+    # re-applies them every boot (the override layer), so ON CONFLICT updates them
+    # too. A shipped channel with no override re-seeds category=NULL / enabled=1,
+    # which is identical to today (API falls back to the category_of taxonomy).
     conn.execute(
-        "INSERT INTO channels(slug, label, kind, source_url) VALUES (?, ?, ?, ?) "
+        "INSERT INTO channels(slug, label, kind, source_url, category, enabled) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(slug) DO UPDATE SET "
-        "label=excluded.label, kind=excluded.kind, source_url=excluded.source_url",
-        (slug, label, kind, source_url),
+        "label=excluded.label, kind=excluded.kind, source_url=excluded.source_url, "
+        "category=excluded.category, enabled=excluded.enabled",
+        (slug, label, kind, source_url, category, 1 if enabled else 0),
     )
     row = conn.execute("SELECT id FROM channels WHERE slug=?", (slug,)).fetchone()
     return int(row["id"])
@@ -194,7 +205,7 @@ def upsert_channel(
 
 def list_channels(conn: sqlite3.Connection, *, enabled_only: bool = False) -> list[ChannelRow]:
     sql = (
-        "SELECT id, slug, label, kind, source_url, enabled, current_url, status, "
+        "SELECT id, slug, label, kind, source_url, enabled, category, current_url, status, "
         "last_check_at, last_success_at, last_error, error_count, browser_playable "
         "FROM channels"
     )
@@ -209,6 +220,7 @@ def list_channels(conn: sqlite3.Connection, *, enabled_only: bool = False) -> li
             kind=r["kind"],
             source_url=r["source_url"],
             enabled=bool(r["enabled"]),
+            category=r["category"],
             current_url=r["current_url"],
             status=r["status"],
             last_check_at=r["last_check_at"],

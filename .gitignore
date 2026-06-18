@@ -111,3 +111,7 @@ docs/perf-analysis-2026-06.md
 tools/desktop/build/
 tools/desktop/dist/
 *.pyinstaller.spec.bak
+
+# Per-deployment lineup override (operator data; the .example is committed)
+lineup.local.json
+**/lineup.local.json

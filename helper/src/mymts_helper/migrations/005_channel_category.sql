@@ -1,0 +1,12 @@
+-- Per-deployment lineup override: a stored channel category.
+--
+-- Category is normally DERIVED from the slug (channels/category.py, the shipped
+-- taxonomy) and served on /api/channels. A downstream self-hoster's optional
+-- override file (lineup.local.json) can ADD channels or RECATEGORIZE shipped ones
+-- without editing the shipped seed — so the chosen category must be storable.
+--
+-- This column holds ONLY a deviation from the shipped default:
+--   non-NULL = an override/add set this channel's category explicitly;
+--   NULL     = no override → the API falls back to category_of(slug), i.e. the
+--              shipped taxonomy is unchanged. So no override == identical to today.
+ALTER TABLE channels ADD COLUMN category TEXT;

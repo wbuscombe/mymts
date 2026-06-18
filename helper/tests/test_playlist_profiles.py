@@ -22,6 +22,7 @@ def _ch(slug: str, *, status: str = "live") -> ChannelRow:
         kind="hls",
         source_url=f"https://x.test/{slug}.m3u8",
         enabled=True,
+        category=None,
         current_url=f"https://cdn.test/{slug}/master.m3u8",
         status=status,
         last_check_at=None,

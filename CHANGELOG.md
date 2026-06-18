@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): per-deployment lineup override (distribution make-or-break #4 — closed) (2026-06-18)
+
+A downstream self-hoster can customize the channel lineup WITHOUT editing the shipped
+`seed.json` or rebuilding — closing the last distribution make-or-break (the arc is complete).
+
+- An OPTIONAL operator file **`lineup.local.json`** in the writable data dir (`/data`;
+  gitignored, NOT the shipped seed) is reconciled on top of the shipped curated lineup at boot.
+  **No file → identical to today** (the curated US lineup).
+- Supports **add** (new channels, same schema), **disable** (shipped slugs → excluded from the
+  picker + prober), and **override** (re-write label / category / source_url / kind on shipped
+  channels). Precedence: override field-merges win; disable beats override; an `add` colliding
+  with a shipped slug is skipped (use `override`).
+- Category becomes storable (**migration 005** adds a nullable `category` column; the API serves
+  `category or category_of(slug)` — NULL = the shipped taxonomy, so no override is a no-op). The
+  API now serves `enabled_only` so a disabled channel truly leaves the lineup.
+- **Validated like any channel**: each effective entry goes through the registry validators +
+  the prober (free / honest-offline rules); a bad entry is **skipped with a logged reason**,
+  never crashing the lineup. A malformed override file is logged + ignored (shipped lineup loads).
+- Ships **`lineup.local.example.json`** documenting the schema. The shipped `seed.json` is never
+  edited by the operator.
+
+Verified end-to-end locally (app boot + a throwaway override): add/disable/recategorize all
+reflected on `/api/channels`; no-override = the shipped 53; idempotent (removing the override
+reverts cleanly). API additive; `schema_version` unchanged.
+
 ## feat(helper): ambient / space / nature / camera channels + new categories (2026-06-18)
 
 Restores the ambient / space / nature content from the original wall vision (dropped when

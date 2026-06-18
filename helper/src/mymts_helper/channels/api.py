@@ -26,7 +26,10 @@ def get_router(db_path: Path) -> APIRouter:
     @router.get("")
     def list_channels() -> dict[str, Any]:
         with db.connection_scope(db_path) as conn:
-            rows = registry.list_channels(conn)
+            # enabled_only: a lineup-override `disable` (enabled=0) removes the
+            # channel from the picker entirely (not just unprobed). With the
+            # shipped lineup every channel is enabled, so this is a no-op there.
+            rows = registry.list_channels(conn, enabled_only=True)
         return {
             "schema_version": API_SCHEMA_VERSION,
             "channels": [
@@ -41,8 +44,10 @@ def get_router(db_path: Path) -> APIRouter:
                     # groups correctly with no app rebuild. Derived from the slug (a
                     # static taxonomy, not DB state); ALWAYS present (GENERAL for an
                     # unmapped slug) and status-independent — an offline channel
-                    # still belongs to its section. See channels/category.py.
-                    "category": category_of(c.slug),
+                    # still belongs to its section. See channels/category.py. A
+                    # per-deployment override (lineup.local.json) may store an
+                    # explicit category (migration 005); NULL → the shipped taxonomy.
+                    "category": c.category or category_of(c.slug),
                     # current_url is what the TV plays; None on unavailable.
                     "current_url": c.current_url if c.status == "live" else None,
                     "status": c.status,
