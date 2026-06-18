@@ -496,6 +496,36 @@ export function tickerFlipDwellMs(pct, base = TICKER_FLIP_BASE_DWELL_MS, min = 2
   return Math.max(min, Math.round(base * 100 / clamped));
 }
 
+// ----- CRAWL motion timing (native TickerStrip parity) -----
+
+/** End-of-crawl DWELL (ms) — the strip holds STILL at the loop point after each
+ *  full pass before the next begins (the "slip time" that lets the eye reset).
+ *  Mirrors native `CRAWL_DWELL_MS` (doubled to 3000 so the rest reads at a
+ *  glance). Scroll-then-dwell, not a continuous marquee. */
+export const CRAWL_DWELL_MS = 3000;
+
+/**
+ * Pure: the Web-Animations timing for ONE crawl cycle — scroll `periodPx` at
+ * `pxPerSec` (linear, constant velocity regardless of frame load — the duration
+ * IS distance/speed, so a busy main thread can't vary the rate), then HOLD at
+ * the loop point for `dwellMs`, repeating. `periodPx` is the seamless repeat
+ * period = one copy's width + the inter-copy gap (measured from the DOM as the
+ * first clone's offset), so the wrap lands copy 2 exactly on copy 1's origin (no
+ * seam pop — the native `crawlPeriodPx` fix). Returns the total cycle ms and the
+ * `scrollFraction` (0..1) at which the scroll completes and the hold begins.
+ * `totalMs` 0 ⇒ nothing to crawl (caller renders static). Mirrors native
+ * `crawlDurationMs` + `CRAWL_DWELL_MS`. Float math (sub-pixel). Unit-tested.
+ */
+export function crawlCycle(periodPx, pxPerSec, dwellMs = CRAWL_DWELL_MS) {
+  const dist = Number(periodPx);
+  const v = Math.max(1, Number(pxPerSec));
+  const dwell = Math.max(0, Number(dwellMs) || 0);
+  if (!(dist > 0)) return { scrollMs: 0, dwellMs: dwell, totalMs: 0, scrollFraction: 0 };
+  const scrollMs = (dist / v) * 1000;
+  const totalMs = scrollMs + dwell;
+  return { scrollMs, dwellMs: dwell, totalMs, scrollFraction: scrollMs / totalMs };
+}
+
 // ----- view-prefs normalize / serialize (browser-local, pure + testable) -----
 
 /** Default grid dims for a fresh wall (a saved pref always wins). 2 rows × 3 cols

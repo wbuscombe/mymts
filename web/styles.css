@@ -26,13 +26,15 @@ body { display: flex; flex-direction: column; }
 .ticker-note { color: var(--recover); font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
 .ticker-note:empty { display: none; }
 .ticker-viewport { flex: 1; overflow: hidden; position: relative; height: 100%; }
+/* CRAWL marquee — driven by the Web Animations API in app.mjs (startCrawl):
+   scroll one seamless period (copyWidth + gap) at distance/speed, then DWELL,
+   matching the native TickerStrip. Compositor-timed (constant velocity under
+   load) + sub-pixel. Hover-to-read pauses it via JS (wireTickerHoverPause). */
 .ticker-track { display: inline-flex; gap: 22px; align-items: center; height: 100%;
-  white-space: nowrap; will-change: transform; animation: ticker-scroll linear infinite; }
-@keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.ticker-bar:hover .ticker-track { animation-play-state: paused; }  /* hover to read */
+  white-space: nowrap; will-change: transform; }
 /* FLIP motion (native-parity, opt-in via the Ticker motion setting): the crawl
    is OFF; one card-group shows at a time and vertically flips to the next. */
-.ticker-track.flip { animation: none !important; transform: none; }
+.ticker-track.flip { transform: none; }
 .ticker-track.flip > * { animation: ticker-flip-in 320ms ease-out; }
 @keyframes ticker-flip-in { from { transform: translateY(70%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ticker-track.flip > * { animation: none; } }

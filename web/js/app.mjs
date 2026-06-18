@@ -15,7 +15,7 @@ import {
   gridLayoutFromDims, clampGridDim,
   leaguePool, filterHiddenLeagues,
   FEED_RECENCY_OPTIONS, feedRecencyOption, filterFeedRecency,
-  clampTickerSpeedPct, tickerScrollPxPerSec,
+  clampTickerSpeedPct, tickerScrollPxPerSec, crawlCycle, CRAWL_DWELL_MS,
   normalizeViewPrefs, serializeViewPrefs,
   feedDetailModel,
   classifyVideoFailure, videoRetryDecision,
@@ -209,97 +209,172 @@ function buildTickerGroup(group) {
   return g;
 }
 
-// FLIP motion: a JS-driven dwell timer steps through the groups (the crawl uses
-// a CSS infinite animation instead). Cleared on every re-render so a mode
-// rotation / poll can't leave a second timer flipping a stale group set.
+// FLIP motion: a JS-driven dwell timer steps through the groups. CRAWL motion
+// uses a Web-Animations marquee (startCrawl/stopCrawl below). Both are cleared on
+// every genuine re-render so a mode rotation / poll can't leave a stale driver.
 let flipTimer = null;
 function clearFlip() { if (flipTimer) { clearInterval(flipTimer); flipTimer = null; } }
+
+// The running CRAWL marquee (Web Animations API) + the signature of the content +
+// speed it was built for. The crawl is re-created ONLY when this signature changes
+// (a genuine content / speed / motion change) — NOT on every poll, so an unchanged
+// refresh never restarts the scroll mid-pass (native: re-key on speed/pause/
+// overflow/content, never on a routine refresh).
+let crawlAnim = null;
+let lastCrawlSig = null;
+
+/** Stop + clear the crawl marquee: cancel the WAAPI animation and reset the
+ *  transform so the strip sits at its origin. Idempotent. */
+function stopCrawl() {
+  if (crawlAnim) { try { crawlAnim.cancel(); } catch {} crawlAnim = null; }
+  const track = el("ticker-track");
+  if (track) track.style.transform = "translateX(0)";
+  lastCrawlSig = null;
+}
+
+/** A signature of what the crawl is currently showing — the mode + the group
+ *  CONTENT (display models, not raw envelopes, so a poll with identical visible
+ *  data hashes the same) + the levers that change the motion timing (scroll speed,
+ *  motion mode). Identical signature ⇒ nothing genuine changed ⇒ don't restart. */
+function crawlSignature(cur, plan, p) {
+  return JSON.stringify({
+    mode: cur ? cur.mode : null,
+    news: !!(cur && cur.news),
+    motion: p.tickerMotion,
+    scroll: clampTickerSpeedPct(p.tickerScrollPct),
+    body: plan.kind === "cards" ? plan.groups : (plan.text || ""),
+  });
+}
+
+/**
+ * Build the ticker's render PLAN for the current mode WITHOUT touching the DOM, so
+ * the crawl can decide whether anything genuinely changed before it rebuilds +
+ * restarts. Mirrors the honest empty/error states (no data, schema drift, all
+ * leagues hidden) and otherwise returns the grouped card models + the stale note.
+ */
+function tickerRenderPlan(cur) {
+  if (!cur) return { kind: "empty" };
+  if (cur.news) {
+    // NEWS mode — consumes the already-fetched feed (no extra request).
+    const groups = groupTickerCards(newsTickerEntries(latestFeedItems), { newsMode: true });
+    if (groups.length === 0) return { kind: "empty", text: "no headlines yet", cls: "t-stale" };
+    return { kind: "cards", groups, staleNote: "", stale: false };
+  }
+  if (!cur.env) return { kind: "empty", text: `${cur.mode.toLowerCase()}: unavailable`, cls: "t-stale" };
+  // ARCH-1 schema guard: a contract we don't understand → DEGRADE HONESTLY (show
+  // "client out of date", render NO cards). Never fabricate against an unknown shape.
+  const schema = cur.env._schema ?? { ok: true };
+  if (!schema.ok) {
+    return { kind: "empty", text: "client out of date — cards hidden", cls: "t-schema-warn", note: tickerSchemaNote(cur.env) };
+  }
+  const staleNote = tickerStaleNote(cur.env);
+  const stale = cur.env.stale === true;
+  // Sports-league filter (client-side, identical to native filterLeagues): a
+  // denylist applied ONLY to the SPORTS mode — markets entries are never touched.
+  let entries = cur.env.entries ?? [];
+  if (cur.mode === "SPORTS" && prefs.hiddenLeagues.size > 0) {
+    entries = filterHiddenLeagues(entries, prefs.hiddenLeagues);
+    if (entries.length === 0) {
+      // The operator hid every league currently on → honest empty state.
+      return { kind: "empty", text: "all leagues hidden (check Settings)", cls: "t-stale", note: staleNote };
+    }
+  }
+  return { kind: "cards", groups: groupTickerCards(entries), staleNote, stale };
+}
 
 function renderTicker() {
   const track = el("ticker-track");
   const cur = tickerModes[modeIdx];
   el("ticker-mode").textContent = cur ? cur.mode : "";
+
+  // Compute the render PLAN first (no DOM mutation), so the crawl can tell whether
+  // anything genuinely changed before it rebuilds + restarts the scroll.
+  const plan = tickerRenderPlan(cur);
+  const sig = crawlSignature(cur, plan, prefs);
+
+  // CRAWL: a routine poll whose content + speed are unchanged must NOT rebuild or
+  // restart the marquee mid-pass (the "jumps back on every refresh" bug). Leave the
+  // running animation alone; just refresh the out-of-track stale note/chip (cheap,
+  // no reflow). Speed/motion are in the signature, so a settings change still re-keys.
+  if (prefs.tickerMotion === "crawl" && plan.kind === "cards" &&
+      sig === lastCrawlSig && crawlAnim && crawlAnim.playState === "running") {
+    el("ticker-note").textContent = plan.staleNote || "";
+    setStale(!!plan.stale);
+    return;
+  }
+
+  // Genuine change (content / speed / motion / mode) → rebuild from scratch.
   clearFlip();
+  stopCrawl();
   track.classList.remove("flip");
   track.replaceChildren();
   el("ticker-note").textContent = "";
   setStale(false);
-  if (!cur) { track.style.animation = "none"; return; }
 
-  let groups, staleNote = "";
-  if (cur.news) {
-    // NEWS mode — consumes the already-fetched feed (no extra request).
-    groups = groupTickerCards(newsTickerEntries(latestFeedItems), { newsMode: true });
-    if (groups.length === 0) {
-      track.appendChild(node("span", "t-stale", "no headlines yet"));
-      track.style.animation = "none";
-      return;
-    }
-  } else {
-    if (!cur.env) {
-      track.appendChild(node("span", "t-stale", `${cur.mode.toLowerCase()}: unavailable`));
-      track.style.animation = "none";
-      return;
-    }
-    // ARCH-1 schema guard: if the helper sent a contract we don't understand,
-    // DEGRADE HONESTLY — show "client out of date", render NO cards. Never
-    // fabricate against an unknown shape.
-    const schema = cur.env._schema ?? { ok: true };
-    if (!schema.ok) {
-      el("ticker-note").textContent = tickerSchemaNote(cur.env);
-      track.appendChild(node("span", "t-schema-warn", "client out of date — cards hidden"));
-      track.style.animation = "none";
-      return;
-    }
-    // STALE is an envelope-level flag → pin a STALE chip to the strip's RIGHT
-    // edge (native StaleChip), and keep the legacy recover-note in its slot.
-    staleNote = tickerStaleNote(cur.env);
-    setStale(cur.env.stale === true);
-    // Sports-league filter (client-side, identical to native filterLeagues): a
-    // denylist applied ONLY to the SPORTS mode — markets entries are never
-    // touched. The league filter is TV-side in native (helper serves all);
-    // the web filters here so the two clients agree on what's shown.
-    let entries = cur.env.entries ?? [];
-    if (cur.mode === "SPORTS" && prefs.hiddenLeagues.size > 0) {
-      entries = filterHiddenLeagues(entries, prefs.hiddenLeagues);
-      if (entries.length === 0) {
-        // The operator hid every league that's currently on → honest empty
-        // state, never a blank strip pretending nothing is happening.
-        el("ticker-note").textContent = staleNote;
-        track.appendChild(node("span", "t-stale", "all leagues hidden (check Settings)"));
-        track.style.animation = "none";
-        return;
-      }
-    }
-    groups = groupTickerCards(entries);
+  if (plan.kind === "empty") {
+    if (plan.text) track.appendChild(node("span", plan.cls || "t-stale", plan.text));
+    if (plan.note) el("ticker-note").textContent = plan.note;
+    return;
   }
 
-  // The stale note lives in a FIXED slot outside the scrolling track — if it
-  // rode inside the track it would be cloned into both halves. Keeping it out
-  // leaves the track as two identical halves, so the 0→-50% loop stays seamless.
-  el("ticker-note").textContent = staleNote;
+  // The stale note lives in a FIXED slot OUTSIDE the scrolling track — riding inside
+  // it would clone the note into both halves; keeping it out leaves the track as two
+  // identical halves so the loop stays seamless.
+  el("ticker-note").textContent = plan.staleNote || "";
+  setStale(!!plan.stale);
 
-  const built = groups.map(buildTickerGroup);
+  const built = plan.groups.map(buildTickerGroup);
 
-  // FLIP motion (native-parity, opt-in): show one group at a time, flipping to
-  // the next on a calm dwell — never a continuous crawl. Same honest cards.
+  // FLIP motion (native-parity, opt-in): one group at a time on a calm dwell.
   if (prefs.tickerMotion === "flip") {
     renderTickerFlip(track, built);
     return;
   }
 
-  // CRAWL motion (web default): duplicate ONLY the groups so the 0→-50% scroll
-  // loops seamlessly.
-  const all = [...built, ...built.map((b) => b.cloneNode(true))];
-  all.forEach((b) => track.appendChild(b));
+  // CRAWL motion (web default): lay ONE copy, then let startCrawl measure + (only on
+  // overflow) add the second copy and run the WAAPI marquee (scroll one period + dwell).
+  built.forEach((b) => track.appendChild(b));
+  startCrawl(track, built, sig);
+}
+
+/**
+ * CRAWL marquee via the Web Animations API — native TickerStrip parity. Lays a
+ * second copy ONLY when one copy overflows the strip (else it holds static), then
+ * scrolls exactly one PERIOD (one copy's width + the inter-copy gap, measured as the
+ * first clone's offset → the wrap lands copy 2 on copy 1's origin: no seam pop) at
+ * the operator's px/sec, LINEAR, then HOLDS at the loop point for CRAWL_DWELL_MS,
+ * repeating. The duration IS distance/speed, so the velocity stays constant under
+ * load (the compositor drops frames, never the rate) — sub-pixel, main-thread-
+ * independent. Re-created only by renderTicker on a genuine change.
+ */
+function startCrawl(track, built, sig) {
+  // Measure after layout (rAF) so widths are real.
   requestAnimationFrame(() => {
-    const half = track.scrollWidth / 2;
-    // Scroll velocity scales with the operator's tickerScrollPct (native
-    // parity): 100% = the calm base, higher = faster. Duration = half-width /
-    // px-per-sec, so a faster velocity is a shorter duration.
+    track.style.transform = "translateX(0)";
+    const oneCopy = track.scrollWidth;
+    const viewport = (track.parentElement && track.parentElement.clientWidth) || 0;
+    // OVERFLOW gate (native): only crawl when one copy actually exceeds the strip;
+    // otherwise the single copy just sits (no clone, no animation).
+    if (!(oneCopy > viewport)) { lastCrawlSig = sig; return; }
+    // The second copy makes the loop seamless; append it now that we know it scrolls.
+    const clones = built.map((b) => b.cloneNode(true));
+    clones.forEach((c) => track.appendChild(c));
+    // period = first clone's offset = one copy's width + the inter-copy gap (the
+    // seamless repeat period — wrapping here lands copy 2 exactly on copy 1's origin).
+    const period = clones[0].offsetLeft;
     const pxPerSec = tickerScrollPxPerSec(TICKER_BASE_PX_PER_SEC, prefs.tickerScrollPct);
-    const dur = Math.max(8, half / pxPerSec);
-    track.style.animation = `ticker-scroll ${dur}s linear infinite`;
+    const { totalMs, scrollFraction } = crawlCycle(period, pxPerSec, CRAWL_DWELL_MS);
+    if (!(totalMs > 0)) { lastCrawlSig = sig; return; }
+    if (crawlAnim) { try { crawlAnim.cancel(); } catch {} }
+    crawlAnim = track.animate(
+      [
+        { transform: "translateX(0px)", offset: 0 },
+        { transform: `translateX(${-period}px)`, offset: scrollFraction },
+        { transform: `translateX(${-period}px)`, offset: 1 },   // dwell hold (slip time)
+      ],
+      { duration: totalMs, iterations: Infinity, easing: "linear" },
+    );
+    lastCrawlSig = sig;
   });
 }
 
@@ -1247,11 +1322,25 @@ function wireDivider() {
 }
 
 function startLoop(fn, ms) { fn(); return setInterval(fn, ms); }
+/** Hover-to-read: pause the CRAWL marquee while the pointer is over the ticker,
+ *  resume on leave. The old CSS `:hover { animation-play-state: paused }` only
+ *  governed a CSS animation; the WAAPI marquee needs explicit pause/play. Bound
+ *  once on the ticker bar (the animation handle is looked up live each time). */
+function wireTickerHoverPause() {
+  const bar = document.querySelector(".ticker-bar");
+  if (!bar) return;
+  bar.addEventListener("mouseenter", () => { if (crawlAnim) try { crawlAnim.pause(); } catch {} });
+  bar.addEventListener("mouseleave", () => {
+    if (crawlAnim && prefs.tickerMotion === "crawl") try { crawlAnim.play(); } catch {}
+  });
+}
+
 function main() {
   applyPrefs();
   wireSettings();
   wireDivider();
   buildGrid();
+  wireTickerHoverPause();
   startLoop(pollTicker, TICKER_POLL_MS);
   startLoop(pollFeed, FEED_POLL_MS);
   startLoop(pollChannels, CHANNELS_POLL_MS);

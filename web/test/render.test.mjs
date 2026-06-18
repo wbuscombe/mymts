@@ -46,6 +46,8 @@ import {
   TICKER_SPEED_MAX_PCT,
   clampTickerSpeedPct,
   tickerScrollPxPerSec,
+  crawlCycle,
+  CRAWL_DWELL_MS,
   TICKER_MOTIONS,
   tickerMotionOption,
   tickerFlipDwellMs,
@@ -636,6 +638,39 @@ test("tickerScrollPxPerSec: scales base velocity by clamped percent (faster = mo
   // An out-of-range stored pref is clamped, never a 0/absurd velocity.
   assert.equal(tickerScrollPxPerSec(60, 0), 6);      // clamps to 10% → 6
   assert.ok(tickerScrollPxPerSec(60, 5) >= 1);       // always > 0
+});
+
+test("crawlCycle: duration is distance/speed, then a fixed dwell (scroll-then-dwell)", () => {
+  // 600px at 60px/sec = 10s scroll; + 3s dwell = 13s total; scroll is 10/13 of it.
+  const c = crawlCycle(600, 60, 3000);
+  assert.equal(c.scrollMs, 10_000);
+  assert.equal(c.dwellMs, 3000);
+  assert.equal(c.totalMs, 13_000);
+  assert.ok(Math.abs(c.scrollFraction - 10_000 / 13_000) < 1e-9);
+});
+
+test("crawlCycle: faster speed = shorter scroll (frame-rate-independent, distance/speed)", () => {
+  const slow = crawlCycle(600, 30);   // default dwell = CRAWL_DWELL_MS
+  const fast = crawlCycle(600, 120);
+  assert.equal(slow.scrollMs, 20_000);
+  assert.equal(fast.scrollMs, 5000);
+  assert.equal(slow.dwellMs, CRAWL_DWELL_MS);   // default dwell applied
+  assert.ok(fast.scrollMs < slow.scrollMs);
+});
+
+test("crawlCycle: nothing to crawl (0/negative distance) → totalMs 0 (static, no animation)", () => {
+  assert.equal(crawlCycle(0, 60).totalMs, 0);
+  assert.equal(crawlCycle(-5, 60).totalMs, 0);
+  assert.equal(crawlCycle(0, 60).scrollFraction, 0);
+});
+
+test("crawlCycle: velocity floored at 1px/sec — never a divide-by-zero / infinite scroll", () => {
+  const c = crawlCycle(100, 0);   // pxPerSec coerced to >= 1
+  assert.ok(Number.isFinite(c.scrollMs) && c.scrollMs > 0);
+});
+
+test("crawlCycle: CRAWL_DWELL_MS matches the native scroll-then-dwell (doubled to 3000)", () => {
+  assert.equal(CRAWL_DWELL_MS, 3000);
 });
 
 // ----- view-prefs persistence round-trip (the established web pattern) -----

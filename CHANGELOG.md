@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web): ticker crawl parity with native (time-based motion + dwell) (2026-06-18)
+
+The web ticker's CRAWL motion now matches the native TV ticker's shipped consistency
+fix, so both behave identically:
+
+- **Time-based, constant velocity:** the marquee is driven by the Web Animations API
+  with a duration of `period / pxPerSec` (distance ÷ speed), so the velocity stays
+  constant regardless of frame rate / CPU load (the compositor drops frames, never
+  varies the rate) — verified at a steady ~60 px/sec under 6× CPU throttle. Replaces
+  the CSS `infinite` loop. Sub-pixel (transform), as before.
+- **Scroll-then-dwell:** after each full pass the strip HOLDS still for `CRAWL_DWELL_MS`
+  (3000 ms — the native slip-time), then repeats — instead of a non-stop marquee.
+- **Seamless seam:** the loop period is the measured `copyWidth + inter-copy gap` (the
+  first clone's offset), so the wrap lands copy 2 exactly on copy 1's origin — fixing
+  the ~11 px seam pop the old `translateX(-50%)` left.
+- **Re-key only on genuine change:** the animation is re-created only when the content
+  (display models) or speed/motion actually change — a routine poll with unchanged data
+  no longer restarts the scroll mid-pass (a content signature gates the rebuild). The
+  second copy is added only when one copy overflows the strip (else it holds static).
+- Hover-to-read still pauses the crawl (moved from CSS `:hover` to a JS pause/play on
+  the animation). The 10–200 % scroll-speed range (10 % floor) is unchanged.
+
 ## feat: server-authoritative wall presets — News / Nature / Space / Chill (2026-06-18)
 
 Switchable wall presets — predefined channel-sets the user applies to the grid — the rest of
