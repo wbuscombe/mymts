@@ -51,6 +51,15 @@ because something actually slipped).
 | **Fail-safe contracts exhaustively test the bad-input class** | `[RITUAL]` — checklist §5 | `load_profiles` missing `RecursionError`; truthiness-vs-`.strip()` slipping a whitespace URL past a guard |
 | **Lint (ruff)** | `[ENFORCED, advisory]` — `ci.yml`, non-blocking | known pre-existing debt; new code kept clean (NOT the same as the blocking docs-hygiene gate) |
 
+> **Note — the `/api/presets` `schema_version` is deliberately *independent* of the global-equal
+> consistency check.** `scripts/check_schema_consistency.py` asserts the *core* envelopes
+> (channels / feed / ticker / health) all share one wire version. The presets endpoint is additive
+> and may legitimately bump on its own, so coupling it into the equal-check would risk a false CI
+> failure on an intentional independent bump. It is instead pinned in lockstep across all three
+> layers in code — helper `PRESETS_SCHEMA_VERSION`, native `parsePresets` (refuses ≠ supported),
+> web `pollPresets` (ignores an unknown envelope) — and covered by tests on each side. Decision:
+> keep it independent (not added to the checker).
+
 ---
 
 ## How to grow this charter (the point)

@@ -43,6 +43,7 @@ Verify in another shell:
 curl -fsS http://localhost:8091/health      # 200 + build info
 curl -fsS http://localhost:8091/api/feed     # preloaded mock feed items
 curl -fsS http://localhost:8091/api/channels # all 53 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras)
+curl -fsS http://localhost:8091/api/presets  # server-authoritative wall presets (News / Nature / Space / Chill)
 ```
 You can also open the **web client** at <http://localhost:8091/app>.
 
@@ -100,7 +101,8 @@ cd helper && uv run pytest          # helper suite
 
 ## What you can play with
 - The whole wall UI, the menu (D-pad / arrow keys on the emulator), the channel
-  picker, the settings, the ticker — all on mock or real-public data.
+  picker, the **wall presets** (News / Nature / Space / Chill — switch the whole grid
+  from the menu's WALL section), the settings, the ticker — all on mock or real-public data.
 - The helper API + the static web client.
 - The full source of both components.
 

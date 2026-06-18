@@ -194,6 +194,24 @@ async function main() {
     console.log("skipped news-expand shots:", e.message);
   }
 
+  // 9. Preset-applied wall — switch the wall to a NON-default preset (Nature) via
+  // the menu's WALL → Preset selector, to show server-authoritative presets in
+  // action: a different server-defined channel-set + its own grid, applied in one
+  // step. Best-effort: if the selector or its options aren't present, skip.
+  try {
+    await page.keyboard.press("Escape").catch(() => {}); // dismiss any open modal
+    await page.waitForTimeout(200);
+    await page.click("#gear");
+    await page.waitForSelector("#menu-modal:not(.hidden)", { timeout: 5000 });
+    await page.waitForTimeout(300);
+    await page.selectOption("#menu-preset", "nature"); // change → applyPreset + closeMenu
+    await page.waitForSelector("#menu-modal.hidden", { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(3500); // let the new tiles rebuild + settle
+    await fullShot(page, "wall-preset-nature.png");
+  } catch (e) {
+    console.log("skipped wall-preset-nature.png:", e.message);
+  }
+
   await browser.close();
   console.log("done →", OUT_DIR);
 }

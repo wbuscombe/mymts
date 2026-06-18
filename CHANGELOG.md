@@ -25,8 +25,11 @@ to today until the user switches.
   preset slug references a real seeded channel (no dead tiles).
 - **Native + Web**: a preset selector in the menu's WALL section; selecting one loads that preset's
   channels (replacing the tiles) + applies its grid, persisted per-device. The **`news`** default
-  uses each client's EXISTING default lineup path (untouched → no regression); non-default presets
-  fill exactly with their slugs. WallSettings / panel-fit locked levers untouched.
+  uses each client's EXISTING default lineup path (untouched → no regression); non-default (`exact`)
+  presets fill exactly with their slugs — an explicitly-listed offline channel (e.g. NASA TV in
+  Space) renders as an honest OFFLINE tile rather than vanishing. Both clients pin the presets
+  `schema_version` (refuse an unknown contract). WallSettings / panel-fit locked levers untouched.
+  Verified on-device (`.92`).
 
 ## feat(helper): per-deployment lineup override (distribution make-or-break #4 — closed) (2026-06-18)
 

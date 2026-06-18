@@ -127,7 +127,9 @@ ships with the next on-device release) — configurable on the TV (D-pad) and in
 (mouse), persisted per client. The TV-only panel-fit levers (fit scale / overscan / position)
 correct a physical panel and are honestly absent from the web.
 
-![The native-style side menu — a CHANNELS list + WALL actions, mirroring the TV app](docs/screenshots/web/menu.png)
+![The native-style side menu — a CHANNELS list + WALL actions (incl. the wall Preset selector), mirroring the TV app](docs/screenshots/web/menu.png)
+
+![The Nature wall preset applied — the whole grid switched to its server-defined channel-set + 2×2 layout in one step](docs/screenshots/web/wall-preset-nature.png)
 
 ![The settings modal — 2×3 grid default, category-grouped feed sources, captions off by default](docs/screenshots/web/settings.png)
 
