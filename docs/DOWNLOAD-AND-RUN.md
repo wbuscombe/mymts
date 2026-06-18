@@ -89,3 +89,8 @@ it's a **sideload**, not a Play Store app — on your Android TV enable *Install
 apps* for your file manager / `adb install mymts-<version>.apk`, and Play Protect may
 warn on first install (expected for any sideloaded app). The APK is runtime-configurable,
 so the same file works for anyone — point it at your own helper on first launch.
+
+**Customize the channel lineup** (optional, no rebuild): drop a `lineup.local.json` in
+the helper's data dir to add / disable / recategorize channels on top of the shipped
+list (`helper/lineup.local.example.json` documents the schema). No file → the curated
+default; the shipped seed is never edited.

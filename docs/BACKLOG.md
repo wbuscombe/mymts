@@ -110,11 +110,22 @@ screen + a Settings "Helper URL" field, reachability-tested against `/health`) *
 operator's configured build resolves out-of-box (no regression). Verified on-device (`.92`). See
 CHANGELOG (2026-06-18) + ARCHITECTURE "Helper-host boundary".
 
-**Distribution make-or-break — status.** Three of the four are now closed; the runtime
-helper-URL config (the compile-time blocker), the clean-clone `docker compose up` crash-loop
-(a writable `/data` volume), and **signed-APK publishing** (below) all landed; the remaining open
-item is a **per-deployment channel lineup** (the seed is one operator's curation — a self-hoster
-gets that list until lineup editing is exposed).
+**Distribution make-or-break — ALL FOUR CLOSED (2026-06-18); the distribution arc is complete.**
+(1) the compile-time-helper-URL blocker → runtime helper-URL config; (2) the clean-clone
+`docker compose up` crash-loop → a writable `/data` volume; (3) signed-APK publishing → the
+gated `release.yml` Android job; and (4) **per-deployment lineup** → the optional
+`lineup.local.json` override (below). A downstream self-hoster can now clone → run → point a
+stock APK at it → customize the lineup, with no rebuild and without editing the shipped seed.
+
+**CLOSED 2026-06-18 — per-deployment lineup.** An OPTIONAL operator override file
+(`lineup.local.json` in the writable data dir; gitignored, NOT the shipped seed) is reconciled
+on top of the shipped lineup at boot — **add** new channels, **disable** shipped ones, **override**
+their label/category/source_url/kind. No file → identical to today. Each effective entry is
+validated + probed like any channel (bad entry skipped + logged, never crashes the lineup);
+removing the override reverts cleanly (orphaned adds are pruned). Category became storable
+(migration 005; API serves `category or category_of(slug)`). Ships `lineup.local.example.json`.
+Verified end-to-end on a live deploy (no-override = the shipped 53; add/disable/recategorize
+reflected; revert clean). See CHANGELOG + ARCHITECTURE (the override layer).
 
 **ADDRESSED 2026-06-18 — signed-APK publishing pipeline.** `release.yml` now builds the Android
 APK on every `v*` tag and, **gated on the Android keystore secrets** (present → sign + `apksigner

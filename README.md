@@ -40,7 +40,10 @@ Three paths, easiest first:
    fresh DB; `/health`, `/api/channels`, and the web client at `/app/` all serve,
    keyless), then point a stock TV APK at it — the signed `mymts-<version>.apk` is
    published on the [GitHub Release](https://github.com/wbuscombe/mymts/releases) (a
-   sideload; see [`DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md)). *(The operator's
+   sideload; see [`DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md)). **Customize the
+   lineup** (optional, no rebuild): drop a `lineup.local.json` in the helper's data
+   dir to add / disable / recategorize channels on top of the shipped list (see
+   `helper/lineup.local.example.json`); no file → the curated default. *(The operator's
    NAS deploy is the separate `helper/deploy/docker-compose.nas.yml`.)*
 
 ---

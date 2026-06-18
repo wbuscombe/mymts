@@ -81,6 +81,11 @@ brings up the helper (migrations + seed on a fresh DB; `/health` + `/api/channel
 ```bash
 cd helper && cp .env.example .env && docker compose up --build   # → http://localhost:8091
 ```
+**Customize the lineup (optional, no rebuild):** drop a `lineup.local.json` in the
+helper's data dir (`/data` in the container) to **add / disable / recategorize**
+channels on top of the shipped list — see `helper/lineup.local.example.json`. No
+file → the curated default, unchanged. The shipped `seed.json` is never edited.
+
 Point the app at it the same way. See
 [`docs/onboarding/ONBOARD-02-LOCAL-HELPER.md`](docs/onboarding/ONBOARD-02-LOCAL-HELPER.md)
 for details (and to override the helper URL via `local.properties`).
