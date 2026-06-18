@@ -62,6 +62,8 @@ fun MenuOverlay(
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
     onSettingsSelected: () -> Unit,
+    onPresetSelected: () -> Unit,
+    activePresetName: String,
     onResyncAll: () -> Unit,
     modifier: Modifier = Modifier,
     feedSide: FeedSide = FeedSide.Left,
@@ -98,6 +100,8 @@ fun MenuOverlay(
                     versionLine = versionLine,
                     onSlotSelected = onSlotSelected,
                     onSettingsSelected = onSettingsSelected,
+                    onPresetSelected = onPresetSelected,
+                    activePresetName = activePresetName,
                     onResyncAll = onResyncAll,
                 )
             }
@@ -112,6 +116,8 @@ private fun MenuPanel(
     versionLine: String,
     onSlotSelected: (Int) -> Unit,
     onSettingsSelected: () -> Unit,
+    onPresetSelected: () -> Unit,
+    activePresetName: String,
     onResyncAll: () -> Unit,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
@@ -153,6 +159,18 @@ private fun MenuPanel(
             // WyzeGrid family: a section title + a focusable row.
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             SectionTitle("WALL")
+            // Server-authoritative wall preset (News / Nature / Space / Chill).
+            // SELECT opens the picker; the detail shows the active preset so the
+            // operator sees the current set without opening it.
+            MenuRow(
+                row = SlotRow(
+                    slotIndex = -1,
+                    title = "Preset",
+                    detail = activePresetName,
+                    detailStyle = SlotRow.DetailStyle.Default,
+                ),
+                onSelect = onPresetSelected,
+            )
             MenuRow(
                 row = SlotRow(
                     slotIndex = -1,

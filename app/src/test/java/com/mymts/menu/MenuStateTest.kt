@@ -79,6 +79,13 @@ class MenuStateTest {
         assertEquals(2, sel.slotIndex)
     }
 
+    @Test fun `openPresetPicker sets the PresetPicker payload`() {
+        val s = MenuState()
+        s.open()
+        s.openPresetPicker()
+        assertTrue(s.pendingSelection is MenuState.PendingSelection.PresetPicker)
+    }
+
     @Test fun `dismissSelection clears the picker but leaves the menu open`() {
         val s = MenuState()
         s.open()
@@ -108,6 +115,7 @@ class MenuStateTest {
             MenuState.PendingSelection.Settings,
             MenuState.PendingSelection.SourceFilter,
             MenuState.PendingSelection.SportsLeagueFilter,
+            MenuState.PendingSelection.PresetPicker,
         )) {
             assertEquals("$p → dismiss", BackOutcome.DismissOverlay, menuBackOutcome(isOpen = true, pending = p))
             assertEquals("$p → dismiss (from tile)", BackOutcome.DismissOverlay, menuBackOutcome(isOpen = false, pending = p))

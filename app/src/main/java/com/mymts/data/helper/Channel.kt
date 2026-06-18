@@ -49,6 +49,29 @@ data class ChannelsSnapshot(
 }
 
 /**
+ * A server-authoritative wall preset (`/api/presets`) — a switchable channel-set
+ * the user applies to the grid. The helper defines them; the picker renders
+ * whatever is served (a new preset needs no app rebuild). [fill] is `"topup"` (the
+ * News default — preferred + remaining playable, today's behavior) or `"exact"`
+ * (only [slugs], curated). [gridRows]/[gridCols] are the suggested grid (nullable).
+ */
+data class Preset(
+    val id: String,
+    val name: String,
+    val slugs: List<String>,
+    val fill: String,
+    val gridRows: Int?,
+    val gridCols: Int?,
+)
+
+/** Parsed `/api/presets` snapshot. [default] is the no-op preset id (`"news"`). */
+data class PresetsSnapshot(
+    val schemaVersion: Int,
+    val default: String,
+    val presets: List<Preset>,
+)
+
+/**
  * Parsed `/health` response — used by the runtime helper-URL setup/Settings to
  * confirm a candidate address is actually a MyMTS helper (a `buildSha` is present),
  * not merely a server that answered HTTP 200.

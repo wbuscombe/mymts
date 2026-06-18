@@ -51,6 +51,7 @@ import com.mymts.data.helper.Channel
 import com.mymts.data.helper.ChannelsRepository
 import com.mymts.data.helper.FeedRepository
 import com.mymts.data.helper.HelperClient
+import com.mymts.data.helper.Preset
 import com.mymts.data.lineup.LineupStore
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.ticker.HelperTickerSource
@@ -61,6 +62,7 @@ import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
 import com.mymts.ui.menu.menuBackOutcome
+import com.mymts.ui.menu.PresetPickerOverlay
 import com.mymts.ui.menu.SettingsOverlay
 import com.mymts.ui.menu.SourceFilterOverlay
 import com.mymts.ui.wall.feed.FeedListBuilder
@@ -98,6 +100,10 @@ import kotlinx.coroutines.delay
  *  short press which opens the tile's controls. Tunable by feel on the remote. */
 private const val LONG_PRESS_RESYNC_MS = 500L
 
+/** How often to re-poll `/api/presets`. Presets change rarely (operator edits the
+ *  helper), so a slow cadence keeps the served set fresh without churn. */
+private const val PRESETS_POLL_MS = 60_000L
+
 @Composable
 fun WallScreen(
     helperBaseUrl: String,
@@ -122,6 +128,25 @@ fun WallScreen(
     val audibleSlot by lineupStore.audibleSlot
     val captionsOnSlots by lineupStore.captionsOnSlots
     val wallSettings by lineupStore.wallSettings
+    // The operator's active wall preset (default "news" = today's lineup, no
+    // regression). The helper is authoritative for what each preset CONTAINS;
+    // this id only selects which one the wall renders.
+    val activePreset by lineupStore.activePreset
+
+    // Server-authoritative wall presets (`/api/presets`). Polled like the
+    // channel list so a new/edited preset flows with no app rebuild. Empty
+    // until the first successful fetch — the wall just renders the default
+    // ("news") lineup until then, so a slow/absent helper is never a regression.
+    var presets by remember { mutableStateOf<List<Preset>>(emptyList()) }
+    LaunchedEffect(client) {
+        while (true) {
+            // Keep the last good set on a failed fetch — the wall stays on its
+            // current preset rather than reverting; an absent helper is never a
+            // regression because the default ("news") needs no served data.
+            (client.fetchPresets() as? HelperClient.Result.Ok)?.let { presets = it.value.presets }
+            delay(PRESETS_POLL_MS)
+        }
+    }
 
     // Per-slot soft-caption-track availability. Updated from VideoGrid's
     // Player.Listener.onTracksChanged forwarding. Read by the controls
@@ -184,8 +209,37 @@ fun WallScreen(
     // operator's per-cell channel choices survive a grid-size change for the
     // slots that still exist.
     val effectiveTileCount = wallSettings.gridCells   // rows × cols
-    val defaultOrder = remember(playable, effectiveTileCount) {
-        LineupSelector.forWall(maxCount = effectiveTileCount).invoke(playable)
+    // The default (un-overridden) lineup for the active preset. "news" — the
+    // default and the value on a fresh install — uses the EXISTING forWall
+    // selector unchanged (preferred → fallback → top-up), so the wall is
+    // byte-identical to before presets existed (no regression). Any other
+    // preset builds strictly from its served slugs, topping up with other
+    // playable channels only when its fill is "topup" (curated stays curated).
+    val activePresetObj = remember(presets, activePreset) {
+        presets.firstOrNull { it.id == activePreset }
+    }
+    val defaultOrder = remember(playable, allChannels, effectiveTileCount, activePreset, activePresetObj) {
+        val preset = activePresetObj
+        when {
+            // Default / not-yet-served: today's wall, unchanged (no regression).
+            activePreset == LineupStore.DEFAULT_PRESET || preset == null ->
+                LineupSelector.forWall(maxCount = effectiveTileCount).invoke(playable)
+            // Exact preset = the operator's explicit set, rendered honestly: a
+            // listed channel that's offline keeps its slot as an OFFLINE tile
+            // (resolved against allChannels, no DENY) — see exactLineup.
+            preset.fill != "topup" ->
+                LineupSelector.exactLineup(preset.slugs, allChannels, effectiveTileCount)
+            // A non-news top-up preset: its slugs first, then fill remaining slots
+            // with other playable channels (DENY applies to the top-up tier).
+            else ->
+                LineupSelector(
+                    preferredSlugs = preset.slugs,
+                    fallbackSlugs = emptyList(),
+                    maxCount = effectiveTileCount,
+                    denySlugs = LineupSelector.DENY,
+                    topUp = true,
+                ).invoke(playable)
+        }
     }
     val slots = remember(effectiveTileCount, defaultOrder, allChannels, overrides) {
         TileSlotResolver.resolve(
@@ -203,6 +257,28 @@ fun WallScreen(
     // operator can scan the working ones quickly. Honest (live/offline)
     // status travels into the picker via Channel.isPlayable.
     val pickerChannels = remember(allChannels) { allChannels.sortedByLiveFirst() }
+
+    // The active preset's display name for the menu row. When the active preset
+    // isn't currently served — not yet fetched, or removed helper-side — the
+    // lineup falls back to the news default (see defaultOrder), so the label
+    // reads "News Wall" too: the menu never claims a preset the wall isn't
+    // actually showing. The persisted id is untouched, so the choice reactivates
+    // the moment the helper serves it again.
+    val activePresetName = activePresetObj?.name ?: "News Wall"
+
+    // Apply a server preset: remember it, clear per-slot overrides (so the
+    // preset's channels take the slots, not stale manual picks), and apply its
+    // suggested grid when present. The lineup itself is rebuilt reactively from
+    // [activePreset] via [defaultOrder] — nothing here mutates the tile list
+    // directly, keeping the slot list a single source of truth.
+    fun applyPreset(id: String) {
+        val preset = presets.firstOrNull { it.id == id }
+        lineupStore.setActivePreset(id)
+        lineupStore.clearOverrides()
+        val r = preset?.gridRows
+        val c = preset?.gridCols
+        if (r != null && c != null) lineupStore.setGrid(r, c)
+    }
 
     // Single coherent, focus-INDEPENDENT BACK handler (Part A). Enabled whenever
     // ANY overlay is open; it pops one level via the pure `menuBackOutcome`. This
@@ -508,6 +584,8 @@ fun WallScreen(
             // controls overlay then re-routes "Channel" to the picker.
             onSlotSelected = { slotIndex -> menu.openControls(slotIndex) },
             onSettingsSelected = { menu.openSettings() },
+            onPresetSelected = { menu.openPresetPicker() },
+            activePresetName = activePresetName,
             onResyncAll = { requestResync(-1); menu.close() },
             modifier = Modifier.fillMaxSize(),
             feedSide = wallSettings.feedSide,
@@ -633,6 +711,18 @@ fun WallScreen(
                 hiddenSources = wallSettings.hiddenSources,
                 onToggle = { source -> lineupStore.toggleHiddenSource(source) },
                 onCancel = { menu.openSettings() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (pending is MenuState.PendingSelection.PresetPicker) {
+            // The server-authoritative wall-preset picker. Applying a preset
+            // closes the whole menu back to the wall (one less hop, like the
+            // channel picker's commit); BACK returns to the side menu.
+            PresetPickerOverlay(
+                presets = presets,
+                activePresetId = activePreset,
+                onApply = { id -> applyPreset(id); menu.close() },
+                onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
             )
         }

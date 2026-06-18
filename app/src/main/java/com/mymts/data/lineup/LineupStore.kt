@@ -73,6 +73,7 @@ class LineupStore(context: Context) {
     private val _audibleSlot = mutableIntStateOf(readAudibleSlotFromDisk())
     private val _captionsOnSlots = mutableStateOf(readCaptionsFromDisk())
     private val _wallSettings = mutableStateOf(readWallSettingsFromDisk())
+    private val _activePreset = mutableStateOf(readActivePresetFromDisk())
 
     /**
      * Live state — recomposes any composable observing it on every
@@ -106,6 +107,16 @@ class LineupStore(context: Context) {
      * every [updateWallSettings].
      */
     val wallSettings: State<WallSettings> get() = _wallSettings
+
+    /**
+     * The active server-authoritative wall preset id (e.g. `"news"`,
+     * `"nature"`). Default — and the value on a fresh install — is
+     * [DEFAULT_PRESET], so the wall looks identical to today until the
+     * operator switches (no regression). The helper is authoritative for
+     * *what* each preset contains; this only remembers *which* one is on.
+     * Live state recomposes WallScreen on [setActivePreset].
+     */
+    val activePreset: State<String> get() = _activePreset
 
     fun updateWallSettings(settings: WallSettings) {
         _wallSettings.value = settings
@@ -272,6 +283,42 @@ class LineupStore(context: Context) {
     }
 
     /**
+     * Drop every per-slot override. Same effect as [clearAll] — named for
+     * the preset flow, which clears the operator's manual per-slot picks so
+     * the freshly-applied preset's channels actually take the slots (a
+     * stale override would otherwise mask the preset).
+     */
+    fun clearOverrides() = clearAll()
+
+    /**
+     * Set the wall grid to [rows]×[cols] in one write (each clamped to the
+     * supported 1–3 range). Used by the preset flow to apply a preset's
+     * suggested grid; routes through [updateWallSettings] so it persists
+     * and recomposes exactly like a manual grid nudge — the locked
+     * panel-fit levers are untouched.
+     */
+    fun setGrid(rows: Int, cols: Int) {
+        updateWallSettings(
+            _wallSettings.value.copy(
+                gridRows = clampGridDim(rows),
+                gridCols = clampGridDim(cols),
+            )
+        )
+    }
+
+    /**
+     * Remember [id] as the active wall preset. The helper defines what the
+     * preset contains; WallScreen reads [activePreset] to decide how to
+     * build the lineup (the default [DEFAULT_PRESET] keeps today's
+     * top-up behavior). Persisted so the choice survives relaunch.
+     */
+    fun setActivePreset(id: String) {
+        if (id.isBlank() || id == _activePreset.value) return
+        _activePreset.value = id
+        prefs.edit().putString(KEY_ACTIVE_PRESET, id).apply()
+    }
+
+    /**
      * Make [slotIndex] the audible tile. If it was already audible,
      * mutes the wall (toggle semantics). The single-audible-tile model
      * means selecting a tile to unmute mutes every other tile — the
@@ -331,6 +378,9 @@ class LineupStore(context: Context) {
     private fun readAudibleSlotFromDisk(): Int =
         prefs.getInt(KEY_AUDIBLE_SLOT, -1)
 
+    private fun readActivePresetFromDisk(): String =
+        resolveActivePreset(prefs.getString(KEY_ACTIVE_PRESET, null))
+
     // Delegates to the PURE [resolveWallSettings] (companion) so the
     // key-wiring + defaults are unit-testable without an Android context.
     private fun readWallSettingsFromDisk(): WallSettings = resolveWallSettings(
@@ -386,7 +436,24 @@ class LineupStore(context: Context) {
         private const val KEY_TICKER_SCROLL = "wall_settings_ticker_scroll_pct"
         private const val KEY_TICKER_FLIP = "wall_settings_ticker_flip_pct"
         private const val KEY_TICKER_MOTION = "wall_settings_ticker_motion"
+        private const val KEY_ACTIVE_PRESET = "active_preset"
         private const val TAG = "MyMTS.LineupStore"
+
+        /**
+         * Default active preset id — matches the helper's `DEFAULT_PRESET_ID`
+         * and the web client's `activePreset` default. "news" is the no-op
+         * preset: the wall renders exactly as it did before presets existed.
+         */
+        const val DEFAULT_PRESET = "news"
+
+        /**
+         * Pure resolver for the persisted active-preset id — a blank or absent
+         * value (fresh install, or a cleared pref) resolves to [DEFAULT_PRESET]
+         * ("news"), the no-op preset that renders today's wall. Testable without
+         * an Android context, like [resolveWallSettings].
+         */
+        internal fun resolveActivePreset(raw: String?): String =
+            if (raw.isNullOrBlank()) DEFAULT_PRESET else raw
 
         /**
          * Pure resolver for the persisted wall settings — accessor lambdas

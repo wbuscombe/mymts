@@ -23,6 +23,10 @@ class LineupSelector(
     private val fallbackSlugs: List<String>,
     private val maxCount: Int,
     private val denySlugs: Set<String> = emptySet(),
+    // When false (an "exact" wall preset), fill ONLY with the preferred slugs — no
+    // topping up with other playable channels, so a curated preset stays curated.
+    // Default true preserves the wall's existing default behavior (no regression).
+    private val topUp: Boolean = true,
 ) {
     init {
         require(maxCount >= 0) { "maxCount must be >= 0 (was $maxCount)" }
@@ -48,8 +52,9 @@ class LineupSelector(
 
         preferredSlugs.forEach(::tryAdd)
         fallbackSlugs.forEach(::tryAdd)
-        // Top up with any remaining (allowed) playable channels we haven't picked.
-        allowed.forEach { tryAdd(it.slug) }
+        // Top up with any remaining (allowed) playable channels we haven't picked —
+        // unless this is an "exact" preset, which fills ONLY with its own slugs.
+        if (topUp) allowed.forEach { tryAdd(it.slug) }
 
         return picked.values.toList()
     }
@@ -118,5 +123,35 @@ class LineupSelector(
                 maxCount = maxCount,
                 denySlugs = DENY,
             )
+
+        /**
+         * Lineup for an **exact** wall preset: the preset's [slugs] in order,
+         * resolved against the helper's FULL channel set ([allChannels], live OR
+         * offline) — capped at [maxCount].
+         *
+         * Unlike the default wall (and [forWall]), this is **not** filtered to
+         * playable and **does not** apply [DENY]: an exact preset is the
+         * operator's explicit selection, so a listed channel that's currently
+         * down stays in its slot and renders as an honest C2 OFFLINE panel
+         * (`TileSlotResolver.Slot.Offline`) rather than vanishing — that's why
+         * e.g. NASA TV is *fine* in the Space preset (it's a selection, not a
+         * liveness claim). Slugs that match no channel at all are dropped (no
+         * fake tiles); duplicates collapse to first occurrence.
+         */
+        fun exactLineup(
+            slugs: List<String>,
+            allChannels: List<Channel>,
+            maxCount: Int,
+        ): List<Channel> {
+            if (maxCount <= 0) return emptyList()
+            val bySlug = allChannels.associateBy { it.slug }
+            val picked = LinkedHashMap<String, Channel>(maxCount)
+            for (slug in slugs) {
+                if (picked.size >= maxCount) break
+                if (slug in picked) continue
+                bySlug[slug]?.let { picked[slug] = it }
+            }
+            return picked.values.toList()
+        }
     }
 }

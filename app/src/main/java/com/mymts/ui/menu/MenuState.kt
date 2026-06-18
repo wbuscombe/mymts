@@ -79,6 +79,16 @@ class MenuState {
         pendingSelection = PendingSelection.SportsLeagueFilter
     }
 
+    /**
+     * Open the wall-preset picker — the list of server-authoritative
+     * presets (`/api/presets`) the operator switches between. Shows over
+     * the menu so BACK returns to the side panel; applying a preset closes
+     * the whole menu back to the wall.
+     */
+    fun openPresetPicker() {
+        pendingSelection = PendingSelection.PresetPicker
+    }
+
     fun dismissSelection() {
         pendingSelection = null
     }
@@ -99,6 +109,7 @@ class MenuState {
         data object Settings : PendingSelection()
         data object SourceFilter : PendingSelection()
         data object SportsLeagueFilter : PendingSelection()
+        data object PresetPicker : PendingSelection()
     }
 }
 

@@ -43,6 +43,11 @@ class HelperClient(
         parseChannels(json)
     }
 
+    /** Fetch + parse the server-authoritative wall presets (`/api/presets`). */
+    suspend fun fetchPresets(): Result<PresetsSnapshot> = request("/api/presets") { json ->
+        parsePresets(json)
+    }
+
     /**
      * Fetch and parse `/api/feed` with a bounded item limit. The helper
      * already strips HTML — we render whatever it returns as native text.
@@ -260,6 +265,35 @@ class HelperClient(
                 )
             }
             return ChannelsSnapshot(version, list)
+        }
+
+        /** Parse a `/api/presets` JSON body (server-authoritative wall presets).
+         *  Exposed for unit tests. A grid block is optional (nullable dims). */
+        fun parsePresets(json: JSONObject): PresetsSnapshot {
+            val version = json.optInt("schema_version", -1)
+            // Pin the wire contract like parseChannels/parseFeed/parseTicker — refuse
+            // an unknown version outright rather than guess at field semantics (C3).
+            if (version != SUPPORTED_SCHEMA_VERSION) {
+                throw HelperException("presets schema_version=$version not supported")
+            }
+            val def = json.optString("default", "news")
+            val arr = json.optJSONArray("presets") ?: throw HelperException("presets field missing")
+            val list = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                val slugsArr = o.optJSONArray("slugs")
+                val slugs = if (slugsArr == null) emptyList()
+                    else (0 until slugsArr.length()).map { slugsArr.getString(it) }
+                val grid = o.optJSONObject("grid")
+                Preset(
+                    id = o.requireString("id"),
+                    name = o.optString("name", o.requireString("id")),
+                    slugs = slugs,
+                    fill = o.optString("fill", "exact"),
+                    gridRows = grid?.takeIf { it.has("rows") }?.optInt("rows"),
+                    gridCols = grid?.takeIf { it.has("cols") }?.optInt("cols"),
+                )
+            }
+            return PresetsSnapshot(version, def, list)
         }
     }
 }
