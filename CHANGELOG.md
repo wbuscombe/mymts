@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat: server-authoritative wall presets — News / Nature / Space / Chill (2026-06-18)
+
+Switchable wall presets — predefined channel-sets the user applies to the grid — the rest of
+the original wall vision. **Server-authoritative**: the helper defines + serves the presets on
+`/api/presets`, both clients render the same set, and a new preset flows with **no rebuild**
+(the same pattern as categories). **Default = News Wall, no regression**: the wall is identical
+to today until the user switches.
+
+- **Helper** (`channels/presets.py`, `GET /api/presets`): four presets — **News Wall** (the
+  current default news set; `fill: topup`, matching native `PREFERRED` / web `WEB_DEFAULT_LINEUP`),
+  **Nature** (explore.org + Monterey Bay Aquarium + EarthCam / earthTV), **Space** (ISS HD + NASA
+  TV — honest-offline in a preset is fine, it's a *selection* not a liveness claim), and **Chill /
+  Mixed** (a curated blend). Each carries an ordered slug list, a suggested grid, and a `fill` mode
+  (`topup` = preferred + remaining playable, today's behavior; `exact` = only the listed slugs).
+  Additive endpoint (its own `schema_version`; `/api/channels` unchanged). A test pins that every
+  preset slug references a real seeded channel (no dead tiles).
+- **Native + Web**: a preset selector in the menu's WALL section; selecting one loads that preset's
+  channels (replacing the tiles) + applies its grid, persisted per-device. The **`news`** default
+  uses each client's EXISTING default lineup path (untouched → no regression); non-default presets
+  fill exactly with their slugs. WallSettings / panel-fit locked levers untouched.
+
 ## feat(helper): per-deployment lineup override (distribution make-or-break #4 — closed) (2026-06-18)
 
 A downstream self-hoster can customize the channel lineup WITHOUT editing the shipped

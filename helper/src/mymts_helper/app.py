@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from . import db, phantom
 from .channels.api import get_router as channels_router
 from .channels.override import seed_lineup
+from .channels.presets import get_router as presets_router
 from .channels.prober import ChannelProber
 from .config import Config
 from .feeds.api import get_router as feed_router
@@ -186,6 +187,7 @@ def create_app(
 
     app.include_router(feed_router(db_path))
     app.include_router(channels_router(db_path))
+    app.include_router(presets_router())
     app.include_router(playlist_router(db_path, profiles))
     app.include_router(ticker_router(markets_poller, sports_poller))
 
