@@ -22,7 +22,7 @@ import {
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
   sectionChannels, sectionFeedSources, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
-  WEB_DEFAULT_LINEUP,
+  WEB_DEFAULT_LINEUP, presetLineup,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -420,6 +420,12 @@ let channelsBySlug = new Map();
 let channelList = [];
 let cells = [];          // per-index { key, teardown, setState }
 let autoFilled = false;
+
+// Server-authoritative wall presets (GET /api/presets). The helper defines them;
+// the selector renders whatever is served (a new preset appears with no rebuild).
+let presets = [];
+const presetById = (id) => presets.find((p) => p.id === id);
+const isPlayable = (c) => c && (browserPlayability(c) === "yes" || browserPlayability(c) === "maybe");
 // Single-audible-tile model (native LineupStore.audibleSlot): at most ONE tile
 // is unmuted. SESSION-ONLY — never persisted: the autoplay rule blocks
 // autoplay-with-sound, so audio is an explicit per-session choice, not a saved
@@ -445,19 +451,63 @@ async function pollChannels() {
  *  browser-playable channels so the grid isn't blank on first load. */
 function autoFillDefaults() {
   if (autoFilled || Object.keys(prefs.assignments).length > 0) { autoFilled = true; return; }
-  const playable = (c) => c && (browserPlayability(c) === "yes" || browserPlayability(c) === "maybe");
-  // Curated default lineup (mirrors native PREFERRED) FIRST so the lineup
-  // expansion never changes which channels a fresh wall opens with; then any
-  // other playable channel as fallback fill for the remaining slots.
-  const preferred = WEB_DEFAULT_LINEUP.filter((slug) => playable(channelsBySlug.get(slug)));
-  const rest = channelList
-    .filter((c) => playable(c) && !WEB_DEFAULT_LINEUP.includes(c.slug))
-    .map((c) => c.slug);
-  const fill = [...preferred, ...rest];
+  // The active preset's set (only when it's a NON-default preset that's loaded);
+  // otherwise the curated News default — UNCHANGED, so a fresh wall (or `news`) is
+  // identical to today. (News mirrors native PREFERRED; the lineup expansion never
+  // changes which channels a fresh wall opens with.)
+  const preset = prefs.activePreset !== "news" ? presetById(prefs.activePreset) : null;
+  let fill;
+  if (preset) {
+    fill = presetLineup(preset, channelList, isPlayable);
+  } else {
+    const preferred = WEB_DEFAULT_LINEUP.filter((slug) => isPlayable(channelsBySlug.get(slug)));
+    const rest = channelList
+      .filter((c) => isPlayable(c) && !WEB_DEFAULT_LINEUP.includes(c.slug))
+      .map((c) => c.slug);
+    fill = [...preferred, ...rest];
+  }
   const layout = gridConfig();
   for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
   autoFilled = true;
   savePrefs();
+}
+
+/** Apply a wall preset: replace the tiles with the preset's channels + its grid,
+ *  persist, rebuild. `news` keeps today's behavior (topup default). */
+function applyPreset(presetId) {
+  const preset = presetById(presetId);
+  if (!preset) return;
+  prefs.activePreset = preset.id;
+  if (preset.grid && typeof preset.grid.rows === "number" && typeof preset.grid.cols === "number") {
+    prefs.gridRows = clampGridDim(preset.grid.rows);
+    prefs.gridCols = clampGridDim(preset.grid.cols);
+  }
+  const fill = presetLineup(preset, channelList, isPlayable);
+  prefs.assignments = {};
+  const layout = gridConfig();
+  for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
+  savePrefs();
+  buildGrid();
+}
+
+/** Populate the menu's preset <select> from the served presets + the active one. */
+function populatePresetSelect() {
+  const sel = el("menu-preset");
+  if (!sel || presets.length === 0) return;
+  sel.replaceChildren(...presets.map((p) => {
+    const o = document.createElement("option");
+    o.value = p.id; o.textContent = p.name;
+    return o;
+  }));
+  sel.value = presetById(prefs.activePreset) ? prefs.activePreset : "news";
+}
+
+async function pollPresets() {
+  try {
+    const snap = await api.presets();
+    presets = Array.isArray(snap.presets) ? snap.presets : [];
+    populatePresetSelect();
+  } catch { /* presets unavailable → selector stays empty; the wall is unaffected */ }
 }
 
 /** Cancel a cell's pending auto-reconnect timer (idempotent). Called before
@@ -916,6 +966,7 @@ function refreshSlotControls() {
 // ----- side menu (the web analog of native's MenuOverlay) — CHANNELS + WALL -----
 function openMenu() {
   buildMenuChannels();
+  populatePresetSelect();   // reflect the active preset + any newly-served presets
   el("menu-modal").classList.remove("hidden");
 }
 function closeMenu() { closeModal("menu-modal"); }
@@ -1017,6 +1068,9 @@ function wireSettings() {
   };
   wireRow("menu-settings", () => { closeMenu(); el("settings-modal").classList.remove("hidden"); });
   wireRow("menu-resync", () => { refreshAllVideo(); closeMenu(); });
+  // Wall preset selector (server-authoritative): apply on change, then close.
+  const presetSel = el("menu-preset");
+  if (presetSel) presetSel.addEventListener("change", () => { applyPreset(presetSel.value); closeMenu(); });
   el("slot-close").addEventListener("click", closeSlotControls);
   el("slot-modal").addEventListener("click", (e) => { if (e.target === el("slot-modal")) closeSlotControls(); });
   el("settings-close").addEventListener("click", () => closeModal("settings-modal"));
@@ -1199,6 +1253,7 @@ function main() {
   startLoop(pollTicker, TICKER_POLL_MS);
   startLoop(pollFeed, FEED_POLL_MS);
   startLoop(pollChannels, CHANNELS_POLL_MS);
+  pollPresets();   // server-authoritative presets (rarely change → fetch once)
   setInterval(rotateTicker, MODE_ROTATE_MS);
 }
 document.addEventListener("DOMContentLoaded", main);

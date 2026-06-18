@@ -52,6 +52,7 @@ import {
   DEFAULT_VIEW_PREFS,
   normalizeViewPrefs,
   serializeViewPrefs,
+  presetLineup,
   safeHttpLink,
   feedDetailModel,
   classifyVideoFailure,
@@ -692,6 +693,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
     hidden: new Set(["BBC", "Reuters"]),
     hiddenLeagues: new Set(["NBA"]),
     assignments: { 0: "espn", 1: "tnt" },
+    activePreset: "nature",
   };
   const stored = serializeViewPrefs(live);           // → plain, arrays
   // Survives a real JSON round-trip (what localStorage does).
@@ -703,6 +705,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
     tickerMotion: "flip",
     hidden: ["BBC", "Reuters"], hiddenLeagues: ["NBA"],
     assignments: { 0: "espn", 1: "tnt" },
+    activePreset: "nature",
   });
   // Idempotent: normalize(serialize(reread-as-live)) is the same again.
   const live2 = { ...reread, hidden: new Set(reread.hidden), hiddenLeagues: new Set(reread.hiddenLeagues) };
@@ -966,4 +969,42 @@ test("shouldReassertAudio: reconnect keeps audio only for the SAME slot+channel 
   // Wall muted (audibleIndex -1) → nothing re-asserts even on a slug match.
   assert.equal(shouldReassertAudio(-1, "espn", 0, "espn"), false);
   assert.equal(shouldReassertAudio(-1, null, 0, null), false);
+});
+
+// ----- wall presets (server-authoritative) -----
+
+const _play = (c) => !!c && c.browser_playable !== false;
+const _chans = [
+  { slug: "livenow-fox", browser_playable: true },
+  { slug: "bbc-news", browser_playable: true },
+  { slug: "explore-nature-cams", browser_playable: true },
+  { slug: "nasa-tv", browser_playable: false },   // honest-offline-ish (unplayable)
+  { slug: "cnn", browser_playable: true },
+];
+
+test("presetLineup: exact fill = only the preset's PLAYABLE slugs (curated, no top-up)", () => {
+  const preset = { id: "nature", fill: "exact", slugs: ["explore-nature-cams", "nasa-tv"] };
+  // nasa-tv is unplayable → dropped; no other channels topped up.
+  assert.deepEqual(presetLineup(preset, _chans, _play), ["explore-nature-cams"]);
+});
+
+test("presetLineup: topup fill = preset slugs then remaining playable (the News default)", () => {
+  const preset = { id: "news", fill: "topup", slugs: ["livenow-fox", "bbc-news"] };
+  const out = presetLineup(preset, _chans, _play);
+  assert.deepEqual(out.slice(0, 2), ["livenow-fox", "bbc-news"]);   // preferred first, in order
+  assert.ok(out.includes("explore-nature-cams") && out.includes("cnn"));   // topped up
+  assert.ok(!out.includes("nasa-tv"));   // unplayable never fills
+});
+
+test("presetLineup: empty/invalid preset → []", () => {
+  assert.deepEqual(presetLineup(null, _chans, _play), []);
+  assert.deepEqual(presetLineup({ id: "x" }, _chans, _play), []);
+});
+
+test("view prefs: activePreset defaults to 'news' and round-trips", () => {
+  assert.equal(normalizeViewPrefs({}).activePreset, "news");
+  assert.equal(normalizeViewPrefs({ activePreset: "nature" }).activePreset, "nature");
+  assert.equal(normalizeViewPrefs({ activePreset: 42 }).activePreset, "news");   // non-string → default
+  const round = serializeViewPrefs(normalizeViewPrefs({ activePreset: "space" }));
+  assert.equal(round.activePreset, "space");
 });

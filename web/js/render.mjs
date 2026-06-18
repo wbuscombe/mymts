@@ -521,7 +521,24 @@ export const DEFAULT_VIEW_PREFS = {
   tickerFlipPct: 100,      // flip dwell speed (native Flip speed) — separate lever, like native
   tickerMotion: "crawl",   // web default; Android defaults to "flip"
   hidden: [], hiddenLeagues: [], assignments: {},
+  activePreset: "news",    // server-authoritative wall preset; "news" = the default
 };
+
+/** Ordered slugs a wall preset fills the grid with. `topup` (the News default) =
+ *  the preset's playable slugs, then any other playable channel — today's behavior;
+ *  any other `fill` (e.g. "exact") = only the preset's playable slugs (curated, no
+ *  top-up). `isPlayable(channel|undefined)` decides which channels can take a tile.
+ *  Pure — the apply path persists `prefs.assignments` from this. */
+export function presetLineup(preset, channelList, isPlayable) {
+  if (!preset || !Array.isArray(preset.slugs)) return [];
+  const bySlug = new Map((channelList || []).map((c) => [c.slug, c]));
+  const chosen = preset.slugs.filter((s) => isPlayable(bySlug.get(s)));
+  if (preset.fill !== "topup") return chosen;
+  const rest = (channelList || [])
+    .filter((c) => isPlayable(c) && !preset.slugs.includes(c.slug))
+    .map((c) => c.slug);
+  return [...chosen, ...rest];
+}
 
 /** Feed side (native Feed side) — left or right; anything else → "left". Pure. */
 export function feedSideOption(value) {
@@ -585,6 +602,7 @@ export function normalizeViewPrefs(raw) {
     hidden: Array.isArray(p.hidden) ? p.hidden.map(String) : [],
     hiddenLeagues: Array.isArray(p.hiddenLeagues) ? p.hiddenLeagues.map(String) : [],
     assignments: (p.assignments && typeof p.assignments === "object") ? p.assignments : {},
+    activePreset: typeof p.activePreset === "string" ? p.activePreset : DEFAULT_VIEW_PREFS.activePreset,
   };
 }
 
@@ -608,6 +626,7 @@ export function serializeViewPrefs(prefs) {
     hidden: p.hidden instanceof Set ? [...p.hidden] : p.hidden,
     hiddenLeagues: p.hiddenLeagues instanceof Set ? [...p.hiddenLeagues] : p.hiddenLeagues,
     assignments: p.assignments,
+    activePreset: p.activePreset,
   });
 }
 

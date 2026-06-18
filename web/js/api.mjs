@@ -40,6 +40,7 @@ async function getTicker(path) {
 export const api = {
   feed: (limit = 100) => getJson(`/api/feed?limit=${encodeURIComponent(limit)}`),
   channels: () => getJson(`/api/channels`),
+  presets: () => getJson(`/api/presets`),
   tickerMarkets: () => getTicker(`/api/ticker/markets`),
   tickerSports: () => getTicker(`/api/ticker/sports`),
   health: () => getJson(`/health`),
