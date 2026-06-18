@@ -22,7 +22,7 @@ import {
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
   sectionChannels, sectionFeedSources, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
-  WEB_DEFAULT_LINEUP, presetLineup,
+  presetLineup, newsLineup, PRESETS_SCHEMA_VERSION,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 
@@ -456,16 +456,12 @@ function autoFillDefaults() {
   // identical to today. (News mirrors native PREFERRED; the lineup expansion never
   // changes which channels a fresh wall opens with.)
   const preset = prefs.activePreset !== "news" ? presetById(prefs.activePreset) : null;
-  let fill;
-  if (preset) {
-    fill = presetLineup(preset, channelList, isPlayable);
-  } else {
-    const preferred = WEB_DEFAULT_LINEUP.filter((slug) => isPlayable(channelsBySlug.get(slug)));
-    const rest = channelList
-      .filter((c) => isPlayable(c) && !WEB_DEFAULT_LINEUP.includes(c.slug))
-      .map((c) => c.slug);
-    fill = [...preferred, ...rest];
-  }
+  // News (default) uses the SAME forWall-equivalent order as the native TV
+  // (PREFERRED → FALLBACK → rest, deny-listed slugs excluded) — shared so the
+  // fresh-wall autofill and the News-preset apply can't drift from each other or
+  // from the TV. A non-default preset fills with its own slugs.
+  const fill = preset ? presetLineup(preset, channelList, isPlayable)
+                      : newsLineup(channelList, isPlayable);
   const layout = gridConfig();
   for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
   autoFilled = true;
@@ -482,7 +478,10 @@ function applyPreset(presetId) {
     prefs.gridRows = clampGridDim(preset.grid.rows);
     prefs.gridCols = clampGridDim(preset.grid.cols);
   }
-  const fill = presetLineup(preset, channelList, isPlayable);
+  // news → the forWall-equivalent order (parity with native + the autofill path);
+  // any other preset → its own slugs.
+  const fill = preset.id === "news" ? newsLineup(channelList, isPlayable)
+                                    : presetLineup(preset, channelList, isPlayable);
   prefs.assignments = {};
   const layout = gridConfig();
   for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
@@ -505,6 +504,9 @@ function populatePresetSelect() {
 async function pollPresets() {
   try {
     const snap = await api.presets();
+    // Schema guard (ARCH-1): a contract we don't grok → ignore it rather than
+    // render misread fields. Selector stays on its last good set; wall unaffected.
+    if (snap?.schema_version !== PRESETS_SCHEMA_VERSION) return;
     presets = Array.isArray(snap.presets) ? snap.presets : [];
     populatePresetSelect();
   } catch { /* presets unavailable → selector stays empty; the wall is unaffected */ }

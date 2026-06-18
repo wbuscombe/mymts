@@ -511,6 +511,20 @@ export const WEB_DEFAULT_LINEUP = [
   "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnbc", "cnn",
 ];
 
+/** Mirrors native LineupSelector.FALLBACK — walked after PREFERRED when a preferred
+ *  channel isn't live, so a larger news grid fills with the same second-tier channels
+ *  the TV uses (cross-client parity), not an alphabetical accident. */
+export const WEB_FALLBACK = ["c-span", "iss-feed", "white-house-tv", "newsmax", "cnn-international"];
+
+/** Mirrors native LineupSelector.DENY — slugs that may probe live but must NOT take a
+ *  DEFAULT slot (nasa-tv: master-only HLS that settles DEAD in a player). The news/
+ *  top-up tiers exclude these; an EXACT preset that explicitly lists one still shows it
+ *  (honest-offline), exactly like native. */
+export const WEB_DENY = new Set(["nasa-tv"]);
+
+/** The presets envelope schema this client understands (helper PRESETS_SCHEMA_VERSION). */
+export const PRESETS_SCHEMA_VERSION = 1;
+
 /** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
 export const DEFAULT_VIEW_PREFS = {
   gridRows: DEFAULT_GRID_ROWS, gridCols: DEFAULT_GRID_COLS, feedPct: 32, feedFont: 1,
@@ -532,12 +546,35 @@ export const DEFAULT_VIEW_PREFS = {
 export function presetLineup(preset, channelList, isPlayable) {
   if (!preset || !Array.isArray(preset.slugs)) return [];
   const bySlug = new Map((channelList || []).map((c) => [c.slug, c]));
-  const chosen = preset.slugs.filter((s) => isPlayable(bySlug.get(s)));
+  // Keep the preset's slugs that reference a KNOWN channel — live OR honest-offline.
+  // A preset is a SELECTION, not a liveness claim: an explicitly-listed channel
+  // that's down keeps its slot and renders as an OFFLINE tile (preserving slot
+  // order), exactly like native exactLineup. Slugs with no channel at all drop.
+  const chosen = preset.slugs.filter((s) => bySlug.has(s));
   if (preset.fill !== "topup") return chosen;
   const rest = (channelList || [])
-    .filter((c) => isPlayable(c) && !preset.slugs.includes(c.slug))
+    .filter((c) => isPlayable(c) && !preset.slugs.includes(c.slug) && !WEB_DENY.has(c.slug))
     .map((c) => c.slug);
   return [...chosen, ...rest];
+}
+
+/** The default news wall's slug order — mirrors native LineupSelector.forWall:
+ *  PREFERRED, then FALLBACK, then any other PLAYABLE channel; deny-listed slugs
+ *  never take a default slot. Pure, and shared by BOTH the fresh-wall autofill and
+ *  the News-preset apply so the two paths can never diverge (and both match the TV). */
+export function newsLineup(channelList, isPlayable) {
+  const bySlug = new Map((channelList || []).map((c) => [c.slug, c]));
+  const out = [];
+  const seen = new Set();
+  const tryAdd = (slug) => {
+    if (seen.has(slug) || WEB_DENY.has(slug)) return;
+    const c = bySlug.get(slug);
+    if (c && isPlayable(c)) { out.push(slug); seen.add(slug); }
+  };
+  WEB_DEFAULT_LINEUP.forEach(tryAdd);
+  WEB_FALLBACK.forEach(tryAdd);
+  (channelList || []).forEach((c) => tryAdd(c.slug));
+  return out;
 }
 
 /** Feed side (native Feed side) — left or right; anything else → "left". Pure. */

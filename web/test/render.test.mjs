@@ -53,6 +53,7 @@ import {
   normalizeViewPrefs,
   serializeViewPrefs,
   presetLineup,
+  newsLineup,
   safeHttpLink,
   feedDetailModel,
   classifyVideoFailure,
@@ -982,10 +983,30 @@ const _chans = [
   { slug: "cnn", browser_playable: true },
 ];
 
-test("presetLineup: exact fill = only the preset's PLAYABLE slugs (curated, no top-up)", () => {
+test("presetLineup: exact fill keeps the preset's KNOWN slugs incl. honest-offline, no top-up", () => {
   const preset = { id: "nature", fill: "exact", slugs: ["explore-nature-cams", "nasa-tv"] };
-  // nasa-tv is unplayable → dropped; no other channels topped up.
-  assert.deepEqual(presetLineup(preset, _chans, _play), ["explore-nature-cams"]);
+  // nasa-tv exists but is unplayable → KEPT in its slot (honest-offline tile),
+  // parity with native exactLineup; no other channels topped up.
+  assert.deepEqual(presetLineup(preset, _chans, _play), ["explore-nature-cams", "nasa-tv"]);
+});
+
+test("presetLineup: exact drops a slug that matches no channel (no fake tile)", () => {
+  const preset = { id: "x", fill: "exact", slugs: ["bbc-news", "ghost-channel"] };
+  assert.deepEqual(presetLineup(preset, _chans, _play), ["bbc-news"]);
+});
+
+test("newsLineup: PREFERRED then FALLBACK then rest, deny-listed excluded (native forWall parity)", () => {
+  const chans = [
+    { slug: "livenow-fox", browser_playable: true },   // PREFERRED[0]
+    { slug: "bbc-news", browser_playable: true },       // PREFERRED[2]
+    { slug: "c-span", browser_playable: true },         // FALLBACK[0]
+    { slug: "nasa-tv", browser_playable: true },        // DENY — excluded even when "live"
+    { slug: "some-extra", browser_playable: true },     // rest
+  ];
+  const out = newsLineup(chans, _play);
+  // PREFERRED (livenow-fox, bbc-news) → FALLBACK (c-span) → rest (some-extra).
+  assert.deepEqual(out, ["livenow-fox", "bbc-news", "c-span", "some-extra"]);
+  assert.ok(!out.includes("nasa-tv"), "deny-listed nasa-tv never takes a default slot");
 });
 
 test("presetLineup: topup fill = preset slugs then remaining playable (the News default)", () => {
