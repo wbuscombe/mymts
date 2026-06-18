@@ -31,6 +31,10 @@ const VIEWPORT = { width: 1600, height: 900 };
 function freezeTicker() {
   const t = document.getElementById("ticker-track");
   if (t) {
+    // The crawl is now a Web-Animations marquee (not a CSS animation), so clearing
+    // style.animation alone wouldn't stop it — cancel any running animations too,
+    // then pin the strip at its start so the still is clean + reproducible.
+    try { t.getAnimations().forEach((a) => a.cancel()); } catch {}
     t.style.animation = "none";
     t.style.transform = "translateX(0)";
   }
