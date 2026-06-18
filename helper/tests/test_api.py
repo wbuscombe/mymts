@@ -155,21 +155,24 @@ def test_api_channels_pinned_fields(phantom_client: TestClient) -> None:
 
 
 def test_api_channels_category_mirrors_native_taxonomy(phantom_client: TestClient) -> None:
-    """Every channel carries a `category` from the native ChannelCategory map,
-    ALWAYS present (status-independent), and only ever one of the six known
-    sections — so the web picker can section by it without inventing categories."""
+    """Every channel carries a `category` from the ChannelCategory map, ALWAYS
+    present (status-independent), and only ever one of the known sections — so the
+    clients can section by it without inventing categories."""
     from mymts_helper.channels.category import CATEGORY_ORDER
 
     body = phantom_client.get("/api/channels").json()
     by_slug = {c["slug"]: c["category"] for c in body["channels"]}
-    # Spot-check the mapping mirrors native (one channel per section + a fallback).
+    # Spot-check the mapping (one per section, incl. the 2026-06 ambient trio + fallback).
     expected = {
         "cbs-sports-hq": "Sports",
         "cnn": "US News",
         "bbc-news": "Global News",
         "bloomberg-tv": "Business",
         "fox-weather": "Weather",
-        "nasa-tv": "General",   # unmapped slug → GENERAL fallback (as native)
+        "earthcam-live": "Cameras",
+        "explore-nature-cams": "Nature",
+        "nasa-tv": "Space",
+        "redbull-tv": "General",   # unmapped slug → GENERAL fallback (as native)
     }
     for slug, cat in expected.items():
         assert by_slug.get(slug) == cat, f"{slug} should be {cat}, got {by_slug.get(slug)}"

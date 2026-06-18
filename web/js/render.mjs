@@ -646,10 +646,16 @@ export function browserPlayability(channel) {
 // (the SAME taxonomy, derived from the slug — see helper channels/category.py),
 // so the web picker sections by it identically instead of showing a flat list.
 
-/** Section render order — EXACTLY the native ChannelCategory.ORDER. A channel
- *  whose served category isn't one of these (missing field on an old helper, or
- *  an unknown value) buckets into "General" so it's never dropped from the picker. */
-export const CHANNEL_CATEGORY_ORDER = ["Sports", "US News", "Global News", "Business", "Weather", "General"];
+/** Section render order. The news sections mirror native's ChannelCategory.ORDER;
+ *  the ambient trio (Cameras / Nature / Space) is placed in the SAME alphabetical
+ *  position native's sectionedByCategory appends unrecognized categories (before
+ *  General), so both clients agree. A channel whose served category isn't one of
+ *  these (missing field on an old helper, or an unknown value) buckets into
+ *  "General" so it's never dropped from the picker. */
+export const CHANNEL_CATEGORY_ORDER = [
+  "Sports", "US News", "Global News", "Business", "Weather",
+  "Cameras", "Nature", "Space", "General",
+];
 
 /** The section a channel belongs to. Trusts the helper's served `category`
  *  (authoritative, mirrors native) when it's a known section; otherwise falls

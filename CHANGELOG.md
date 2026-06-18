@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): ambient / space / nature / camera channels + new categories (2026-06-18)
+
+Restores the ambient / space / nature content from the original wall vision (dropped when
+sourcing anchored on news). All free official YouTube lives, `is_live`-gated → honest-offline;
+each verified live before seeding. Three new **server-authoritative categories** —
+**Space / Nature / Cameras** — flow to both clients (the web picker lists them; the native picker
+shows them via `sectionedByCategory`, no app rebuild). Lineup 49 → 53.
+
+- **Space**: `iss-feed` re-pointed (dead ustream HLS → `@NASA` YouTube live, "ISS HD Live" — the
+  ISS HD Earth view, live); `nasa-tv` (NASA TV, NTV1 HLS) moved to Space — its akamai variants now
+  404, so it's **honest-offline** (a real endpoint that recovers if NASA TV's CDN returns).
+- **Nature**: "Explore Nature Cams" (`@exploreLiveNatureCams` — explore.org's official cams) and
+  "Monterey Bay Aquarium" (`@montereybayaquarium`) — both live.
+- **Cameras**: "EarthCam Live" (`@earthcam`) and "earthTV Live" (`@earthtv`) — official live-cam
+  networks; handle-based (stable), `is_live`-gated, honest generic labels (content rotates).
+- The new categories render in the same alphabetical position (Cameras, Nature, Space, before
+  General) that native's `sectionedByCategory` appends unrecognized categories, so all clients agree.
+
+Validated through the real prober: 5 live + 1 honest-offline (`nasa-tv`). API additive;
+`schema_version` unchanged. **Omitted**: a distinct second Space source (ESA/ISS-Nat-Lab/JPL all
+dark) and EarthCam-Times-Square-specific (the `@earthcam` handle rotates content — shipped as the
+honest generic "EarthCam Live", not a fake Times-Square label).
+
 ## ci(app): build + publish the signed Android APK on release (gated) (2026-06-18)
 
 `release.yml` now builds the native Android APK on every `v*` tag and publishes it to the

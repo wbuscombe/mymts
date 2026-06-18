@@ -876,9 +876,11 @@ test("sectionChannels: orders by the native section order, omits empty sections"
   assert.deepEqual(sections.map((s) => s.category), ["Sports", "Global News", "Business", "Weather", "General"]);
   // No "US News" header (it was empty) — never an empty section.
   assert.ok(!sections.some((s) => s.category === "US News"));
-  // Section order follows the canonical taxonomy.
+  // Section order follows the canonical taxonomy, restricted to the categories
+  // actually present (empty sections — incl. any not in this input — are omitted).
+  const present = new Set(chans.map((c) => c.category));
   assert.deepEqual(sections.map((s) => s.category),
-    CHANNEL_CATEGORY_ORDER.filter((c) => c !== "US News"));
+    CHANNEL_CATEGORY_ORDER.filter((c) => present.has(c)));
 });
 
 test("sectionChannels: preserves input order WITHIN a section (caller pre-sorts live-first)", () => {

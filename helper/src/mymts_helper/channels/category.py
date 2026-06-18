@@ -18,20 +18,32 @@ shows up — under General — rather than vanishing from the picker.
 
 from __future__ import annotations
 
-# Section names — EXACTLY the native ChannelCategory constants (do not rename;
-# the web client orders by these strings and native uses the same labels).
+# Section names — the picker sections. The original news sections match native's
+# ChannelCategory exactly; the 2026-06 ambient sections (Cameras / Nature / Space)
+# are SERVER-FIRST — the native picker shows them via sectionedByCategory (which
+# appends any unrecognized server category alphabetically before General, with no
+# app rebuild), and the web client lists them in CHANNEL_CATEGORY_ORDER.
 SPORTS = "Sports"
 US_NEWS = "US News"
 GLOBAL_NEWS = "Global News"
 BUSINESS = "Business"
 WEATHER = "Weather"
+CAMERAS = "Cameras"
+NATURE = "Nature"
+SPACE = "Space"
 GENERAL = "General"
 
-# Render order of the sections in the picker (native ChannelCategory.ORDER).
-CATEGORY_ORDER: list[str] = [SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, GENERAL]
+# Render order of the sections in the picker. The ambient trio is placed in the
+# SAME alphabetical order (Cameras, Nature, Space, before General) that native's
+# sectionedByCategory appends unrecognized categories in — so all three clients
+# (this taxonomy doc, the web picker, and native) agree on the order.
+CATEGORY_ORDER: list[str] = [
+    SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, CAMERAS, NATURE, SPACE, GENERAL,
+]
 
-# slug -> category — a faithful copy of the native BY_SLUG map. Unmapped slugs
-# (nasa-tv, iss-feed, redbull-tv) fall through to GENERAL, exactly as native does.
+# slug -> category. The news slugs mirror native's BY_SLUG; the ambient slugs
+# (Space / Nature / Cameras) are server-only — native reads them from /api/channels.
+# An unmapped slug (e.g. redbull-tv) falls through to GENERAL, as native does.
 _BY_SLUG: dict[str, str] = {
     "cbs-sports-hq": SPORTS,
     "cnn": US_NEWS,
@@ -103,6 +115,16 @@ _BY_SLUG: dict[str, str] = {
     "ndtv": GLOBAL_NEWS,
     "i24news-en": GLOBAL_NEWS,
     "cbs-golazo": SPORTS,
+    # --- 2026-06 ambient / space / nature / camera lives (restoring the original
+    #     wall vision). All free official YouTube lives, is_live-gated -> honest-
+    #     offline (verified live before seeding). NASA's NTV1 linear stays HLS;
+    #     iss-feed re-pointed (dead ustream -> NASA's @NASA ISS-HD YouTube live). ---
+    "nasa-tv": SPACE,
+    "iss-feed": SPACE,
+    "explore-nature-cams": NATURE,
+    "monterey-aquarium": NATURE,
+    "earthcam-live": CAMERAS,
+    "earthtv-live": CAMERAS,
     # Still honestly OMITTED:
     #   • C-SPAN main → already shipped as a direct-HLS channel (`c-span`,
     #     cspan1 akamai); the YouTube /live only offered a far-future scheduled

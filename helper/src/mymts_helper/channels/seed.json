@@ -55,9 +55,9 @@
   },
   {
     "slug": "iss-feed",
-    "label": "ISS Live",
-    "kind": "hls",
-    "source_url": "https://iphone-streaming.ustream.tv/uhls/17074538/streams/live/iphone/playlist.m3u8"
+    "label": "ISS HD Live",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@NASA/live"
   },
   {
     "slug": "white-house-tv",
@@ -292,5 +292,29 @@
     "label": "Justice Department",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/@TheJusticeDepartment/live"
+  },
+  {
+    "slug": "explore-nature-cams",
+    "label": "Explore Nature Cams",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@exploreLiveNatureCams/live"
+  },
+  {
+    "slug": "monterey-aquarium",
+    "label": "Monterey Bay Aquarium",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@montereybayaquarium/live"
+  },
+  {
+    "slug": "earthcam-live",
+    "label": "EarthCam Live",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@earthcam/live"
+  },
+  {
+    "slug": "earthtv-live",
+    "label": "earthTV Live",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@earthtv/live"
   }
 ]
