@@ -71,7 +71,7 @@ mouse-driven settings (there's no D-pad in a browser).
   show/hide + text size live in Settings.
 - **Video grid** — **cell-count** layout (1 / 2 / 4 / 6 / 9), plays the
   same public HLS the helper resolves via `/api/channels` using the
-  vendored **`hls.js`** (`web/vendor/`, pinned, `enableWorker:false` so
+  vendored **`hls.js@1.5.17`** (`web/vendor/`, pinned, `enableWorker:false` so
   the CSP needs no `worker-src`) or native HLS (Safari). **Click a cell**
   to pick its channel; the picker shows each channel's honest status
   (plays-in-browser / on-the-TV-wall-only / offline). A stream that won't

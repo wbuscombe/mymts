@@ -202,7 +202,10 @@ All response envelopes carry `schema_version: 1`. Adding fields is backward-comp
 | `GET /health` | `{schema_version, ok, ready, phantom, build_sha, version, uptime_seconds, feeds:{sources_count, items_count, stale_sources, last_poll_at}, channels:{channels_count, live_count, unavailable_count, last_probe_at}}` |
 | `GET /api/feed?limit=200&since=<iso>` | `{schema_version, items:[{id, guid, source, source_url, title, summary, link, published_at, fetched_at}]}` — summary is **plain text** (HTML stripped) |
 | `GET /api/feed/sources` | `{schema_version, sources:[{id, url, label, enabled, last_fetch_at, last_success_at, last_error, error_count}]}` |
-| `GET /api/channels` | `{schema_version, channels:[{slug, label, kind, current_url, status, enabled, last_check_at, last_success_at, last_error, error_count}]}` — `current_url` is `null` when `status != "live"` (Trust Bar C3: never expose a stale URL labelled live) |
+| `GET /api/channels` | `{schema_version, channels:[{slug, label, kind, category, current_url, status, enabled, last_check_at, last_success_at, last_error, error_count}]}` — `current_url` is `null` when `status != "live"` (Trust Bar C3: never expose a stale URL labelled live); `category` is the server-authoritative picker section |
+| `GET /api/ticker/markets` · `GET /api/ticker/sports` | `{schema_version, mode, as_of, stale, entries:[…]}` — markets quotes / sports game+per-sport cards; each entry carries its own `is_sample` (C3: SAMPLE never passes as live) |
+| `GET /api/presets` | `{schema_version, default, presets:[{id, name, fill, grid:{rows, cols}, slugs:[…]}]}` — server-authoritative wall presets; `default` is the no-op `news` |
+| `GET /api/playlist.m3u` · `GET /api/playlist/{name}.m3u` | an M3U playlist of live channels' resolved upstream URLs (the `default` profile, or a named operator profile; `404` if the name is unknown) — the helper resolves/shields, never proxies |
 
 Contract tests pin every field name and the C3 invariant ("non-live channels expose `current_url: null`"). Located in `helper/tests/test_api.py` and `helper/tests/test_health.py`.
 
@@ -659,7 +662,7 @@ This is the "safe excerpt is the v1 answer; richer reading is deferred" principl
 
 - **Kiosk story** — long-uptime foreground watchdog + boot receiver. Deferred to the new MyMTS box (in transit) per Model A. Focus model is unaffected by kiosk mechanics.
 - **Feed list/sections restructure** — the feed could later gain sub-lists (by source, by topic), changing how UP/DOWN behave and what `feedIndex` means. Decision deferred (BACKLOG item B).
-- **Ticker markets/sports modes** — real ticker source plug-in. Future extension; the current stub is a single-row marquee that participates in the focus model cleanly (BACKLOG item D).
+- **Ticker markets/sports modes** — real ticker source plug-in. *Shipped in Stage 9 (see §16): real markets (Yahoo/CoinGecko) + ESPN sports with per-sport cards, mode rotation, and C3 SAMPLE/STALE honesty; the crawl is now framework-timed on both clients (§24).* The Stage 3 row is the single focus position the modes plug into.
 - **QR-to-phone for richer reading** — a future closed-door-compatible alternative for reading the full article on the operator's phone. The TV never fetches HTML; the phone is the operator's own device. Logged in BACKLOG.
 
 ---

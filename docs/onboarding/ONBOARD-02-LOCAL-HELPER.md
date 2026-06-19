@@ -17,7 +17,8 @@ It starts the RSS feed poller, the markets/sports pollers, and the channel probe
 ```bash
 curl -fsS http://localhost:8091/health                 # ready=true once pollers warm up
 curl -fsS http://localhost:8091/api/feed | head -c 400  # REAL recent headlines
-curl -fsS "http://localhost:8091/api/ticker?mode=markets" # REAL quotes (Yahoo/CoinGecko)
+curl -fsS http://localhost:8091/api/ticker/markets       # REAL quotes (Yahoo/CoinGecko)
+curl -fsS http://localhost:8091/api/ticker/sports        # REAL sports scores (ESPN)
 ```
 Some channels may show offline depending on the collaborator's network/region — that's the honest play-what-works behaviour, not a bug.
 

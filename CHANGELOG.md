@@ -29,7 +29,7 @@ fix, so both behave identically:
 - Hover-to-read still pauses the crawl (moved from CSS `:hover` to a JS pause/play on
   the animation). The 10–200 % scroll-speed range (10 % floor) is unchanged.
 
-## feat: server-authoritative wall presets — News / Nature / Space / Chill (2026-06-18)
+## feat(helper): server-authoritative wall presets — News / Nature / Space / Chill (2026-06-18)
 
 Switchable wall presets — predefined channel-sets the user applies to the grid — the rest of
 the original wall vision. **Server-authoritative**: the helper defines + serves the presets on
@@ -136,7 +136,7 @@ file system` → restart loop. (Reproduced locally: `Restarting (1)`, the exact 
   volume is writable by the non-root user with no host-side step. It also bind-mounts the
   repo `web/` at `/app/web` (read-only) + sets `WEB_CLIENT_DIR`, so `/app/` serves.
 - **Clone-to-running**: `cd helper && cp .env.example .env && docker compose up` →
-  migrations run on a fresh DB (→ head 004), `seed.json` loads (49 channels + 21 feed
+  migrations run on a fresh DB (→ head 005), `seed.json` loads (53 channels + 21 feed
   sources), and `/health` + `/api/channels` + the web client at `/app/` all serve, **keyless**.
 - Kept hardened: `read_only` rootfs, non-root (10001), `cap_drop: [ALL]`, no-new-privileges,
   digest-pinned image; the only writable paths are the `/data` volume + the `/tmp` tmpfs.
