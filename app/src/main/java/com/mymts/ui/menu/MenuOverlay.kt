@@ -11,7 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -138,9 +139,20 @@ private fun MenuPanel(
             .fillMaxHeight()
             .width(320.dp)
             .background(MenuColors.PanelBackground),
-        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        // Scrollable content area (CHANNELS list + WALL actions). `weight(1f)` makes
+        // it take all space above the pinned footer; `verticalScroll` makes it react
+        // to D-pad focus — a focusable row below the fold (e.g. **Resync**, the last
+        // WALL row, which the operator could not reach once the preset row tipped the
+        // menu past the panel height) issues a bring-into-view on focus and the
+        // scroll container scrolls it into view. Without this the overflowing rows
+        // were clipped and unreachable.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+        ) {
             PanelHeader()
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             slotRows.forEachIndexed { idx, row ->
