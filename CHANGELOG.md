@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-19
+
+## fix(app): scrollable side menu — every WALL row reachable incl. Resync (2026-06-19)
+
+The side menu laid its content (CHANNELS list + WALL: Preset · Settings · Resync) in a
+fixed, non-scrolling `Column`; once the new Preset row tipped it past the panel height the
+last row — **Resync all feeds** — was clipped below the fold and unreachable by D-pad. The
+content area is now a `weight(1f).verticalScroll` column with a pinned footer: `focusable()`
+issues a bring-into-view on focus, so D-pad-down scrolls an off-screen row into view and
+every item stays focusable + visible. Resync was present all along; it's now reachable and
+actuates the channel refetch. WallSettings / panel-fit locked levers untouched. Verified
+on-device (`.92`): D-pad-down scrolls Slot 1 off, Resync into view + focused + actuating.
+
+## docs(helper): explain phantom's +1 sample feed source; fix stale channel count (2026-06-19)
+
+Phantom seeds the real feed sources (never fetched in a zero-egress demo → no items, never in
+the source-filter UI) plus ONE clearly-labelled "Phantom Sample Feed" (the only source with
+items), so `/health sources_count` is the seed + 1 **by design** — forcing the bare seed count
+would drop the real sources or fake items under a real outlet (a C3/A1 violation). Documented;
+also fixed the stale "all ~21" channel comment → 53. Comment-only, no behaviour change.
+
 ## feat(web): ticker crawl parity with native (time-based motion + dwell) (2026-06-18)
 
 The web ticker's CRAWL motion now matches the native TV ticker's shipped consistency
