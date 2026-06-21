@@ -187,7 +187,7 @@ A homelab project, held to real engineering standards:
 
 - **Adversarially reviewed** (June 2026) — five parallel deep readers across failure dimensions,
   every finding independently re-verified by a skeptic before it counted; **zero P0**, and the
-  honest-degradation discipline held end-to-end. See [`docs/adversarial-review-2026-06.md`](docs/adversarial-review-2026-06.md).
+  honest-degradation discipline held end-to-end.
 - **A real CI gate** — every push runs the helper test suite, a cross-component `schema_version`
   consistency check, the **adb deploy-invariant** gate, the web client tests, a **docs-hygiene**
   gate (no topology/personal-config leakage in public docs), the app JVM unit tests, and a

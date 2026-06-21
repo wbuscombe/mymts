@@ -1,6 +1,6 @@
 # AGENTS.md — guardrails for AI agents working on MyMTS
 
-**Read this before touching anything.** This is the canonical in-repo standard for any coding agent working on MyMTS. It is derived from the 2026-06 adversarial review (`docs/adversarial-review-2026-06.md`, §17.5) and the project's protected invariants. If a request conflicts with this file, stop and surface the conflict rather than guessing.
+**Read this before touching anything.** This is the canonical in-repo standard for any coding agent working on MyMTS. It is derived from the 2026-06 adversarial review and the project's protected invariants. If a request conflicts with this file, stop and surface the conflict rather than guessing.
 
 MyMTS is a **solo homelab ambient news wall**: a native Android TV app (Kotlin/Compose for TV, Media3/ExoPlayer) on an Onn 4K box, a Python/FastAPI helper in a hardened Docker container on a NAS, and a LAN web client served by the helper at `/app`. Severity is capped by that reality — there is no multi-tenant, no PII, no inbound-internet surface, no on-call. A "P0" here means *the wall is broken* or *a real secret/topology leak* — nothing else.
 
@@ -85,4 +85,4 @@ A major development phase is **not complete** until all three hold:
 
 ---
 
-*See `docs/adversarial-review-2026-06.md` for the evidence behind each guardrail, and the house `professionalize.md` for the cross-project standard. `MAINTENANCE-CHARTER.md` is the continuous-quality platform — the ENFORCED CI checks + the RITUAL `docs/PHASE-END-CHECKLIST.md` an agent runs when closing a phase; add a check there whenever an audit finds a new gap class.*
+*The evidence behind each guardrail came from the 2026-06 adversarial review (a one-off operator deliverable, not kept in-repo); the house `professionalize.md` is the cross-project standard. `MAINTENANCE-CHARTER.md` is the continuous-quality platform — the ENFORCED CI checks + the RITUAL `docs/PHASE-END-CHECKLIST.md` an agent runs when closing a phase; add a check there whenever an audit finds a new gap class.*

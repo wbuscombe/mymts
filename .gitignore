@@ -106,6 +106,12 @@ scripts/deploy.local.env
 # Local-only working artifact (perf telemetry) — kept on disk, never committed
 docs/perf-analysis-2026-06.md
 
+# Review/analysis/audit REPORTS are operator deliverables, NOT repo artifacts —
+# never commit them (research that feeds build decisions lives in docs/findings/,
+# BACKLOG.md, ARCHITECTURE.md, etc., which ARE tracked). Narrow to the review-report
+# filename pattern only.
+docs/adversarial-review-*.md
+
 # Desktop packaging (PyInstaller) — built binaries + build artifacts, NEVER committed.
 # Only the tooling (spec/build script/launcher/docs) is tracked.
 tools/desktop/build/

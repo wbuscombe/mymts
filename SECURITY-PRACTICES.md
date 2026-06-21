@@ -12,13 +12,13 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 - No secrets, tokens, credentials, API keys, or private addresses in git history. Ever.
 - `.env.example` is in the repo. The real `.env` is gitignored.
 - Never echo or print a secret to stdout. Write it directly to the consuming file. When a script logs, redact secrets before write.
-- Pre-commit secret-scanning (gitleaks or equivalent) runs locally as an opt-in hook (`pre-commit install`). CI exists (`ci.yml` / `release.yml` / `screenshots.yml`), but a **gitleaks step on every push is not yet wired** (see `docs/adversarial-review-2026-06.md`, DEPLOY-4).
+- Pre-commit secret-scanning (gitleaks or equivalent) runs locally as an opt-in hook (`pre-commit install`). CI exists (`ci.yml` / `release.yml` / `screenshots.yml`), but a **gitleaks step on every push is not yet wired** (a known gap).
 - Long-lived secrets have a named owner and a documented rotation path.
 
 ### Dependencies
 - Lock files (`package-lock.json`, `uv.lock`, Gradle's verification metadata, etc.) are committed.
 - Dependencies are pinned to exact versions. `latest` tags are forbidden in Docker images.
-- Advisory scanning (`npm audit`, `pip-audit`, equivalent for Kotlin/Gradle) is **not yet wired** into CI (CI exists, but no `pip-audit`/`npm audit` step yet — see `docs/adversarial-review-2026-06.md`, DEPLOY-4). When wired: fix-available advisories block; no-fix advisories annotate and post to the operator's notification channel.
+- Advisory scanning (`npm audit`, `pip-audit`, equivalent for Kotlin/Gradle) is **not yet wired** into CI (CI exists, but no `pip-audit`/`npm audit` step yet — a known gap). When wired: fix-available advisories block; no-fix advisories annotate and post to the operator's notification channel.
 
 ### Logs
 - No secrets, no internal IPs, no user identifiers, no absolute filesystem paths beyond the project root in any log line.

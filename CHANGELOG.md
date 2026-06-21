@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## chore: remove committed analysis reports — reports are deliverables, not repo artifacts (2026-06-21)
+
+A perf + channel-selection analysis report was committed to the repo by mistake (`7f49991`).
+Review/analysis/audit reports are **operator deliverables**, not repo artifacts — removed it and
+the two prior `adversarial-review-*.md` write-ups (non-force, history-preserving), fixed the
+dangling references in README / AGENTS / SECURITY-PRACTICES, and added a narrow `.gitignore`
+backstop (`docs/adversarial-review-*.md`). Research that feeds build decisions stays tracked —
+`docs/findings/`, `BACKLOG.md`, `ARCHITECTURE.md`, `MAINTENANCE-CHARTER.md`, and the
+`PROFESSIONALIZATION-AUDIT.md` decision-record/baseline are untouched.
+
 ## feat(helper): white-whale ocean + eagle cams + Ocean/Eagles presets (2026-06-21)
 
 The clean, official, free white-whale solutions from the original wall vision — all free
@@ -789,7 +799,7 @@ Phase-end gallery refresh per the new workspace standard (professionalize.md §5
 
 ## fix: remediate the 3 P3 findings from the adversarial re-review — F1 + F2 + F3 (2026-06-13)
 
-The new-code re-review (`docs/adversarial-review-2026-06-new-code.md`) came back clean (0 P0/P1/P2) with three P3 defensive-completeness items; all three fixed, each TDD (failing test first):
+The new-code re-review came back clean (0 P0/P1/P2) with three P3 defensive-completeness items; all three fixed, each TDD (failing test first):
 - **F1 — profile loader fails closed on `RecursionError`.** `load_profiles` caught `(OSError, ValueError)` but not `RecursionError` (a `RuntimeError` subclass a pathologically-deep profiles file raises during parse) → boot crash, violating the loader's "always boots" contract. Broadened to `(OSError, ValueError, RecursionError)`.
 - **F2 — seeder rejects whitespace-only URLs.** The URL check used bare truthiness, so `"   "` passed and could slip into the prune keep-set, weakening the empty/all-invalid guard. Now uses `url.strip()` (validation + keep-set) so a whitespace-only seed correctly triggers the no-wipe guard.
 - **F3 — conservative URL-match normalization in the prune.** The reconcile matched DB↔seed sources by exact string, so a trailing-slash / scheme-or-host-case difference orphaned-then-pruned a still-wanted source. `delete_sources_not_in` now compares via `_match_key` (strip whitespace; lowercase scheme + host; collapse a single trailing path slash) — and ONLY those RFC-safe rules: path content/case, query, fragment, port, userinfo, and http-vs-https are preserved exactly, so genuinely-distinct URLs never merge (a missed match merely re-fetches a cache; a wrong match would drop a real source). The stored/served URL is never rewritten — normalization is for comparison only.
