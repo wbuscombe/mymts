@@ -50,6 +50,23 @@ PRESETS: list[dict[str, Any]] = [
         "slugs": ["explore-nature-cams", "monterey-aquarium", "iss-feed",
                   "earthcam-live", "fox-weather", "bloomberg-tv"],
     },
+    {
+        # Ocean / reef — explore.org Tropical Reef + the existing Monterey Bay
+        # Aquarium + the Homosassa underwater Manatee cam. All free official
+        # YouTube lives, is_live-gated -> honest-offline if a cam is down.
+        "id": "ocean", "name": "Ocean", "fill": "exact",
+        "grid": {"rows": 1, "cols": 3},
+        "slugs": ["tropical-reef", "monterey-aquarium", "manatee-cam"],
+    },
+    {
+        # Eagles — the famous explore.org / Raptor Resource Project Decorah eagle
+        # nest. SEASONAL: live through nesting season, honest-OFFLINE off-season
+        # via the is_live gate (the preset still resolves; the tile shows the cam
+        # is down — correct, never faked). A single focused fullscreen cam.
+        "id": "eagles", "name": "Eagles", "fill": "exact",
+        "grid": {"rows": 1, "cols": 1},
+        "slugs": ["decorah-eagles"],
+    },
 ]
 
 

@@ -316,5 +316,23 @@
     "label": "earthTV Live",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/@earthtv/live"
+  },
+  {
+    "slug": "tropical-reef",
+    "label": "Tropical Reef",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/watch?v=DHUnz4dyb54"
+  },
+  {
+    "slug": "manatee-cam",
+    "label": "Manatee Cam",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/watch?v=Fz6sl9YJZE0"
+  },
+  {
+    "slug": "decorah-eagles",
+    "label": "Decorah Eagles",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/watch?v=GGIE1E-kaMQ"
   }
 ]

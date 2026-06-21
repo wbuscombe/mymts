@@ -125,6 +125,18 @@ _BY_SLUG: dict[str, str] = {
     "monterey-aquarium": NATURE,
     "earthcam-live": CAMERAS,
     "earthtv-live": CAMERAS,
+    # --- 2026-06 white-whale ocean + eagle cams (free official explore.org
+    #     YouTube lives, is_live-gated -> honest-offline; Decorah eagles are
+    #     SEASONAL). Categorized under the existing NATURE section so BOTH clients
+    #     render them with no rebuild (the Ocean / Eagles *presets* group them by
+    #     slug; a dedicated Ocean/Birds *picker* category would need a web-client
+    #     change — the web folds an unknown category to General — so it's deferred,
+    #     same as the logged "Government" section). Per-cam video IDs because the
+    #     @exploreLiveNatureCams /live handle rotates through cams; a dead/rotated
+    #     ID honest-offlines (never fake-live) until re-pointed. ---
+    "tropical-reef": NATURE,
+    "manatee-cam": NATURE,
+    "decorah-eagles": NATURE,
     # Still honestly OMITTED:
     #   • C-SPAN main → already shipped as a direct-HLS channel (`c-span`,
     #     cspan1 akamai); the YouTube /live only offered a far-future scheduled

@@ -38,7 +38,7 @@ def test_presets_endpoint_shape(client) -> None:
     assert body["schema_version"] == 1
     assert body["default"] == "news"
     ids = [p["id"] for p in body["presets"]]
-    assert ids == ["news", "nature", "space", "chill"]
+    assert ids == ["news", "nature", "space", "chill", "ocean", "eagles"]
     for p in body["presets"]:
         assert p["name"] and isinstance(p["slugs"], list) and p["slugs"]
         assert p["fill"] in ("topup", "exact")
