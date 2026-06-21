@@ -42,7 +42,7 @@ Verify in another shell:
 ```bash
 curl -fsS http://localhost:8091/health      # 200 + build info
 curl -fsS http://localhost:8091/api/feed     # preloaded mock feed items
-curl -fsS http://localhost:8091/api/channels # all 53 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras)
+curl -fsS http://localhost:8091/api/channels # all 56 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
 curl -fsS http://localhost:8091/api/presets  # wall presets: News Wall, Nature, Space, Chill / Mixed (default: news)
 ```
 You can also open the **web client** at <http://localhost:8091/app>.

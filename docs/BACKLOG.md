@@ -25,6 +25,29 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 | NCAA leagues | When sports ships, start with the 6 cleanest-data leagues | When sports ships |
 | Full Prometheus metrics endpoint | v1 ships JSON metrics; Prometheus is v1.x | claude-status-bot needs it |
 
+## White-whale channels — research verdicts (2026-06-21)
+
+The "white-whale" channels from the original vision, with their sourcing verdicts so the
+research is captured. The distinction is **free + DRM-free + official (no ToS-gray ingestion)**
+vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's own app/ads) vs
+**BLOCKED** (DRM or no public stream).
+
+- **SOLVED-CLEAN — shipped (2026-06-21).** Free official explore.org YouTube lives, `is_live`-gated
+  → honest-offline, server-authoritative (Ocean + Eagles presets, both clients no-rebuild):
+  **Tropical Reef** + **Manatee Cam** (Ocean) and **Decorah Eagles** (seasonal). Verified live on
+  the NAS vantage. Per-cam video IDs (explore's `/live` rotates); a dead ID honest-offlines.
+- **OMITTED (no clean source).** **CBS News 24/7** — no stable free 24/7 YouTube live exists
+  (`@CBSNews/live` is event-only; `/streams` are VODs); it lives on Paramount+ / their app. Not
+  faked. Revisit if CBS restores a persistent free YouTube live.
+- **FREE-BUT-ToS-GRAY — pending a SEPARATE operator decision (NOT actioned here).** Free, no DRM,
+  but ingestion bypasses the source's own app/ads, so it's the operator's call, not an engineering
+  default: **Chicago O&O local news** (the station's own free stream), **WCIA** (via Haystack /
+  Roku channels), **CBS Sports HQ** (via Pluto TV). Buildable as wall feeds technically; left
+  un-added pending the operator's explicit go.
+- **BLOCKED — structural, won't-build.** **Marquee / CHSN / WGN-direct** = DRM (same closed door as
+  the premium-DRM-sports entry below). **Parkland College / Heartland** = no public stream exists
+  to source at all.
+
 ## Premium DRM sports feeds — BLOCKED by DRM, not buildable as wall feeds (2026-06-17)
 
 **Structural "won't-do," not a deferred feature.** The operator holds legitimate paid subscriptions (MLB.tv / MLB Network, Marquee, CHSN via Comcast, Hulu Live TV incl. NFL Network / ESPN, NBA League Pass). The blocker is **NOT authentication** — it's **DRM** (Widevine / FairPlay), the standard for premium sports. Ingesting these into the wall's generic players (hls.js / ExoPlayer) would require **circumventing the DRM** to obtain decryption keys — DMCA §1201 anti-circumvention + ToS violation — which is **out of scope and will not be built**. The subscriptions do not change this; it's a legal/structural barrier, not a missing feature.

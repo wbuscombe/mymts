@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper): white-whale ocean + eagle cams + Ocean/Eagles presets (2026-06-21)
+
+The clean, official, free white-whale solutions from the original wall vision — all free
+explore.org official YouTube lives (no DRM, no ToS-gray ingestion, no embeds), `is_live`-gated
+→ honest-offline when down. **Server-authoritative** (channels + presets), so BOTH clients pick
+them up with **no rebuild** (verified: the web preset selector + picker render Ocean / Eagles +
+the new Nature channels live from `/api/presets` + `/api/channels`; the native generic parse +
+`sectionedByCategory` do the same — no `.92` deploy).
+
+- **Channels** (`kind=youtube`, category Nature, lineup 53 → 56): **Tropical Reef** + **Manatee
+  Cam** (Homosassa underwater) — ocean/aquatic; **Decorah Eagles** — the famous Raptor Resource
+  Project / explore.org nest, **SEASONAL** (live in nesting season, honest-offline off-season via
+  the `is_live` gate). All verified live on the NAS's residential vantage before/after seeding.
+  Per-cam **video IDs** (explore's `/live` handle rotates through cams, so a specific cam isn't
+  addressable by handle); a dead/rotated ID honest-offlines, never fake-live.
+- **Presets:** **Ocean** (Tropical Reef · Monterey Bay Aquarium · Manatee, 1×3) and **Eagles**
+  (Decorah, 1×1 focused fullscreen) — completing the vision's set (News / Nature / Space / Chill /
+  Ocean / Eagles). Additive; presets `schema_version` unchanged (1) → no client change.
+- **Category:** Nature (the existing ambient section renders on both clients). A dedicated
+  Ocean/Birds *picker* category is deferred — the web folds an unknown category to General, so it
+  would need a web change; the *presets* deliver the grouping with no rebuild.
+- **CBS News 24/7 omitted:** no stable free 24/7 YouTube live exists (`@CBSNews/live` is
+  event-only; `/streams` are VODs) — it's on Paramount+ / their app now. Reported, not faked.
+
+Helper-only / server-data change — the v0.2.0 client binaries are unchanged and work as-is, so
+**no new tag / APK** (the redeploy + this entry is the honest close). See BACKLOG for the full
+white-whale verdicts (SOLVED-CLEAN · FREE-BUT-ToS-GRAY pending operator · BLOCKED).
+
 ## [0.2.0] - 2026-06-19
 
 ## fix(app): scrollable side menu — every WALL row reachable incl. Resync (2026-06-19)
@@ -157,7 +185,7 @@ file system` → restart loop. (Reproduced locally: `Restarting (1)`, the exact 
   volume is writable by the non-root user with no host-side step. It also bind-mounts the
   repo `web/` at `/app/web` (read-only) + sets `WEB_CLIENT_DIR`, so `/app/` serves.
 - **Clone-to-running**: `cd helper && cp .env.example .env && docker compose up` →
-  migrations run on a fresh DB (→ head 005), `seed.json` loads (53 channels + 21 feed
+  migrations run on a fresh DB (→ head 005), `seed.json` loads (56 channels + 21 feed
   sources), and `/health` + `/api/channels` + the web client at `/app/` all serve, **keyless**.
 - Kept hardened: `read_only` rootfs, non-root (10001), `cap_drop: [ALL]`, no-new-privileges,
   digest-pinned image; the only writable paths are the `/data` volume + the `/tmp` tmpfs.
