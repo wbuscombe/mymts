@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -505,8 +504,18 @@ fun WallScreen(
                 .padding(horizontal = insetH, vertical = insetV),
         ) {
           CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        val wallAlpha = if (menu.isOpen || menu.pendingSelection != null) 0.45f else 1f
-        Column(modifier = Modifier.fillMaxSize().alpha(wallAlpha)) {
+        // P-N1: read the menu state INSIDE the graphicsLayer lambda (draw phase), not
+        // as a composition-time `.alpha(wallAlpha)` param. A menu open/close then
+        // re-runs only the draw of this layer — NOT recomposition of the whole wall
+        // subtree (ticker + feed + grid) on a UI-thread-bound box. Same deferral the
+        // fit-scale graphicsLayer above already relies on.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (menu.isOpen || menu.pendingSelection != null) 0.45f else 1f
+                },
+        ) {
             TickerStrip(
                 source = ticker,
                 focused = focus.active == WallZone.Ticker,

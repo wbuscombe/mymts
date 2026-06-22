@@ -1,5 +1,7 @@
 package com.mymts.data.settings
 
+import androidx.compose.runtime.Immutable
+
 /**
  * On-device, operator-tunable wall layout settings.
  *
@@ -22,7 +24,16 @@ package com.mymts.data.settings
  * RIGHT-from-feed in the swapped layout still leads out of the feed
  * toward the grid). The `WallFocusModelTest` suite covers both
  * orientations with separate tests.
+ *
+ * `@Immutable` (P-N2): every field is a primitive, an enum, or a read-only `Set`
+ * that is REBUILT (never mutated) on any change, so the object's observable value
+ * is fixed once constructed. Compose infers a `data class` with `Set` fields as
+ * UNSTABLE (the `Set` interface isn't a known-stable type), which makes composables
+ * that take a `WallSettings` (or one of its `Set` fields) recompose even when their
+ * value didn't change. The annotation restores correct skipping — a settings nudge
+ * (a new `WallSettings`) only recomposes consumers whose specific value differs.
  */
+@Immutable
 data class WallSettings(
     val feedWidth: FeedWidth = FeedWidth.Default,
     val feedFontScale: FeedFontScale = FeedFontScale.Default,
