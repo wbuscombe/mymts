@@ -6,12 +6,6 @@
     "source_url": "https://bloomberg.com/media-manifest/streams/phoenix-us.m3u8"
   },
   {
-    "slug": "cnbc",
-    "label": "CNBC",
-    "kind": "hls",
-    "source_url": "https://no-public-cnbc-hls-exists.invalid/cnbc.m3u8"
-  },
-  {
     "slug": "cbs-sports-hq",
     "label": "CBS Sports HQ",
     "kind": "hls",
@@ -90,28 +84,10 @@
     "source_url": "https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8"
   },
   {
-    "slug": "al-jazeera-en",
-    "label": "Al Jazeera English",
-    "kind": "hls",
-    "source_url": "https://live-hls-web-aje.getaj.net/AJE/01.m3u8"
-  },
-  {
     "slug": "sky-news",
     "label": "Sky News",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/@SkyNews/live"
-  },
-  {
-    "slug": "cgtn-en",
-    "label": "CGTN English",
-    "kind": "hls",
-    "source_url": "https://livecgtnen.v.kcdnvip.com/livecgtnen/cgtn-en-news_4.m3u8"
-  },
-  {
-    "slug": "trt-world",
-    "label": "TRT World",
-    "kind": "hls",
-    "source_url": "https://tv-trtworld.live.trt.com.tr/master.m3u8"
   },
   {
     "slug": "fox-weather",

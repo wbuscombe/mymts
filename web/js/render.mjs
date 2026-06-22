@@ -538,7 +538,7 @@ export const DEFAULT_GRID_COLS = 3;
  *  alphabetical accident that the lineup expansion would shift). The first N
  *  (playable, present) fill the default grid; a saved assignment always wins. */
 export const WEB_DEFAULT_LINEUP = [
-  "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnbc", "cnn",
+  "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnn",
 ];
 
 /** Mirrors native LineupSelector.FALLBACK — walked after PREFERRED when a preferred
@@ -740,7 +740,9 @@ export function browserPlayability(channel) {
  *  "General" so it's never dropped from the picker. */
 export const CHANNEL_CATEGORY_ORDER = [
   "Sports", "US News", "Global News", "Business", "Weather",
-  "Cameras", "Nature", "Space", "General",
+  // Government / Cameras / Nature / Space are the server-first sections native appends
+  // ALPHABETICALLY before General, so they sit in that same order here for parity.
+  "Cameras", "Government", "Nature", "Space", "General",
 ];
 
 /** The section a channel belongs to. Trusts the helper's served `category`

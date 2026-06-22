@@ -76,7 +76,6 @@ class LineupSelector(
             "bbc-news",       // BL — global news
             "cbs-sports-hq",  // BR — sports
             "bloomberg-tv",
-            "cnbc",
             "cnn",
         )
 

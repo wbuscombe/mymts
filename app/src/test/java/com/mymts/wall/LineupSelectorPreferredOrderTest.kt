@@ -26,7 +26,7 @@ class LineupSelectorPreferredOrderTest {
     @Test fun `PREFERRED begins with the 2x2 default — fox, weather, bbc, sports`() {
         val expected = listOf(
             "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq",
-            "bloomberg-tv", "cnbc", "cnn",
+            "bloomberg-tv", "cnn",
         )
         assertEquals(expected, LineupSelector.PREFERRED)
     }

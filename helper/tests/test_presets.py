@@ -59,7 +59,7 @@ def test_news_preset_is_the_default_and_mirrors_preferred() -> None:
     assert DEFAULT_PRESET_ID == "news"
     news = next(p for p in PRESETS if p["id"] == "news")
     assert news["slugs"] == [
-        "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnbc", "cnn",
+        "livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq", "bloomberg-tv", "cnn",
     ]
     assert news["fill"] == "topup"
 

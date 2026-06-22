@@ -32,7 +32,7 @@ PRESETS: list[dict[str, Any]] = [
         "id": "news", "name": "News Wall", "fill": "topup",
         "grid": {"rows": 2, "cols": 2},
         "slugs": ["livenow-fox", "fox-weather", "bbc-news", "cbs-sports-hq",
-                  "bloomberg-tv", "cnbc", "cnn"],
+                  "bloomberg-tv", "cnn"],
     },
     {
         "id": "nature", "name": "Nature", "fill": "exact",
@@ -41,8 +41,12 @@ PRESETS: list[dict[str, Any]] = [
     },
     {
         "id": "space", "name": "Space", "fill": "exact",
-        "grid": {"rows": 1, "cols": 2},
-        "slugs": ["iss-feed", "nasa-tv"],   # ISS HD live + NASA TV (honest-offline ok)
+        "grid": {"rows": 1, "cols": 1},
+        # ISS HD live only. NASA TV was dropped from the preset (B2): its master-only
+        # HLS resolves but settles DEAD in ExoPlayer (it's on LineupSelector.DENY), so
+        # it made the Space preset structurally ~50% dead. nasa-tv stays a channel in
+        # the picker; it just doesn't occupy a Space-preset slot.
+        "slugs": ["iss-feed"],
     },
     {
         "id": "chill", "name": "Chill / Mixed", "fill": "exact",

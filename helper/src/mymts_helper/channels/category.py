@@ -28,6 +28,12 @@ US_NEWS = "US News"
 GLOBAL_NEWS = "Global News"
 BUSINESS = "Business"
 WEATHER = "Weather"
+# Session-gated official .gov feeds (chamber floors, committee hearings, agency
+# briefings) — honest-offline when not in session. Split out of US News so that
+# section reads live-dense and the gov feeds are honestly grouped (their dark-when-
+# not-in-session state is expected for "Government"). Server-first like the ambient
+# trio: native shows it via sectionedByCategory; the web lists it in CHANNEL_CATEGORY_ORDER.
+GOVERNMENT = "Government"
 CAMERAS = "Cameras"
 NATURE = "Nature"
 SPACE = "Space"
@@ -38,7 +44,10 @@ GENERAL = "General"
 # sectionedByCategory appends unrecognized categories in — so all three clients
 # (this taxonomy doc, the web picker, and native) agree on the order.
 CATEGORY_ORDER: list[str] = [
-    SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, CAMERAS, NATURE, SPACE, GENERAL,
+    # Government / Cameras / Nature / Space are server-first sections native appends
+    # ALPHABETICALLY before General (it doesn't compile them), so they're placed in
+    # that same alphabetical order here + in the web CHANNEL_CATEGORY_ORDER for parity.
+    SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, CAMERAS, GOVERNMENT, NATURE, SPACE, GENERAL,
 ]
 
 # slug -> category. The news slugs mirror native's BY_SLUG; the ambient slugs
@@ -50,17 +59,13 @@ _BY_SLUG: dict[str, str] = {
     "livenow-fox": US_NEWS,
     "newsmax": US_NEWS,
     "c-span": US_NEWS,
-    "white-house-tv": US_NEWS,
+    "white-house-tv": GOVERNMENT,
     "bbc-news": GLOBAL_NEWS,
-    "al-jazeera-en": GLOBAL_NEWS,
     "dw-news-en": GLOBAL_NEWS,
     "france24-en": GLOBAL_NEWS,
     "cnn-international": GLOBAL_NEWS,
     "sky-news": GLOBAL_NEWS,
-    "cgtn-en": GLOBAL_NEWS,
-    "trt-world": GLOBAL_NEWS,
     "bloomberg-tv": BUSINESS,
-    "cnbc": BUSINESS,
     "fox-weather": WEATHER,
     "accuweather-now": WEATHER,
     # --- 2026-06 lineup expansion (free 24/7 direct-HLS origins; each validated
@@ -89,27 +94,30 @@ _BY_SLUG: dict[str, str] = {
     # the Clerk's YouTube live, Senate via the `cspan` token-free resolver
     # (senate.gov ISVP); both honest-offline when the chamber is not in session.
     # The entitlement-gated C-SPAN linear networks (Adobe Pass) are NOT sourced.
-    "us-house-floor": US_NEWS,
-    "us-senate-floor": US_NEWS,
+    "us-house-floor": GOVERNMENT,
+    "us-senate-floor": GOVERNMENT,
     # --- 2026-06 free gov-stream generalization: committee hearings + federal events
     #     (all honest-offline between sessions/briefings; all free, token-free,
     #     DRM-free, verified live before seeding). Senate committee hearings ride the
     #     SAME `cspan` resolver via the committee hearings.xml schedule (a single
     #     aggregate tile that shows whichever Senate committee is live); House
     #     committees + federal agencies stream on their own official YouTube /live
-    #     (kind='youtube', is_live-gated). Grouped under US News for now; a dedicated
-    #     "Government" picker section is a logged future refinement (needs native
-    #     ChannelCategory + web CATEGORY_ORDER parity). ---
-    "us-senate-committees": US_NEWS,
-    "us-house-oversight": US_NEWS,
-    "us-house-judiciary": US_NEWS,
-    "us-house-appropriations": US_NEWS,
-    "us-house-armed-services": US_NEWS,
-    "us-house-financial-services": US_NEWS,
-    "us-state-dept": US_NEWS,
-    "us-dept-of-war": US_NEWS,
-    "us-dhs": US_NEWS,
-    "us-doj": US_NEWS,
+    #     (kind='youtube', is_live-gated). Grouped under the dedicated GOVERNMENT
+    #     section (2026-06-22): the chamber floors + committees + agency briefings +
+    #     the White House feed live here, so US News reads live-dense and these
+    #     session/event feeds are honestly grouped (dark-when-not-in-session is
+    #     expected for "Government"). Native shows it via sectionedByCategory; the web
+    #     lists it in CHANNEL_CATEGORY_ORDER. ---
+    "us-senate-committees": GOVERNMENT,
+    "us-house-oversight": GOVERNMENT,
+    "us-house-judiciary": GOVERNMENT,
+    "us-house-appropriations": GOVERNMENT,
+    "us-house-armed-services": GOVERNMENT,
+    "us-house-financial-services": GOVERNMENT,
+    "us-state-dept": GOVERNMENT,
+    "us-dept-of-war": GOVERNMENT,
+    "us-dhs": GOVERNMENT,
+    "us-doj": GOVERNMENT,
     "euronews": GLOBAL_NEWS,
     "wion": GLOBAL_NEWS,
     "ndtv": GLOBAL_NEWS,
