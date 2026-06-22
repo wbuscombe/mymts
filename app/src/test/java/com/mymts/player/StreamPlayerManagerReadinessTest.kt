@@ -138,4 +138,47 @@ class StreamPlayerManagerReadinessTest {
             manager.readyVersion.value,
         )
     }
+
+    // ---- P-N3: url-rotation swaps in place, never rebuilds the grid ----
+
+    @Test fun `updateSpecs swaps only the changed tile's url in place — no rebuild`() {
+        val (manager, created) = managerWithFakeFactory()
+        manager.onStart(owner)
+        val versionAfterStart = manager.readyVersion.value
+
+        // spec-a's RESOLVED url rotates (a YouTube manifest expire token); spec-b is
+        // unchanged. This is the common case that used to rebuild the WHOLE grid.
+        val rotated = listOf(
+            specs[0].copy(url = "https://example.test/a-NEWTOKEN.m3u8"),
+            specs[1],
+        )
+        manager.updateSpecs(rotated)
+
+        // Only the changed tile re-points IN PLACE; the other is untouched; the
+        // manager is NOT torn down — readyVersion unchanged and the SAME instances.
+        verify(exactly = 1) { created["spec-a"]!!.updateUrl("https://example.test/a-NEWTOKEN.m3u8") }
+        verify(exactly = 0) { created["spec-b"]!!.updateUrl(any()) }
+        assertEquals("no rebuild: readyVersion unchanged", versionAfterStart, manager.readyVersion.value)
+        assertSame("player(0) is the SAME instance (not rebuilt)", created["spec-a"], manager.player(0))
+        assertSame("player(1) is the SAME instance (not rebuilt)", created["spec-b"], manager.player(1))
+    }
+
+    @Test fun `updateSpecs with no url change is a no-op`() {
+        val (manager, created) = managerWithFakeFactory()
+        manager.onStart(owner)
+        manager.updateSpecs(specs) // identical urls
+        specs.forEach { verify(exactly = 0) { created[it.id]!!.updateUrl(any()) } }
+    }
+
+    @Test fun `releaseAll releases every player, clears the set, bumps readyVersion`() {
+        val (manager, created) = managerWithFakeFactory()
+        manager.onStart(owner)
+        val v = manager.readyVersion.value
+
+        manager.releaseAll()
+
+        created.values.forEach { verify { it.release() } }
+        specs.indices.forEach { assertNull("player($it) null after releaseAll", manager.player(it)) }
+        assertEquals("readyVersion bumps on releaseAll", v + 1, manager.readyVersion.value)
+    }
 }

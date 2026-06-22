@@ -76,6 +76,16 @@ class StreamPlayer(
     private var analyticsListener: AnalyticsListener? = null
     private val handler = Handler(Looper.getMainLooper())
 
+    /**
+     * The stream URL currently bound to the player. Starts at [spec].url and is
+     * re-pointed by [updateUrl] when the channel's RESOLVED url rotates (e.g. a
+     * YouTube manifest `expire` token) WITHOUT rebuilding the player — so a token
+     * refresh re-prepares only this one tile, never the whole grid (P-N3). The
+     * recovery ladder ([createPlayer] via REINIT) reads this so it reconnects to
+     * the latest url, not the stale construction-time one.
+     */
+    @Volatile private var currentUrl: String = spec.url
+
     private val tracker = LivenessTracker(
         staleThresholdMs = staleThresholdMs,
         maxRecoveryAttempts = maxRecoveryAttempts,
@@ -299,8 +309,18 @@ class StreamPlayer(
         // imperceptibly narrow speed window for micro-correction only. GROSS drift
         // is corrected by the watchdog's seek-to-live (in the tick), NOT by
         // sprinting playback through the backlog (the catch-up feel to avoid).
+        exo.setMediaSource(buildHlsSource(currentUrl))
+        exo.playWhenReady = true
+        exo.prepare()
+
+        player = exo
+    }
+
+    /** Build the live HLS source for [url] (live-offset config shared by
+     *  [createPlayer] and [updateUrl]). */
+    private fun buildHlsSource(url: String): MediaSource {
         val mediaItem = MediaItem.Builder()
-            .setUri(spec.url)
+            .setUri(url)
             .setLiveConfiguration(
                 MediaItem.LiveConfiguration.Builder()
                     .setTargetOffsetMs(TARGET_LIVE_OFFSET_MS)
@@ -309,13 +329,30 @@ class StreamPlayer(
                     .build(),
             )
             .build()
-        val source: MediaSource = HlsMediaSource.Factory(DefaultHttpDataSource.Factory())
+        return HlsMediaSource.Factory(DefaultHttpDataSource.Factory())
             .createMediaSource(mediaItem)
-        exo.setMediaSource(source)
-        exo.playWhenReady = true
-        exo.prepare()
+    }
 
-        player = exo
+    /**
+     * Re-point this tile to a new RESOLVED url IN PLACE — same ExoPlayer, same
+     * surface, no grid rebuild (P-N3). Used when a channel's resolved url rotates
+     * (a YouTube manifest expire token) but it's the SAME channel: only this one
+     * tile swaps its media source + re-prepares; the other tiles are untouched
+     * (the old behaviour rebuilt every player when one url changed). The
+     * audio-disabled / captions-off [TrackSelectionParameters] and the attached
+     * surface persist (they live on the ExoPlayer, not the media source), so the
+     * mute/captions/audible state is preserved. A no-op when the url is unchanged.
+     * If the new url is dead, the existing liveness/recovery ladder settles the
+     * tile honest-offline — unchanged. The tracker is intentionally NOT reset (this
+     * is a continuation, not a fresh connect), so a quick re-prepare keeps LIVE.
+     */
+    fun updateUrl(newUrl: String) {
+        if (newUrl == currentUrl) return
+        currentUrl = newUrl
+        Log.i(TAG, "[${spec.label}] resolved url rotated — swapping media source in place")
+        val exo = player ?: return // not yet created; createPlayer() will use currentUrl
+        exo.setMediaSource(buildHlsSource(newUrl))
+        exo.prepare()
     }
 
     /**

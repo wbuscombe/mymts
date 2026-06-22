@@ -97,12 +97,33 @@ fun VideoGrid(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val specs = remember(playingSlots) { playingSlots.map { it.spec } }
-    val manager = remember(specs) { StreamPlayerManager(context, specs) }
+    // P-N3: key the manager on the STABLE set of spec IDS (slot+slug), NOT the
+    // resolved urls. `StreamSpec.url` is the channel's `current_url`, which rotates
+    // for a YouTube tile (a fresh manifest `expire` token) — keying on `specs` (which
+    // includes the url) rebuilt the ENTIRE StreamPlayerManager (all tiles) on every
+    // such rotation. Keying on the ids means only a genuine change to WHICH channels
+    // play (status flip, operator override, grid resize → a changed id) recreates the
+    // manager; a bare url rotation is pushed into the one affected player IN PLACE by
+    // the effect below. `remember` compares the id list by value, so a recomputed-but-
+    // equal list is the same key and the manager survives.
+    val specIds = remember(specs) { specs.map { it.id } }
+    val manager = remember(specIds) { StreamPlayerManager(context, specs) }
 
     DisposableEffect(manager) {
         lifecycleOwner.lifecycle.addObserver(manager)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(manager) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(manager)
+            // removeObserver does NOT fire onDestroy, so release the replaced
+            // manager's players explicitly — else they leak decoders until the
+            // activity is destroyed (the old code's silent churn-leak). Idempotent.
+            manager.releaseAll()
+        }
     }
+
+    // P-N3: push resolved-url rotations into the existing players IN PLACE (no grid
+    // rebuild). Runs when a tile's resolved url changes within a stable channel set;
+    // a no-op on first bind (specs == the manager's construction specs).
+    LaunchedEffect(manager, specs) { manager.updateSpecs(specs) }
 
     // Subscribe to the manager's readiness signal so this composable
     // recomposes when `onStart` populates real players. See

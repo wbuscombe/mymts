@@ -49,6 +49,16 @@ class StreamPlayerManager(
     val players: Map<Int, StreamPlayer> get() = _players
 
     /**
+     * The specs currently bound, per tile index. Starts at the construction [specs]
+     * and is re-pointed by [updateSpecs] when a channel's RESOLVED url rotates — so
+     * a freshly-built player (onStart, or a recovery REINIT) uses the latest url,
+     * and [updateSpecs] knows which tiles' urls actually changed. The manager is
+     * keyed (by the call site) on the STABLE set of spec **ids**, so this tracks
+     * url-only drift WITHIN a stable channel set (P-N3).
+     */
+    private var liveSpecs: List<StreamSpec> = specs
+
+    /**
      * Increments each time the manager's player set becomes ready (after
      * `onStart`) or is torn down (after `onDestroy`). Composables observe
      * this so they re-bind after lifecycle events the call-site otherwise
@@ -85,9 +95,26 @@ class StreamPlayerManager(
         _players.values.forEach { if (it.needsReconnect()) it.reconnect() else it.seekToLive() }
     }
 
+    /**
+     * Push RESOLVED-url rotations into the EXISTING players in place — no grid
+     * rebuild (P-N3). The set of channels (ids) is unchanged (the call site keys the
+     * manager on that set, so an actual channel change recreates the manager
+     * instead); only resolved urls may have rotated (a YouTube `expire` token). A
+     * tile whose url changed swaps its media source in place via
+     * [StreamPlayer.updateUrl], preserving its surface + audio/captions state +
+     * honest-offline recovery. Guards on size so a mismatched call is a safe no-op.
+     */
+    fun updateSpecs(newSpecs: List<StreamSpec>) {
+        if (newSpecs.size != liveSpecs.size) return
+        newSpecs.forEachIndexed { idx, spec ->
+            if (spec.url != liveSpecs[idx].url) _players[idx]?.updateUrl(spec.url)
+        }
+        liveSpecs = newSpecs
+    }
+
     override fun onStart(owner: LifecycleOwner) {
         if (_players.isEmpty()) {
-            specs.forEachIndexed { idx, spec ->
+            liveSpecs.forEachIndexed { idx, spec ->
                 val p = playerFactory(context, spec)
                 _players[idx] = p
                 p.initialize()
@@ -99,7 +126,16 @@ class StreamPlayerManager(
         }
     }
 
-    override fun onDestroy(owner: LifecycleOwner) {
+    override fun onDestroy(owner: LifecycleOwner) = releaseAll()
+
+    /**
+     * Release every player and clear the set. Called by [onDestroy] AND explicitly
+     * by the call site's `DisposableEffect` onDispose when the manager is replaced
+     * (a genuine channel-set change) — because `Lifecycle.removeObserver` does NOT
+     * fire [onDestroy], so without this an old manager would LEAK its ExoPlayer
+     * decoders until the activity is destroyed. Idempotent.
+     */
+    fun releaseAll() {
         _players.values.forEach { it.release() }
         _players.clear()
         // Bump again so observers can collapse to the C2 panel cleanly
