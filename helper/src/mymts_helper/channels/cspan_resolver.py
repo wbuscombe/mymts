@@ -104,6 +104,11 @@ DEFAULT_RESOLVE_TIMEOUT = 15
 # day; re-read on this TTL (well under the prober's ~30-min cycle, so each probe
 # sees a fresh session status) — no token to chase.
 CACHE_TTL_SECONDS = 15 * 60
+# TTL for a DETERMINISTIC honest-offline outcome (chamber/committee not in session).
+# Caching it (P-H1) stops re-resolving an out-of-session feed on every off-cycle probe;
+# kept under the ~30-min probe cadence so the at-cycle re-check + live-flip are unchanged.
+# Transient errors (the except path) stay uncached so they retry promptly.
+OFFLINE_CACHE_TTL_SECONDS = 10 * 60
 _MAX_BODY_BYTES = 4 * 1024 * 1024
 _UA = "mymts-helper/0.0 (+cspan-free-floor)"
 # Committee mode: how many of today's scheduled hearings to probe per resolve, and
@@ -374,6 +379,10 @@ class CSpanResolver:
                 result = self._resolve_floor()
             if result.ok:
                 self._cache.set(source_url, result, CACHE_TTL_SECONDS)
+            else:
+                # Deterministic honest-offline (not in session) — cache briefly so a
+                # persistently-out-of-session feed isn't re-resolved every probe (P-H1).
+                self._cache.set(source_url, result, OFFLINE_CACHE_TTL_SECONDS)
             return result
         except Exception as e:  # noqa: BLE001 — offline-safe: never crash the probe
             log.info("cspan_resolve_error", extra={"reason": str(e)[:140]})

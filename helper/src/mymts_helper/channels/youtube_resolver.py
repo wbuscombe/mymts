@@ -66,6 +66,13 @@ MIN_CACHE_TTL_SECONDS = 5 * 60            # 5 min
 MAX_CACHE_TTL_SECONDS = 4 * 60 * 60       # 4 h  (< the typical ~6 h expiry)
 # TTL used when a resolved manifest carries no parseable `expire` hint.
 FALLBACK_CACHE_TTL_SECONDS = 30 * 60      # 30 min
+# TTL for a DETERMINISTIC honest-offline outcome ("not currently live"). Caching it
+# stops re-resolving a dark channel on every off-cycle/retry/burst probe (the ~17 dark
+# gov/session feeds, P-H1). Kept SHORTER than the default 30-min probe cadence so the
+# at-cycle re-check — and the live-flip latency — is UNCHANGED (a dark channel still
+# flips live at the next scheduled probe). Only the clean not_live result is cached;
+# transient errors (resolve_error / no_hls) stay uncached so they retry promptly.
+OFFLINE_CACHE_TTL_SECONDS = 10 * 60       # 10 min
 
 # DownloadError fragments that mean "the channel is simply not live right now"
 # (an honest, transient offline) rather than "broken / misconfigured handle".
@@ -209,9 +216,12 @@ class YouTubeResolver:
     def resolve(self, url: str, *, force_refresh: bool = False) -> YouTubeResolution:
         """Resolve `url` to an HLS manifest. BLOCKING — run in an executor.
 
-        Positive resolutions are cached with an expiry-derived TTL. Offline /
-        error outcomes are returned uncached so the next probe re-checks and
-        flips the channel live the instant it goes live.
+        Positive resolutions are cached with an expiry-derived TTL. A DETERMINISTIC
+        honest-offline outcome ("not currently live") is cached for a short
+        [OFFLINE_CACHE_TTL_SECONDS] (< the probe cadence, so the live-flip latency is
+        unchanged) to avoid re-resolving a dark channel on every off-cycle/retry
+        probe. Transient errors (resolve_error / no_hls_manifest) stay uncached so the
+        next probe re-checks promptly and flips the channel live the instant it does.
         """
         if not force_refresh:
             cached = self._cache.get(url)
@@ -224,8 +234,12 @@ class YouTubeResolver:
             msg = str(e)
             low = msg.lower()
             if any(marker in low for marker in _OFFLINE_MARKERS):
-                # Honest offline — the channel is dark right now, not broken.
-                return YouTubeResolution(ok=False, is_live=False, error="not_live")
+                # Honest offline — the channel is dark right now, not broken. Cache
+                # this deterministic outcome briefly (P-H1) so a persistently-dark
+                # channel isn't re-resolved on every off-cycle/retry probe.
+                offline = YouTubeResolution(ok=False, is_live=False, error="not_live")
+                self._cache.set(url, offline, OFFLINE_CACHE_TTL_SECONDS)
+                return offline
             log.info("youtube_resolve_error", extra={"url": url, "detail": msg[:160]})
             return YouTubeResolution(ok=False, error=f"resolve_error:{msg[:120]}")
         except Exception as e:  # noqa: BLE001 — yt-dlp can raise a grab-bag; never crash the probe
@@ -235,7 +249,11 @@ class YouTubeResolver:
         is_live = bool(info.get("is_live")) or info.get("live_status") == "is_live"
         title = info.get("title")
         if not is_live:
-            return YouTubeResolution(ok=False, is_live=False, title=title, error="not_live")
+            # Resolved but dark (an upcoming premiere / ended stream) — deterministic
+            # offline, cache it briefly (P-H1), same as the offline-marker path.
+            offline = YouTubeResolution(ok=False, is_live=False, title=title, error="not_live")
+            self._cache.set(url, offline, OFFLINE_CACHE_TTL_SECONDS)
+            return offline
 
         hls = _extract_hls_url(info)
         if not hls:

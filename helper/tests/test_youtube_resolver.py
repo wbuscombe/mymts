@@ -188,7 +188,10 @@ def test_resolve_force_refresh_bypasses_cache() -> None:
     assert calls["n"] == 2
 
 
-def test_resolve_negative_outcome_not_cached() -> None:
+def test_deterministic_offline_is_cached_briefly() -> None:
+    # P-H1: a DETERMINISTIC honest-offline outcome (not live) is cached for a short
+    # OFFLINE_CACHE_TTL_SECONDS so a dark channel isn't re-resolved on every off-cycle
+    # probe. Two resolves within the TTL → ONE extraction (the 2nd is served cached).
     calls = {"n": 0}
 
     def extract(u):
@@ -196,6 +199,12 @@ def test_resolve_negative_outcome_not_cached() -> None:
         return _info(is_live=False)
 
     r = yr.YouTubeResolver(extract_info=extract)
-    r.resolve("https://www.youtube.com/@x/live")
-    r.resolve("https://www.youtube.com/@x/live")
-    assert calls["n"] == 2      # offline is re-checked, never cached
+    a = r.resolve("https://www.youtube.com/@x/live")
+    b = r.resolve("https://www.youtube.com/@x/live")
+    assert calls["n"] == 1            # the 2nd hit the offline cache, not yt-dlp
+    assert a.ok is False and a.is_live is False and b.ok is False
+
+    # The TTL is shorter than the probe cadence, so the offline result expires and the
+    # next probe re-checks (live-flip latency preserved) — force_refresh skips the cache.
+    r.resolve("https://www.youtube.com/@x/live", force_refresh=True)
+    assert calls["n"] == 2
