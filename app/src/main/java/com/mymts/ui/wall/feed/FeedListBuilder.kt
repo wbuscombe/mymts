@@ -29,13 +29,29 @@ object FeedListBuilder {
      * label per row, and the focus flat-index all operate on exactly the
      * filtered set the operator chose to see.
      *
-     * - **Source denylist:** drop items whose source is in [hiddenSources]
-     *   (matched case-insensitively; the blank-source "Unknown source"
-     *   bucket is hidden iff that label is in the set). A denylist means a
-     *   newly-added source shows by default.
-     * - **Recency window:** when [recency] is bounded, drop items older
-     *   than its window. Items with no parseable timestamp are kept under
-     *   `All` and dropped under a bounded window (we can't prove recent).
+     * **Two-level precedence (news-genre-groups chapter, Part E §4).** The
+     * filters compose top-down so the levels never conflict:
+     *   1. **Genre denylist ([hiddenGenres], the master switch):** drop items
+     *      whose [FeedGenres.genreOf] genre is switched off. A genre off hides
+     *      ALL its sources REGARDLESS of any per-source state below — so the
+     *      Sports genre off removes every league's news even if no league is in
+     *      [hiddenLeagues]. A denylist ⇒ a newly-added genre shows by default.
+     *   2. **Per-source denylist ([hiddenSources]):** within a SHOWN genre,
+     *      drop NON-sports items whose source is hidden (case-insensitive; the
+     *      blank-source "Unknown source" bucket is hidden iff that label is in
+     *      the set).
+     *   3. **Sports-leagues pool ([hiddenLeagues]):** the Sports genre's
+     *      per-source level. Sports-news items (source IS a league) are gated by
+     *      the SAME pool as the ticker scores + the standalone Sports-leagues
+     *      filter — disable a league and both its scores and its news disappear,
+     *      consistently. The genre toggle (level 1) sits above this pool.
+     * - **Recency window:** when [recency] is bounded, drop items older than its
+     *   window. Items with no parseable timestamp are kept under `All` and
+     *   dropped under a bounded window (we can't prove recent).
+     *
+     * [hiddenGenres] is appended (defaulted to empty) so the pre-genre filter
+     * call sites read as "no genre filter" unchanged; `now` stays the
+     * positional clock so existing 5-arg callers keep compiling.
      *
      * Operates only on already-fetched inert plain text — no fetch, no
      * web, no new surface (A1 holds). Pure + unit-tested.
@@ -46,16 +62,21 @@ object FeedListBuilder {
         hiddenLeagues: Set<String>,
         recency: FeedRecency,
         now: Long,
+        hiddenGenres: Set<String> = emptySet(),
     ): List<FeedItem> {
         val hiddenLower = hiddenSources.map { it.lowercase() }.toSet()
         val hiddenLeagueLower = hiddenLeagues.map { it.lowercase() }.toSet()
+        val hiddenGenreLower = hiddenGenres.map { it.lowercase() }.toSet()
         val maxAge = recency.maxAgeMs
         val kept = items.filter { item ->
             val sourceKey = item.source.ifBlank { UNATTRIBUTED_KEY }.lowercase()
+            // Level 1 — genre master switch: a genre switched off hides ALL its
+            // sources, overriding any per-source state below.
+            if (FeedGenres.genreOf(item.source).lowercase() in hiddenGenreLower) return@filter false
+            // Level 2 — non-sports per-source denylist.
             if (sourceKey in hiddenLower) return@filter false
-            // Sports-news items (source IS a league) are gated by the SAME pool
-            // as the ticker scores — the Sports-leagues filter. Disable a league
-            // and both its scores and its news disappear, consistently.
+            // Level 3 — Sports-leagues pool (sports sources' per-source level),
+            // shared with the ticker scores + the Sports-leagues filter.
             if (sourceKey in SPORTS_LEAGUES && sourceKey in hiddenLeagueLower) return@filter false
             if (maxAge == null) return@filter true
             val ts = item.itemTimestampMs() ?: return@filter false  // no timestamp → not provably recent
