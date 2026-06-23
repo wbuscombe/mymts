@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-23
+
+## feat(app): News genre groups — two-level feed-source filter (2026-06-23)
+
+The flat "Feed sources…" toggle list became a **two-level genre → source filter**. Feed
+sources are grouped by genre (US News / Global News / Business / Sports — the same
+`ChannelCategory`/`feeds/category.py` taxonomy the channel picker uses), with a **genre
+toggle** (off hides all its sources) above the existing **per-source toggles**. The mapping
+(`FeedGenres`) is data-driven — adding a source later is one line; an unmapped source falls
+through to **General**; **Weather** is omitted (no feed RSS source maps to it).
+`FeedListBuilder.applyFilters` gains a `hiddenGenres` denylist as the top filter level, with a
+documented top-down precedence: genre master switch → non-sports per-source `hiddenSources`
+→ Sports-leagues pool `hiddenLeagues`.
+
+The Sports genre **reconciles** with the existing Sports-leagues pool rather than forking it:
+the Sports group's per-source toggles ARE the `hiddenLeagues` pool (shared with the ticker
+scores + the "Sports leagues…" filter — two views of one state), and the Sports *genre* toggle
+gates the whole Sports contribution above it.
+
+A new Settings **"News"** section opens the native `NewsFilterOverlay` — a D-pad toggle list
+using the menu's scroll-follows-focus discipline (every genre + source reachable, no fold-trap
+on the overscan-clipped panel), inclusion-framed labels. Genre/source enable-state persists in
+`LineupStore` and restores on launch. New tests cover the two-level logic, the sports-pool
+composition + precedence, and the persistence round-trip (the locked panel-fit levers still
+round-trip untouched). Verified on-device (`.92`): Sports genre off drops all sports-news from
+the live feed (76 → 62 items) and survives a force-stop/relaunch. **Web-feed-filter parity is a
+conscious deferral** (tied to the cross-device profile-sharing decision; see BACKLOG).
+`versionCode` 201 → 300, `versionName` 0.3.0.
+
 ## [0.2.1] - 2026-06-22
 
 ## perf(app): P-N3 — stable-identity player manager (no whole-grid decoder churn) (2026-06-22)

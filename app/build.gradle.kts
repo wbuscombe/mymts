@@ -180,10 +180,10 @@ android {
         // it with headroom and matches Media3 1.5.0's effective floor.
         minSdk = 23
         targetSdk = 35
-        // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.2.1 -> 201.
+        // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.3.0 -> 300.
         // (Was pinned at the stale `1`.) Bump in lockstep with the released tag so
         // versionCode rises with versionName (which tracks the git tag below).
-        versionCode = 201
+        versionCode = 300
         versionName = getVersionFromGit()
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
