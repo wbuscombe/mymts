@@ -94,6 +94,7 @@ class WallSettingsRoundTripTest {
         feedFontScale = FeedFontScale.Large,   // default Default
         feedSide = FeedSide.Right,             // default Left
         hiddenSources = setOf("espn", "cbs-sports-hq"), // default empty
+        hiddenGenres = setOf("Business", "Global News"), // default empty (Part E)
         feedRecency = FeedRecency.Day,         // default All
         hiddenLeagues = setOf("nhl", "mlb"),   // default empty
         tickerNewsEnabled = true,              // default false

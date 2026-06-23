@@ -125,6 +125,7 @@ class LineupStore(context: Context) {
             .putInt(KEY_FEED_FONT, settings.feedFontScale.ordinal)
             .putInt(KEY_FEED_SIDE, settings.feedSide.ordinal)
             .putString(KEY_FEED_HIDDEN_SOURCES, encodeStringSet(settings.hiddenSources))
+            .putString(KEY_FEED_HIDDEN_GENRES, encodeStringSet(settings.hiddenGenres))
             .putInt(KEY_FEED_RECENCY, settings.feedRecency.ordinal)
             .putString(KEY_HIDDEN_LEAGUES, encodeStringSet(settings.hiddenLeagues))
             .putBoolean(KEY_TICKER_NEWS, settings.tickerNewsEnabled)
@@ -189,6 +190,20 @@ class LineupStore(context: Context) {
         val current = _wallSettings.value.hiddenLeagues
         val next = if (league in current) current - league else current + league
         updateWallSettings(_wallSettings.value.copy(hiddenLeagues = next))
+    }
+
+    /**
+     * Toggle a feed GENRE on/off — the top level of the two-level News filter
+     * (Part E). Stored as a denylist (`hiddenGenres`): switching a shown genre
+     * OFF adds it (hiding ALL its sources from the feed); an already-hidden
+     * genre ON removes it. A newly-added genre never appears here until
+     * explicitly hidden, so it shows by default. Composes with the per-source
+     * levers in `FeedListBuilder` — genre off overrides per-source state.
+     */
+    fun toggleHiddenGenre(genre: String) {
+        val current = _wallSettings.value.hiddenGenres
+        val next = if (genre in current) current - genre else current + genre
+        updateWallSettings(_wallSettings.value.copy(hiddenGenres = next))
     }
 
     /** Toggle news as a third ticker rotation mode (default off). */
@@ -421,6 +436,7 @@ class LineupStore(context: Context) {
         private const val KEY_FEED_FONT = "wall_settings_feed_font"
         private const val KEY_FEED_SIDE = "wall_settings_feed_side"
         private const val KEY_FEED_HIDDEN_SOURCES = "wall_settings_feed_hidden_sources"
+        private const val KEY_FEED_HIDDEN_GENRES = "wall_settings_feed_hidden_genres"
         private const val KEY_FEED_RECENCY = "wall_settings_feed_recency"
         private const val KEY_HIDDEN_LEAGUES = "wall_settings_hidden_leagues"
         private const val KEY_TICKER_NEWS = "wall_settings_ticker_news"
@@ -473,6 +489,7 @@ class LineupStore(context: Context) {
         ): WallSettings {
             if (!contains(KEY_FEED_WIDTH) && !contains(KEY_FEED_FONT) &&
                 !contains(KEY_FEED_SIDE) && !contains(KEY_FEED_HIDDEN_SOURCES) &&
+                !contains(KEY_FEED_HIDDEN_GENRES) &&
                 !contains(KEY_FEED_RECENCY) && !contains(KEY_HIDDEN_LEAGUES) &&
                 !contains(KEY_TICKER_NEWS) && !contains(KEY_UI_SCALE) &&
                 !contains(KEY_OVERSCAN) && !contains(KEY_OFFSET_X) &&
@@ -489,6 +506,7 @@ class LineupStore(context: Context) {
                 feedFontScale = feedFontScaleFromOrdinal(getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
                 feedSide = feedSideFromOrdinal(getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
                 hiddenSources = getStringSet(KEY_FEED_HIDDEN_SOURCES),
+                hiddenGenres = getStringSet(KEY_FEED_HIDDEN_GENRES),
                 feedRecency = feedRecencyFromOrdinal(getInt(KEY_FEED_RECENCY, FeedRecency.All.ordinal)),
                 hiddenLeagues = getStringSet(KEY_HIDDEN_LEAGUES),
                 tickerNewsEnabled = getBoolean(KEY_TICKER_NEWS, false),

@@ -45,6 +45,16 @@ data class WallSettings(
     // the feed to a time window. Both operate purely on the already-
     // fetched plain-text items (no new fetch; A1 holds).
     val hiddenSources: Set<String> = emptySet(),
+    // News-genre-groups chapter (Part E, 2026-06-22). `hiddenGenres` is a
+    // DENYLIST of feed GENRES the operator switched off — the top level of the
+    // two-level News filter (`FeedGenres` → US News / Global News / Business /
+    // Sports). A genre in this set hides ALL its sources from the feed,
+    // overriding any per-source state. Stored as "hide these" (like
+    // `hiddenSources`) so a newly-added genre shows by default. Composes with
+    // the per-source levers: a source contributes iff its genre is NOT here AND
+    // (non-sports) its label ∉ `hiddenSources` / (sports) its league ∉
+    // `hiddenLeagues`. See `FeedListBuilder.applyFilters`.
+    val hiddenGenres: Set<String> = emptySet(),
     val feedRecency: FeedRecency = FeedRecency.All,
     // Curation & preferences chapter (2026-06-06). `hiddenLeagues` is a
     // DENYLIST of sports-league labels the operator has switched off in
