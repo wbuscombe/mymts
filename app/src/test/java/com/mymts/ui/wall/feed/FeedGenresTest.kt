@@ -90,4 +90,13 @@ class FeedGenresTest {
     @Test fun `sectioned of empty input is empty (no dead groups)`() {
         assertTrue(FeedGenres.sectioned(emptyList()).isEmpty())
     }
+
+    @Test fun `sectioned order is ORDER-driven regardless of input order`() {
+        // Sources supplied in reverse-genre order still group in ORDER.
+        val sources = listOf("NFL", "Bloomberg Markets", "BBC World", "CBS News")
+        assertEquals(
+            listOf(FeedGenres.US_NEWS, FeedGenres.GLOBAL_NEWS, FeedGenres.BUSINESS, FeedGenres.SPORTS),
+            FeedGenres.sectioned(sources).map { it.first },
+        )
+    }
 }

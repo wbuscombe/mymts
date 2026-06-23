@@ -150,4 +150,19 @@ class LineupStoreWallSettingsResolveTest {
         )
         assertEquals(TickerMotion.Flip, corrupt.tickerMotion)
     }
+
+    @Test fun `hiddenGenres is read from its own key (not the sources or leagues set)`() {
+        // getStringSet returns a sentinel ONLY for the genres key → proves the
+        // resolver wired hiddenGenres to its OWN pref, not (e.g.) hidden_sources.
+        // A field-isolation guard the whole-object round-trip can't pinpoint.
+        val s = LineupStore.resolveWallSettings(
+            contains = { true },
+            getInt = { _, d -> d },
+            getStringSet = { key -> if (key.contains("hidden_genres")) setOf("Sports") else emptySet() },
+            getBoolean = { _, d -> d },
+        )
+        assertEquals(setOf("Sports"), s.hiddenGenres)
+        assertEquals(emptySet<String>(), s.hiddenSources)   // the other string-sets unaffected
+        assertEquals(emptySet<String>(), s.hiddenLeagues)
+    }
 }

@@ -153,4 +153,24 @@ class FeedGenreFilterTest {
         assertEquals(14, kept.count { it.source == "NFL" })
         assertEquals(2, kept.count { it.source != "NFL" })
     }
+
+    // ---- hardening: case-insensitivity + the General/blank edge ----
+
+    @Test fun `genre matching is case-insensitive`() {
+        // A hand-edited / pre-seeded prefs file could store a lowercase genre;
+        // the genre filter must still match (parity with the leagues-pool casing).
+        val kept = keptSources(sample(), hiddenGenres = setOf("business"))
+        assertTrue("lowercase 'business' still hides the Business genre", kept.none { it == "Bloomberg Markets" })
+        assertTrue(kept.contains("CBS News"))
+    }
+
+    @Test fun `hiding the Unknown source bucket drops blank items while General stays shown`() {
+        // General genre NOT hidden; the blank source is hidden via the
+        // "Unknown source" bucket label (hiddenSources, level 2) → just the
+        // blank item drops, every other genre's sources stay.
+        val kept = keptSources(sample(), hiddenSources = setOf("Unknown source"))
+        assertTrue("the blank-source (General-bucket) item is gone", kept.none { it.isBlank() })
+        assertTrue(kept.contains("CBS News"))
+        assertTrue(kept.contains("NFL"))
+    }
 }

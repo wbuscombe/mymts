@@ -73,7 +73,10 @@ object FeedListBuilder {
             // Level 1 — genre master switch: a genre switched off hides ALL its
             // sources, overriding any per-source state below.
             if (FeedGenres.genreOf(item.source).lowercase() in hiddenGenreLower) return@filter false
-            // Level 2 — non-sports per-source denylist.
+            // Level 2 — per-source denylist. This check is general (any source
+            // in the set drops); the News overlay only ROUTES non-sports sources
+            // here (sports sources go to the leagues pool, level 3), so in
+            // practice this is the non-sports per-source level.
             if (sourceKey in hiddenLower) return@filter false
             // Level 3 — Sports-leagues pool (sports sources' per-source level),
             // shared with the ticker scores + the Sports-leagues filter.
