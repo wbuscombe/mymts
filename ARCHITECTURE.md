@@ -1026,7 +1026,7 @@ The feed gains operator-controlled **filtering** — narrow it to chosen sources
 
 ### Where it lives + the pure core
 
-The filter is a **pure step** in `FeedListBuilder.applyFilters(items, hiddenSources, recency, now)`, applied BEFORE `build()` groups the items — so the sectioned layout, the per-source freshness chips, and the focus flat-index all operate on exactly the visible set. Controls live in the settings surface (`SettingsOverlay`): a "Feed recency" cycle row + a "Feed sources…" row that opens `SourceFilterOverlay` (a D-pad toggle list of the feed's distinct sources). Both persist on-device via `LineupStore` (denylist as a JSON string-set, recency as an ordinal).
+The filter is a **pure step** in `FeedListBuilder.applyFilters(...)` (signature grew with the sports-leagues pool and, in §22, the genre level — `(items, hiddenSources, hiddenLeagues, recency, now, hiddenGenres)`), applied BEFORE `build()` orders the items — so the agnostic river, the per-item age, and the focus flat-index all operate on exactly the visible set. Controls live in the settings surface (`SettingsOverlay`): a "Feed recency" cycle row + (originally) a "Feed sources…" row opening `SourceFilterOverlay`. **As of §22 the flat source row is superseded by the two-level News filter** (a "News" section opening `NewsFilterOverlay`); both persist on-device via `LineupStore` (denylists as JSON string-sets, recency as an ordinal).
 
 ### Focus model unchanged; honest empty states
 
@@ -1057,7 +1057,7 @@ When `WallSettings.tickerNewsEnabled` is on, the ticker rotates **markets → sp
 
 ### C — Feed-source toggles
 
-Built in Stage 12 (the feed-filtering chapter) as the source denylist; reused here (the ticker-news source set is the same `hiddenSources`). Not rebuilt.
+Built in Stage 12 (the feed-filtering chapter) as the source denylist; reused here (the ticker-news source set is the same `hiddenSources`). Not rebuilt. **Superseded for the feed UI in §22** by the two-level News genre/source filter (the genre level is added above this denylist; the ticker-news source subset still reads `hiddenSources`).
 
 ### Where it lives + focus
 
@@ -1083,7 +1083,39 @@ On the dedicated box's 720p panel, two things surfaced. **(1) Panel fit.** The b
 
 ---
 
-## 22. What this document deliberately does NOT specify yet
+## 22. News genre groups — two-level feed-source filter (2026-06-23)
+
+The flat "Feed sources…" toggle list grew a **genre level**: feed sources are now grouped into genres and gated at two levels, matching how both clients already group the *channel* picker and the web's feed-source filter. Native-only this release; the web-parity port is a conscious deferral (below). All of it stays a pure transform over the already-fetched plain-text items — **no new fetch, A1 holds.**
+
+### The taxonomy (data-driven)
+
+`FeedGenres` (in `ui.wall.feed`) maps each feed **source label → genre** — US News / Global News / Business / Sports — reusing the same names as `ChannelCategory` and the helper's `feeds/category.py`, so the channel picker, the web feed filter, and the native feed filter all read identically. The map is the single source of truth: **adding a feed source later is one line**; an unmapped label falls through to **General** (a newly-added source still groups, never silently drops, mirroring the helper's `source_category` default); **Weather is omitted** — no feed RSS source maps to it, and `sectioned()` drops empty genres so it never shows as a dead toggle. Pure + unit-tested (`FeedGenresTest`).
+
+### The two-level filter + documented precedence
+
+`FeedListBuilder.applyFilters(items, hiddenSources, hiddenLeagues, recency, now, hiddenGenres)` composes three denylist levels **top-down**, so they never conflict:
+
+1. **Genre (`WallSettings.hiddenGenres`) — the master switch.** A genre switched off hides **all** its sources, overriding any per-source state below.
+2. **Per-source, non-sports (`hiddenSources`).** Within a *shown* genre, a hidden source drops just that source (the original Stage 12 denylist, unchanged).
+3. **Sports-leagues pool (`hiddenLeagues`).** The Sports genre's per-source level **is** the shared leagues pool — the same set the ticker scores and the standalone "Sports leagues…" filter use.
+
+All three are denylists ("hide these"), so a newly-added genre/source shows by default. Pure + unit-tested (`FeedGenreFilterTest`: each level, the composition, the sports cap).
+
+### Sports reconciliation (genre ⇄ leagues pool)
+
+The Sports genre's source labels (NFL, NBA, …) **are** the leagues, so the News overlay's Sports section and the existing "Sports leagues…" filter are **two views of one state** (`hiddenLeagues`) — toggling a league in either writes the same denylist, matched case-insensitively, never double-stored. The precedence is **genre-then-pool**: the Sports *genre* toggle gates the whole Sports contribution to the feed; with the genre on, the leagues pool further filters individual leagues. This composes rather than forks — disabling a league still removes both its ticker scores and its feed news (Stage 12 behaviour), now under a genre master switch.
+
+### Where it lives + focus
+
+`NewsFilterOverlay` (native, in `ui.menu`) is a D-pad-navigable two-level toggle list — genre rows, each followed by its indented source rows — opened from a new Settings **"News"** section (superseding the flat "Feed sources…" row; the reused `SourceFilterOverlay` component remains for the leagues pool). It uses the menu's proven **`Column` + `verticalScroll` + bring-focused-into-view** scroll-follows-focus discipline, so every genre + source is reachable with **no fold-trap** on the overscan-clipped panel. Names render entirely from the `FeedGenres` data (not hardcoded in the UI); labels are inclusion-framed ("Shown" / per-source "Off" / "genre off" when the genre gates it). `WallScreen` builds the group model from the live feed's distinct sources + the persisted sets and routes toggles (genre → `hiddenGenres`; non-sports source → `hiddenSources`; sports source → `hiddenLeagues`). It's a modal overlay — `WallFocusModel`'s zone graph is unchanged, no-trap invariants intact. Persisted on-device via `LineupStore` (the denylist as a JSON string-set). Verified on-device (`.92`): Sports genre off drops all sports-news from the live feed (76 → 62 items) and survives a force-stop/relaunch.
+
+### Deferred (BACKLOG)
+
+- **Web-feed-filter parity** — porting the two-level genre grouping to the web client's feed-source filter is a conscious deferral, tied to the unresolved **cross-device profile-sharing** decision (per-device denylists vs a shared profile). Native ships first; the web keeps its existing per-category grouping until that fork is decided.
+
+---
+
+## 23. What this document deliberately does NOT specify yet
 
 - Exact on-device persistence mechanism — chosen in Stage 5 (lineup/presets).
 - Update mechanism details — chosen in Stage 6.

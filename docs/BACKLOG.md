@@ -67,6 +67,21 @@ vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's o
   hls.js worker/buffer tuning, per-poll DOM rebuilds — logged from the read-only analysis, low-risk
   but deferred to keep this pass focused on the `.92` CPU triad.
 
+## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
+
+The native feed-source filter became a **two-level genre → source filter** in v0.3.0
+(`FeedGenres` taxonomy + `NewsFilterOverlay`; see `ARCHITECTURE.md §22`). The **web**
+client keeps its existing per-category feed-source grouping for now — porting the
+two-level genre toggle to it is **deliberately deferred**, tied to the unresolved
+**cross-device profile-sharing** decision (the cross-platform-profiles fork, item H):
+whether feed-filter state is per-device (today's model — `hiddenGenres`/`hiddenSources`/
+`hiddenLeagues` live in each client's local store) or a shared profile synced via
+per-client helper state. Building web parity now would either duplicate the per-device
+denylist (fine, but a second place to maintain the taxonomy) or pre-commit the profile
+fork. Native ships first; revisit the web port when the profile-sharing fork is decided.
+The taxonomy itself already matches the helper's `feeds/category.py`, so the web port is
+mechanical once the state model is chosen.
+
 ## Premium DRM sports feeds — BLOCKED by DRM, not buildable as wall feeds (2026-06-17)
 
 **Structural "won't-do," not a deferred feature.** The operator holds legitimate paid subscriptions (MLB.tv / MLB Network, Marquee, CHSN via Comcast, Hulu Live TV incl. NFL Network / ESPN, NBA League Pass). The blocker is **NOT authentication** — it's **DRM** (Widevine / FairPlay), the standard for premium sports. Ingesting these into the wall's generic players (hls.js / ExoPlayer) would require **circumventing the DRM** to obtain decryption keys — DMCA §1201 anti-circumvention + ToS violation — which is **out of scope and will not be built**. The subscriptions do not change this; it's a legal/structural barrier, not a missing feature.

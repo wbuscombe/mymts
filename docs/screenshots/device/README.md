@@ -19,6 +19,8 @@ The files here are **labeled placeholders**. Replace each one with your real cap
 
 > Optional per-sport breakouts: if you want individual cards, add `ticker-pga-live.png` / `ticker-ufc-live.png` / `ticker-tennis-live.png` / `ticker-f1-live.png` (or a combined `ticker-sports-live.png`) and reference them in the top README. Same live-data, same drop-in rule.
 
+> Optional native-only UI breakout: `news-genre-filter.png` — the **two-level News genre & source filter** overlay (Settings → News), a v0.3.0 **native-only** surface (the web feed filter keeps per-category grouping; two-level parity is deferred — see `docs/BACKLOG.md`), so the automated web demo gallery **cannot** show it. Capture it on the box (`adb exec-out screencap`); topology-clean rule applies (dismiss any address-bearing overlay first).
+
 ## Why these are device/live shots (the demo can't produce them)
 
 The automated `../web/` gallery runs against **demo/phantom mode**, which serves clearly-labeled **SAMPLE** markets, three **team** games (MLB/NBA/NHL), and a fixture feed — deliberately no live upstreams. So the demo gallery covers the **structure** (the menu, the three ticker modes, the news-expand interaction, the honest SAMPLE pills), but it **cannot** show:
