@@ -37,7 +37,7 @@ components:
 
 routes:
   - GET /health          # liveness + build_sha + counts
-  - GET /api/channels    # phantom: all 56 seeded channels, marked live
+  - GET /api/channels    # phantom: all 52 seeded channels, marked live
   - GET /api/feed        # phantom: preloaded mock feed items
   - GET /api/ticker      # phantom: sample markets + sports
   - GET /app             # static web client
@@ -46,5 +46,5 @@ verify:
   # asserted by CI on every push/PR (.github/workflows/ci.yml); also run locally:
   - curl -fsS http://localhost:8091/health        # 200
   - curl -fsS http://localhost:8091/api/feed       # non-empty mock items
-  - curl -fsS http://localhost:8091/api/channels   # all 56 seeded channels, marked live
+  - curl -fsS http://localhost:8091/api/channels   # all 52 seeded channels, marked live
   - "phantom boot performs ZERO outbound HTTP (helper test_phantom.py asserts this; run: cd helper && uv run pytest -k phantom)"

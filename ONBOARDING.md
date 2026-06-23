@@ -42,8 +42,8 @@ Verify in another shell:
 ```bash
 curl -fsS http://localhost:8091/health      # 200 + build info
 curl -fsS http://localhost:8091/api/feed     # preloaded mock feed items
-curl -fsS http://localhost:8091/api/channels # all 56 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
-curl -fsS http://localhost:8091/api/presets  # wall presets: News Wall, Nature, Space, Chill / Mixed (default: news)
+curl -fsS http://localhost:8091/api/channels # all 52 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
+curl -fsS http://localhost:8091/api/presets  # wall presets: News Wall, Nature, Space, Chill / Mixed, Ocean, Eagles (default: news)
 ```
 You can also open the **web client** at <http://localhost:8091/app>.
 
@@ -102,8 +102,8 @@ node --test web/test/*.test.mjs     # web client suite (pure render/honesty logi
 
 ## What you can play with
 - The whole wall UI, the menu (D-pad / arrow keys on the emulator), the channel
-  picker, the **wall presets** (News Wall · Nature · Space · Chill / Mixed — switch the whole grid
-  from the menu's WALL section), the settings, the ticker — all on mock or real-public data.
+  picker, the **wall presets** (News Wall · Nature · Space · Chill / Mixed · Ocean · Eagles — switch
+  the whole grid from the menu's WALL section), the settings, the ticker — all on mock or real-public data.
 - The helper API + the static web client.
 - The full source of both components.
 

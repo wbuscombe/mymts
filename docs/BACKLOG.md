@@ -48,6 +48,25 @@ vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's o
   the premium-DRM-sports entry below). **Parkland College / Heartland** = no public stream exists
   to source at all.
 
+## Follow-ups from the 2026-06-22 perf + channel pass
+
+- **Re-source candidates (persistently dead, retained honest-offline).** `c-span` (cspan1
+  Akamai now `http_403`) and `cnn-international` (Rakuten/Wurl host `dns_failure`) have ~1000
+  consecutive probe failures but were kept (they're in the news FALLBACK lists) rather than pruned.
+  Re-source a working URL or prune on a future pass. (Pruned outright this pass: `cnbc` placeholder,
+  `al-jazeera-en`, `cgtn-en`, `trt-world` — hosts gone.)
+- **P-N2 full scope-isolation (deferred).** `@Immutable WallSettings` landed; the deeper
+  `WallScreen` refactor (read each settings group in a narrow wrapper so a ticker-speed nudge
+  recomposes only the ticker subtree) was deferred — high-risk on a 700-line composable for an
+  occasional operator-adjusts-a-setting event. Revisit if settings-nudge hitch is felt.
+- **P-N3 live confirmation.** The in-place URL swap is unit-proven (no manager rebuild on a token
+  rotation); a *live* token rotation takes hours to observe — the `StreamPlayer.updateUrl` logcat
+  marker ("resolved url rotated — swapping media source in place") lets the operator confirm a real
+  rotation no longer reinits the grid.
+- **Web/helper Med perf (not done this pass).** Offscreen tile culling (no IntersectionObserver),
+  hls.js worker/buffer tuning, per-poll DOM rebuilds — logged from the read-only analysis, low-risk
+  but deferred to keep this pass focused on the `.92` CPU triad.
+
 ## Premium DRM sports feeds — BLOCKED by DRM, not buildable as wall feeds (2026-06-17)
 
 **Structural "won't-do," not a deferred feature.** The operator holds legitimate paid subscriptions (MLB.tv / MLB Network, Marquee, CHSN via Comcast, Hulu Live TV incl. NFL Network / ESPN, NBA League Pass). The blocker is **NOT authentication** — it's **DRM** (Widevine / FairPlay), the standard for premium sports. Ingesting these into the wall's generic players (hls.js / ExoPlayer) would require **circumventing the DRM** to obtain decryption keys — DMCA §1201 anti-circumvention + ToS violation — which is **out of scope and will not be built**. The subscriptions do not change this; it's a legal/structural barrier, not a missing feature.

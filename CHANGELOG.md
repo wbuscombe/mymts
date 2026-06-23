@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-22
+
+## perf(app): P-N3 — stable-identity player manager (no whole-grid decoder churn) (2026-06-22)
+
+The headline `.92` CPU win. The wall keyed its `StreamPlayerManager` on the tiles' resolved
+URLs, but a YouTube tile's URL carries a rotating `expire` token — so one tile's refresh
+recreated the WHOLE manager (every player released + rebuilt; the replaced manager's players
+also leaked, since `removeObserver` doesn't fire `onDestroy`). The manager is now keyed on the
+STABLE set of spec **ids**; a URL rotation is swapped into the one affected player IN PLACE
+(`StreamPlayer.updateUrl` → new `MediaItem` on the same ExoPlayer + surface; mute/audible/
+captions + the honest-offline recovery preserved), never the grid. `releaseAll()` on dispose
+fixes the leak. Verified on-device (`.92`): News + ambient YouTube presets play stably.
+
+## perf(app): P-N1/P-N2 — defer menu alpha to graphicsLayer; @Immutable WallSettings (2026-06-22)
+
+P-N1: the wall-dim alpha read the menu state at composition time (`.alpha()`), recomposing the
+whole wall (ticker + feed + grid) on every menu open/close; the read now lives inside a
+`graphicsLayer { alpha = … }` lambda (draw phase) → no recomposition. P-N2: `@Immutable` on
+WallSettings (Compose inferred it unstable via its `Set` fields) restores correct skipping on a
+settings nudge.
+
+## perf(helper): cache deterministic-offline resolutions (P-H1) (2026-06-22)
+
+The YouTube + C-SPAN resolvers cached only successes, so every dark channel was re-resolved on
+every off-cycle probe. A deterministic honest-offline outcome is now cached for 10 min — UNDER
+the ~30-min probe cadence, so the live-flip latency is unchanged; transient errors stay uncached.
+
+## fix(channels): quality cleanup — prune dead, Government category, fix presets (2026-06-22)
+
+Channel-selection findings (lineup 56 → 52). **Pruned** `cnbc` (a permanent `.invalid`
+placeholder that sat in the news-default PREFERRED list → a dead tile at 6+ grids) and
+`al-jazeera-en` / `cgtn-en` / `trt-world` (persistently dead — ~1000 dns/SSL failures, hosts
+gone); `cbs-golazo` verified LIVE (kept); `cnn-international` + `c-span` kept (honest-offline,
+flagged re-source candidates — they're in the FALLBACK lists). **Space preset** → ISS-only (1×1):
+NASA TV was DENY'd (master-only HLS dead in ExoPlayer), making Space ~50% dead. New
+server-authoritative **Government** category — the session-gated .gov feeds (chamber floors,
+committee hearings, agency briefings, the White House feed) move out of US News (24 → 11 live)
+so it reads live-dense and the gov feeds are honestly grouped. Both clients pick it up
+server-authoritatively (native renders it dynamically; the web order gains it).
+
 ## chore: remove committed analysis reports — reports are deliverables, not repo artifacts (2026-06-21)
 
 A perf + channel-selection analysis report was committed to the repo by mistake (`7f49991`).
@@ -195,7 +235,7 @@ file system` → restart loop. (Reproduced locally: `Restarting (1)`, the exact 
   volume is writable by the non-root user with no host-side step. It also bind-mounts the
   repo `web/` at `/app/web` (read-only) + sets `WEB_CLIENT_DIR`, so `/app/` serves.
 - **Clone-to-running**: `cd helper && cp .env.example .env && docker compose up` →
-  migrations run on a fresh DB (→ head 005), `seed.json` loads (56 channels + 21 feed
+  migrations run on a fresh DB (→ head 005), `seed.json` loads (52 channels + 21 feed
   sources), and `/health` + `/api/channels` + the web client at `/app/` all serve, **keyless**.
 - Kept hardened: `read_only` rootfs, non-root (10001), `cap_drop: [ALL]`, no-new-privileges,
   digest-pinned image; the only writable paths are the `/data` volume + the `/tmp` tmpfs.

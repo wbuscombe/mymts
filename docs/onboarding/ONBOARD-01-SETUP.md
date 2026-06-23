@@ -28,7 +28,7 @@ The first `uv run` resolves the locked dependencies (from `uv.lock`) — let it.
 ```bash
 curl -fsS http://localhost:8091/health       # expect HTTP 200 + build info
 curl -fsS http://localhost:8091/api/feed       # expect mock feed items (non-empty)
-curl -fsS http://localhost:8091/api/channels   # expect all 56 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
+curl -fsS http://localhost:8091/api/channels   # expect all 52 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
 ```
 Open <http://localhost:8091/app> in a browser to see the **web client** on the mock data — that alone proves the helper demo works.
 
