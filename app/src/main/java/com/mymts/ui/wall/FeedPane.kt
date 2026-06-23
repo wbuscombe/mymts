@@ -70,19 +70,24 @@ fun FeedPane(
     fontScale: Float = 1f,
     hiddenSources: Set<String> = emptySet(),
     hiddenLeagues: Set<String> = emptySet(),
+    hiddenGenres: Set<String> = emptySet(),
     feedRecency: com.mymts.data.settings.FeedRecency = com.mymts.data.settings.FeedRecency.All,
 ) {
     val state by repository.state.collectAsState()
     val rawItems = remember(state.snapshot) { state.snapshot?.items.orEmpty() }
     val stale = repository.isStale()
-    val filtersActive = hiddenSources.isNotEmpty() || feedRecency != com.mymts.data.settings.FeedRecency.All
+    val filtersActive = hiddenSources.isNotEmpty() || hiddenGenres.isNotEmpty() ||
+        feedRecency != com.mymts.data.settings.FeedRecency.All
 
     // Apply the operator's feed filters (source denylist + recency + the
     // Sports-leagues pool gating sports-news), THEN order into one agnostic
     // newest-first river. Both pure; operate on already-fetched plain text
     // (A1). The ordered list IS the focus order.
-    val items = remember(state.snapshot, hiddenSources, hiddenLeagues, feedRecency) {
-        FeedListBuilder.applyFilters(rawItems, hiddenSources, hiddenLeagues, feedRecency, System.currentTimeMillis())
+    val items = remember(state.snapshot, hiddenSources, hiddenLeagues, hiddenGenres, feedRecency) {
+        FeedListBuilder.applyFilters(
+            rawItems, hiddenSources, hiddenLeagues, feedRecency, System.currentTimeMillis(),
+            hiddenGenres = hiddenGenres,
+        )
     }
     val ordered = remember(items) { FeedListBuilder.build(items) }
 

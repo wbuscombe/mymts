@@ -113,7 +113,7 @@ class MenuStateTest {
         for (p in listOf(
             MenuState.PendingSelection.SlotControls(0),
             MenuState.PendingSelection.Settings,
-            MenuState.PendingSelection.SourceFilter,
+            MenuState.PendingSelection.NewsFilter,
             MenuState.PendingSelection.SportsLeagueFilter,
             MenuState.PendingSelection.PresetPicker,
         )) {

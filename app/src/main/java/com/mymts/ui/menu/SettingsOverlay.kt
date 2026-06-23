@@ -88,7 +88,7 @@ fun SettingsOverlay(
     onCycleFeedFontScale: () -> Unit,
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
-    onOpenSourceFilter: () -> Unit,
+    onOpenNewsFilter: () -> Unit,
     onToggleTickerNews: () -> Unit,
     onOpenLeagueFilter: () -> Unit,
     onCycleUiScale: () -> Unit,
@@ -129,7 +129,7 @@ fun SettingsOverlay(
                 onCycleFeedFontScale = onCycleFeedFontScale,
                 onCycleFeedSide = onCycleFeedSide,
                 onCycleFeedRecency = onCycleFeedRecency,
-                onOpenSourceFilter = onOpenSourceFilter,
+                onOpenNewsFilter = onOpenNewsFilter,
                 onToggleTickerNews = onToggleTickerNews,
                 onOpenLeagueFilter = onOpenLeagueFilter,
                 onCycleUiScale = onCycleUiScale,
@@ -160,7 +160,7 @@ private fun SettingsCard(
     onCycleFeedFontScale: () -> Unit,
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
-    onOpenSourceFilter: () -> Unit,
+    onOpenNewsFilter: () -> Unit,
     onToggleTickerNews: () -> Unit,
     onOpenLeagueFilter: () -> Unit,
     onCycleUiScale: () -> Unit,
@@ -299,14 +299,6 @@ private fun SettingsCard(
             valueLabel = settings.feedRecency.displayName,
             onCycle = onCycleFeedRecency,
         )
-        // "Feed sources…" opens the source-toggle overlay. The value
-        // shows how many sources are currently hidden (0 = all shown).
-        val hiddenCount = settings.hiddenSources.size
-        SettingRow(
-            title = "Feed sources…",
-            valueLabel = if (hiddenCount == 0) "all shown" else "$hiddenCount hidden",
-            onCycle = onOpenSourceFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
-        )
         // Manual refresh of every video tile (reload streams that have drifted /
         // stalled). SELECT triggers it; honest play-what-works on the result.
         SettingRow(
@@ -320,6 +312,18 @@ private fun SettingsCard(
             title = "Helper URL…",
             valueLabel = "change…",
             onCycle = onOpenHelperUrl,
+        )
+
+        // ── News ─────────────────────────────────────────────────────────
+        // The two-level genre → source filter (news-genre-groups chapter). The
+        // value summarises how many genres + sources are switched off (the
+        // Sports genre's per-league toggles live in the Sports section's pool).
+        SectionHeader("News")
+        val newsOff = settings.hiddenGenres.size + settings.hiddenSources.size
+        SettingRow(
+            title = "News genres & sources…",
+            valueLabel = if (newsOff == 0) "all shown" else "$newsOff off",
+            onCycle = onOpenNewsFilter,   // SELECT/LEFT/RIGHT all open the sub-overlay
         )
 
         // ── Ticker ───────────────────────────────────────────────────────

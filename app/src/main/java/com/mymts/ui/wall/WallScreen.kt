@@ -61,9 +61,13 @@ import com.mymts.ui.menu.ChannelPickerOverlay
 import com.mymts.ui.menu.MenuOverlay
 import com.mymts.ui.menu.MenuState
 import com.mymts.ui.menu.menuBackOutcome
+import com.mymts.ui.menu.NewsFilterOverlay
+import com.mymts.ui.menu.NewsGenreGroup
+import com.mymts.ui.menu.NewsSourceToggle
 import com.mymts.ui.menu.PresetPickerOverlay
 import com.mymts.ui.menu.SettingsOverlay
 import com.mymts.ui.menu.SourceFilterOverlay
+import com.mymts.ui.wall.feed.FeedGenres
 import com.mymts.ui.wall.feed.FeedListBuilder
 import com.mymts.ui.menu.SlotControlsOverlay
 import com.mymts.ui.menu.SlotRow
@@ -545,6 +549,7 @@ fun WallScreen(
                     fontScale = wallSettings.feedFontScale.multiplier,
                     hiddenSources = wallSettings.hiddenSources,
                     hiddenLeagues = wallSettings.hiddenLeagues,
+                    hiddenGenres = wallSettings.hiddenGenres,
                     feedRecency = wallSettings.feedRecency,
                 )
             }
@@ -668,7 +673,7 @@ fun WallScreen(
                 onCycleFeedFontScale = { lineupStore.cycleFeedFontScale() },
                 onCycleFeedSide = { lineupStore.cycleFeedSide() },
                 onCycleFeedRecency = { lineupStore.cycleFeedRecency() },
-                onOpenSourceFilter = { menu.openSourceFilter() },
+                onOpenNewsFilter = { menu.openNewsFilter() },
                 onToggleTickerNews = { lineupStore.toggleTickerNews() },
                 onOpenLeagueFilter = { menu.openLeagueFilter() },
                 onCycleUiScale = { lineupStore.cycleUiScale() },
@@ -707,18 +712,43 @@ fun WallScreen(
                     ?.let { "Coming soon: ${it.joinToString(" · ")}" },
             )
         }
-        if (pending is MenuState.PendingSelection.SourceFilter) {
-            // Distinct sources from the current feed snapshot drive the
-            // toggle list. Toggling persists to the denylist; BACK returns
-            // to the settings overlay (calmer than punting to the wall).
+        if (pending is MenuState.PendingSelection.NewsFilter) {
+            // Two-level genre → source filter (Part E). The distinct feed
+            // sources are grouped by genre; each group carries its genre-enabled
+            // state + per-source enabled state, computed from the persisted
+            // preference sets. A genre toggle writes hiddenGenres; a source
+            // toggle writes hiddenSources (non-sports) or the SHARED
+            // hiddenLeagues pool (sports) — see FeedGenres.isSports + the
+            // reconciliation note. BACK returns to the settings overlay.
             val feedSnapshot = feed.state.collectAsState().value.snapshot
-            val feedSources = remember(feedSnapshot) {
-                FeedListBuilder.distinctSources(feedSnapshot?.items.orEmpty())
+            val groups = remember(
+                feedSnapshot,
+                wallSettings.hiddenGenres,
+                wallSettings.hiddenSources,
+                wallSettings.hiddenLeagues,
+            ) {
+                val sources = FeedListBuilder.distinctSources(feedSnapshot?.items.orEmpty())
+                FeedGenres.sectioned(sources).map { (genre, genreSources) ->
+                    val perSourceOff = (
+                        if (FeedGenres.isSports(genre)) wallSettings.hiddenLeagues
+                        else wallSettings.hiddenSources
+                    ).map { it.lowercase() }.toSet()
+                    NewsGenreGroup(
+                        genre = genre,
+                        enabled = genre !in wallSettings.hiddenGenres,
+                        sources = genreSources.map { src ->
+                            NewsSourceToggle(label = src, enabled = src.lowercase() !in perSourceOff)
+                        },
+                    )
+                }
             }
-            SourceFilterOverlay(
-                sources = feedSources,
-                hiddenSources = wallSettings.hiddenSources,
-                onToggle = { source -> lineupStore.toggleHiddenSource(source) },
+            NewsFilterOverlay(
+                groups = groups,
+                onToggleGenre = { genre -> lineupStore.toggleHiddenGenre(genre) },
+                onToggleSource = { genre, source ->
+                    if (FeedGenres.isSports(genre)) lineupStore.toggleHiddenLeague(source)
+                    else lineupStore.toggleHiddenSource(source)
+                },
                 onCancel = { menu.openSettings() },
                 modifier = Modifier.fillMaxSize(),
             )

@@ -66,12 +66,13 @@ class MenuState {
     }
 
     /**
-     * Open the feed source-filter overlay — a toggle list of the feed's
-     * distinct sources (feed-filtering chapter). Reached from the
-     * settings overlay's "Feed sources…" row.
+     * Open the News genre & source filter overlay — the two-level (genre →
+     * its sources) toggle list (news-genre-groups chapter, Part E). Reached
+     * from the settings overlay's News section. Supersedes the old flat
+     * "Feed sources…" surface (the grouped overlay is a strict superset).
      */
-    fun openSourceFilter() {
-        pendingSelection = PendingSelection.SourceFilter
+    fun openNewsFilter() {
+        pendingSelection = PendingSelection.NewsFilter
     }
 
     /** Open the sports-league toggle overlay (curation pass). */
@@ -107,7 +108,7 @@ class MenuState {
         data class SlotControls(val slotIndex: Int) : PendingSelection()
         data class SlotPicker(val slotIndex: Int) : PendingSelection()
         data object Settings : PendingSelection()
-        data object SourceFilter : PendingSelection()
+        data object NewsFilter : PendingSelection()
         data object SportsLeagueFilter : PendingSelection()
         data object PresetPicker : PendingSelection()
     }
@@ -139,7 +140,7 @@ sealed interface BackOutcome {
 fun menuBackOutcome(isOpen: Boolean, pending: MenuState.PendingSelection?): BackOutcome =
     when (pending) {
         is MenuState.PendingSelection.SlotPicker -> BackOutcome.ToSlotControls(pending.slotIndex)
-        // SlotControls / Settings / SourceFilter / SportsLeagueFilter → dismiss the sub-overlay.
+        // SlotControls / Settings / NewsFilter / SportsLeagueFilter → dismiss the sub-overlay.
         is MenuState.PendingSelection -> BackOutcome.DismissOverlay
         null -> if (isOpen) BackOutcome.CloseMenu else BackOutcome.Pass
     }
