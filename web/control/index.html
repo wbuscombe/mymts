@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MyMTS — Wall Control</title>
+  <!-- Same Content-Security-Policy posture as /app/: own-origin scripts only,
+       no inline, no CDN. This surface does NO video (no media-src needed). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+  <link rel="stylesheet" href="/control/control.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-title">
+      <span class="logo">▦</span>
+      <div>
+        <h1>Wall Control</h1>
+        <p class="sub">Pick each cell's feed, audio &amp; subtitles — drives the wall at
+          <a href="/app/" target="_blank" rel="noopener">/app/</a></p>
+      </div>
+    </div>
+    <div class="bar-actions">
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <main class="control">
+    <section class="layout-row" aria-label="Layout">
+      <label class="ctl">
+        <span>Preset</span>
+        <select id="preset" aria-label="Wall preset"></select>
+      </label>
+      <label class="ctl">
+        <span>Rows</span>
+        <select id="rows" aria-label="Grid rows">
+          <option>1</option><option>2</option><option>3</option>
+        </select>
+      </label>
+      <label class="ctl">
+        <span>Columns</span>
+        <select id="cols" aria-label="Grid columns">
+          <option>1</option><option>2</option><option>3</option>
+        </select>
+      </label>
+      <span id="grid-note" class="grid-note"></span>
+    </section>
+
+    <section id="cells" class="cells" aria-label="Wall cells"></section>
+
+    <p class="footnote">
+      This is the wall's layout in a browser — but each cell is a <strong>picker</strong>,
+      not a video player (no decode, runs on a phone). Changes save to the server-side
+      wall config and the rendered wall reflects them.
+    </p>
+  </main>
+
+  <script type="module" src="/control/control.mjs"></script>
+</body>
+</html>

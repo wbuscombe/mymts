@@ -30,6 +30,26 @@ async function getJson(path) {
   return res.json();
 }
 
+/** PUT a JSON body, credential-free like the GETs. On a 4xx the helper's
+ *  validation `detail` is surfaced so the control UI can show WHY a write was
+ *  rejected (e.g. "audible_cell points at an empty cell") rather than a bare
+ *  failure. */
+async function putJson(path, body) {
+  const res = await fetch(path, {
+    method: "PUT",
+    credentials: "omit",
+    cache: "no-store",
+    headers: { "Accept": "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json()).detail || detail; } catch { /* non-JSON error body */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 /** Fetch a ticker envelope and tag it with the schema-guard verdict. The
  *  verdict travels on `_schema`; the caller renders cards only when ok. */
 async function getTicker(path) {
@@ -44,4 +64,8 @@ export const api = {
   tickerMarkets: () => getTicker(`/api/ticker/markets`),
   tickerSports: () => getTicker(`/api/ticker/sports`),
   health: () => getJson(`/health`),
+  // Server-side wall config (headless-container version): the rendered wall
+  // (/app/) reads it; the picker (/control/) writes it.
+  wall: () => getJson(`/api/wall`),
+  putWall: (config) => putJson(`/api/wall`, config),
 };
