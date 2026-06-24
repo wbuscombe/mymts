@@ -36,6 +36,7 @@ from .log import configure_logging
 from .playlist.api import get_router as playlist_router
 from .playlist.profiles import load_profiles
 from .ticker.api import get_router as ticker_router
+from .wall.api import get_router as wall_router
 from .ticker.pollers import MarketsPoller, SportsPoller
 
 log = logging.getLogger("mymts_helper")
@@ -190,6 +191,11 @@ def create_app(
     app.include_router(presets_router())
     app.include_router(playlist_router(db_path, profiles))
     app.include_router(ticker_router(markets_poller, sports_poller))
+    # Server-side wall config (the headless-container version): the rendered
+    # wall (`/app/`) reads it; the picker control surface (`/control/`) writes
+    # it. Helper-hosted by necessity — a headless wall has no device to hold
+    # its lineup. Persisted in the data dir (seedless, gitignored).
+    app.include_router(wall_router(db_path, cfg.data_dir))
 
     # LAN web client (optional, off by default). When WEB_CLIENT_DIR is
     # set to an existing directory, serve it as static files at `/app`
@@ -205,6 +211,20 @@ def create_app(
             from fastapi.staticfiles import StaticFiles
             app.mount("/app", StaticFiles(directory=str(web_dir), html=True), name="web-client")
             log.info("web_client_mounted", extra={"dir": str(web_dir)})
+            # The picker CONTROL surface (headless-container version): a
+            # lightweight, video-free editor for the server-side wall config,
+            # served at `/control`. It lives in the same web/ tree so it shares
+            # the bundled pure JS at /app/js/* via absolute imports; mounted at
+            # its own `/control` prefix (a sibling of `/app`, so neither shadows
+            # the other). GET-only static serving of our own bundled files.
+            control_dir = web_dir / "control"
+            if control_dir.is_dir():
+                app.mount(
+                    "/control",
+                    StaticFiles(directory=str(control_dir), html=True),
+                    name="web-control",
+                )
+                log.info("web_control_mounted", extra={"dir": str(control_dir)})
         else:
             log.warning("web_client_dir_missing", extra={"dir": str(web_dir)})
 

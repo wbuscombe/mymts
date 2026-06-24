@@ -121,3 +121,8 @@ tools/desktop/dist/
 # Per-deployment lineup override (operator data; the .example is committed)
 lineup.local.json
 **/lineup.local.json
+
+# Server-side wall config (headless-container version; runtime operator state,
+# lives in the data dir — seedless, never committed)
+wall.local.json
+**/wall.local.json
