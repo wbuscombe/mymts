@@ -1453,7 +1453,22 @@ function wireTickerHoverPause() {
   });
 }
 
+/** Render mode (?render=1): the headless renderer captures /app/ for the HLS
+ *  stream, so hide the interactive chrome (gear / resync buttons) + the cursor —
+ *  the stream shows ONLY the wall (grid + feed + ticker). The wall still
+ *  live-polls /api/wall, so a /control/ pick is reflected in the stream with no
+ *  restart; the config's audible cell unmutes via the existing audio path (the
+ *  renderer's Chromium runs with autoplay-policy relaxed, so it needs no gesture). */
+function applyRenderMode() {
+  try {
+    if (new URLSearchParams(location.search).get("render") === "1") {
+      document.body.classList.add("render-mode");
+    }
+  } catch { /* no URLSearchParams (ancient engine) — skip; chrome just shows */ }
+}
+
 function main() {
+  applyRenderMode();
   applyPrefs();
   wireSettings();
   wireDivider();

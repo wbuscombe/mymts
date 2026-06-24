@@ -281,3 +281,10 @@ select { background: #111; color: var(--label); border: 1px solid var(--line); b
 .picker-section:first-of-type { margin-top: 4px; }
 .legend { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
 .legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* Render mode (?render=1) — the headless renderer captures the wall for the HLS
+   stream. Hide the interactive chrome (gear / resync) + the cursor so the stream
+   shows only the wall (grid + feed + ticker), never a button or pointer. The
+   ffmpeg capture also sets -draw_mouse 0 as belt-and-suspenders. */
+body.render-mode .gear { display: none !important; }
+body.render-mode, body.render-mode * { cursor: none !important; }
