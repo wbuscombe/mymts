@@ -25,8 +25,15 @@ import {
   presetLineup, newsLineup, PRESETS_SCHEMA_VERSION,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
+import { normalizeConfig } from "./wallConfig.mjs";
 
 const FEED_POLL_MS = 60_000, CHANNELS_POLL_MS = 60_000, TICKER_POLL_MS = 60_000;
+// Server-side wall config (headless-container version): poll it so a change made
+// in the picker (/control/) reflects in the rendered wall within a few seconds.
+// After a LOCAL edit we PUT the config + skip re-hydration for a short grace
+// window so a poll mid-PUT can't momentarily revert the operator's own change.
+const WALL_POLL_MS = 5_000;
+const WALL_EDIT_GRACE_MS = 4_000;
 const MODE_ROTATE_MS = 18_000;       // ticker mode rotation, calm like the wall
 const TICKER_BASE_PX_PER_SEC = 60;   // marquee scroll speed at 100% (calm base)
 
@@ -511,6 +518,102 @@ const isPlayable = (c) => c && (browserPlayability(c) === "yes" || browserPlayab
 let audibleIndex = -1;
 let audibleSlug = null;
 
+// ----- server-side wall config (the rendered wall reads it; the picker writes
+// it) -----. When a config is STORED (the operator has customised it via
+// /control/ or here), it is AUTHORITATIVE for the grid: layout + per-cell
+// channel + the single audible cell + per-cell subtitles. When it is the
+// un-customised server default (stored=false), /app/ keeps its own standalone
+// behaviour (autofill from the news lineup) so a fresh wall is unchanged.
+let wallStored = false;
+let cellSubtitles = {};          // { cellIndex: true } — per-cell subtitle state (native captionsOnSlots parity)
+let lastWallEditAt = 0;          // timestamp of the last LOCAL edit (the re-hydration grace window)
+
+/** Whether captions/subtitles are ON for a given cell. Per-cell when a config
+ *  is stored (native per-slot model); else the wall-wide settings toggle. */
+function cellCaptionsOn(index) {
+  return wallStored ? (cellSubtitles[index] === true) : (prefs.captions === true);
+}
+
+/** Build the server wall config from /app/'s CURRENT state (assignments + grid +
+ *  the audible cell + per-cell subtitles) — the shape PUT to /api/wall. */
+function buildWallConfig() {
+  const layout = gridConfig();
+  const cells = [];
+  for (let i = 0; i < layout.count; i++) {
+    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true });
+  }
+  const audible = (audibleIndex >= 0 && audibleIndex < layout.count && cells[audibleIndex].channel)
+    ? audibleIndex : null;
+  return {
+    schema_version: 1,
+    layout: { rows: layout.rows, cols: layout.cols },
+    preset: prefs.activePreset || null,
+    audible_cell: audible,
+    cells,
+  };
+}
+
+/** Persist /app/'s current wall state to the server config (so an edit here
+ *  drives the wall + survives reload, and /control/ sees it). Fire-and-forget:
+ *  a failure keeps the local state; the next poll reconciles. */
+async function pushWallConfig() {
+  lastWallEditAt = Date.now();
+  try {
+    const saved = await api.putWall(buildWallConfig());
+    wallStored = saved.stored === true;
+  } catch { /* helper blip — local state stands; next poll reconciles */ }
+}
+
+/** Apply the single-audible + per-cell-subtitle state to the LIVE tiles. Needed
+ *  after a config hydrate because renderGrid only re-renders CHANGED cells, so an
+ *  audio-only / subtitle-only change (same channel) wouldn't otherwise reach the
+ *  running stream handle. */
+function applyWallAudioCaptions() {
+  for (const c of cells) {
+    if (!c.isVideo || !c.streamHandle) continue;
+    try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
+    try { c.streamHandle.setCaptions(cellCaptionsOn(c.index)); } catch { /* no track */ }
+    updateTileAudioBadge(c);
+  }
+}
+
+/** Hydrate /app/'s render state FROM a stored wall config, then re-render. The
+ *  config is authoritative: grid dims, per-cell channel, the audible cell, and
+ *  per-cell subtitles all come from it. */
+function hydrateFromWall(config) {
+  const rows = config.layout.rows, cols = config.layout.cols;
+  const dimsChanged = rows !== prefs.gridRows || cols !== prefs.gridCols;
+  prefs.gridRows = rows; prefs.gridCols = cols;
+  const assignments = {};
+  cellSubtitles = {};
+  config.cells.forEach((c, i) => {
+    if (c.channel) assignments[i] = c.channel;
+    if (c.subtitles) cellSubtitles[i] = true;
+  });
+  prefs.assignments = assignments;
+  if (config.preset) prefs.activePreset = config.preset;
+  audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1;
+  audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null;
+  autoFilled = true;   // a stored config supersedes the news autofill
+  if (dimsChanged) buildGrid(); else renderGrid();
+  // buildGrid() resets the audio pointer; re-apply from the hydrated config.
+  if (dimsChanged) { audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1; audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null; }
+  applyWallAudioCaptions();
+}
+
+/** Poll the server wall config. When STORED + outside the post-edit grace
+ *  window, hydrate from it so a /control/ change appears here. When it's the
+ *  un-customised default, leave /app/ standalone. */
+async function pollWall() {
+  try {
+    const wall = await api.wall();
+    wallStored = wall.stored === true;
+    if (!wallStored) return;                                   // standalone default — keep local behaviour
+    if (Date.now() - lastWallEditAt < WALL_EDIT_GRACE_MS) return;   // a local edit is settling
+    hydrateFromWall(normalizeConfig(wall));
+  } catch { /* helper unreachable — keep the last good wall */ }
+}
+
 async function pollChannels() {
   try {
     const snap = await api.channels(); everOk.channels = true;
@@ -558,10 +661,12 @@ function applyPreset(presetId) {
   const fill = preset.id === "news" ? newsLineup(channelList, isPlayable)
                                     : presetLineup(preset, channelList, isPlayable);
   prefs.assignments = {};
+  cellSubtitles = {};   // a fresh preset resets per-cell subtitles (parity with /control/'s withPreset)
   const layout = gridConfig();
   for (let i = 0; i < layout.count && i < fill.length; i++) prefs.assignments[i] = fill[i];
   savePrefs();
   buildGrid();
+  pushWallConfig();   // a preset application is a wall-config change — persist it
 }
 
 /** Populate the menu's preset <select> from the served presets + the active one. */
@@ -694,6 +799,7 @@ function setCellAudio(cell) {
     try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
     updateTileAudioBadge(c);
   }
+  pushWallConfig();   // the audible cell is wall-config state — persist it
 }
 
 function renderCell(cell, slug, ch, bp) {
@@ -775,7 +881,7 @@ function renderCell(cell, slug, ch, bp) {
       const keepAudio = shouldReassertAudio(audibleIndex, audibleSlug, cell.index, slug);
       if (!keepAudio && audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
       try { handle.setAudible(keepAudio); } catch { /* ignore */ }
-      try { handle.setCaptions(prefs.captions === true); } catch { /* no track */ }
+      try { handle.setCaptions(cellCaptionsOn(cell.index)); } catch { /* no track */ }
       updateTileAudioBadge(cell);
       tile.onclick = () => openSlotControls(cell.index);
     } else if (state === "needgesture") {
@@ -975,6 +1081,7 @@ function assignCell(slug) {
   // empty cell renders). A non-deliberate death/clear never carries audio over.
   if (pickerCell === audibleIndex) audibleSlug = slug || null;
   savePrefs();
+  pushWallConfig();   // persist to the server wall config (drives the wall + /control/)
   el("picker-modal").classList.add("hidden");
   renderGrid();
 }
@@ -1182,6 +1289,7 @@ function wireSettings() {
     prefs[key] = clampGridDim(Number(sel.value));
     sel.value = String(prefs[key]);   // reflect the clamp
     savePrefs(); buildGrid(); updateGridNote();
+    pushWallConfig();   // grid layout is wall-config state — persist it
   });
   onGridDim(gridRows, "gridRows");
   onGridDim(gridCols, "gridCols");
@@ -1260,10 +1368,16 @@ function wireSettings() {
     captions.checked = prefs.captions === true;
     captions.addEventListener("change", () => {
       prefs.captions = captions.checked;
+      // A wall-wide toggle, stored PER-CELL so the server config + /control/'s
+      // per-cell view agree (the per-cell control itself lives in /control/).
+      const layout = gridConfig();
+      cellSubtitles = {};
+      if (captions.checked) for (let i = 0; i < layout.count; i++) cellSubtitles[i] = true;
       savePrefs();
       for (const c of cells) {
-        if (c.isVideo && c.streamHandle) { try { c.streamHandle.setCaptions(prefs.captions); } catch { /* no track */ } }
+        if (c.isVideo && c.streamHandle) { try { c.streamHandle.setCaptions(cellCaptionsOn(c.index)); } catch { /* no track */ } }
       }
+      pushWallConfig();
     });
   }
 
@@ -1345,6 +1459,10 @@ function main() {
   startLoop(pollFeed, FEED_POLL_MS);
   startLoop(pollChannels, CHANNELS_POLL_MS);
   pollPresets();   // server-authoritative presets (rarely change → fetch once)
+  // Server-side wall config: render FROM it (headless-container version). Polled
+  // so a /control/ picker change appears here within WALL_POLL_MS; a stored
+  // config is authoritative for the grid (layout + per-cell channel/audio/subs).
+  startLoop(pollWall, WALL_POLL_MS);
   setInterval(rotateTicker, MODE_ROTATE_MS);
 }
 document.addEventListener("DOMContentLoaded", main);
