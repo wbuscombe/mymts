@@ -554,8 +554,12 @@ function buildWallConfig() {
 }
 
 /** Persist /app/'s current wall state to the server config (so an edit here
- *  drives the wall + survives reload, and /control/ sees it). Fire-and-forget:
- *  a failure keeps the local state; the next poll reconciles. */
+ *  drives the wall + survives reload, and /control/ sees it). A deliberate
+ *  /app/ grid edit (pick / preset / grid dims / audio / captions) PROMOTES an
+ *  un-customised default (stored=false) to a stored config — intended: the wall
+ *  now carries explicit operator state, so it stops deferring to the standalone
+ *  autofill. Fire-and-forget: a failure keeps the local state; the next poll
+ *  reconciles. */
 async function pushWallConfig() {
   lastWallEditAt = Date.now();
   try {

@@ -71,6 +71,36 @@ test("cellCount reflects the layout", () => {
   assert.equal(cellCount({ layout: { rows: 3, cols: 2 } }), 6);
 });
 
+// ---- normalizeConfig: null/garbage input never throws (the /app/ read path) ----
+
+for (const bad of [null, undefined, 42, "str", []]) {
+  test(`normalizeConfig(${JSON.stringify(bad)}) falls back to a valid default`, () => {
+    const out = normalizeConfig(bad);
+    assert.deepEqual(out.layout, { rows: 2, cols: 2 });
+    assert.equal(out.cells.length, 4);
+    assert.equal(out.audible_cell, null);
+    assert.ok(out.cells.every((c) => c.channel === null && c.subtitles === false));
+  });
+}
+
+test("normalizeConfig of a server-shaped wire payload yields render-ready state (/app/ hydrate)", () => {
+  // The exact shape GET /api/wall returns (with the extra `stored` flag) → the
+  // shape /app/'s hydrateFromWall consumes. normalizeConfig must keep the real
+  // cells + audible and drop the wire-only `stored` field.
+  const wire = {
+    schema_version: 1, stored: true,
+    layout: { rows: 1, cols: 2 }, preset: "news", audible_cell: 0,
+    cells: [{ channel: "bbc-news", subtitles: true }, { channel: "cnn", subtitles: false }],
+  };
+  const out = normalizeConfig(wire, VALID);
+  assert.equal(out.cells.length, 2);
+  assert.deepEqual(out.cells.map((c) => c.channel), ["bbc-news", "cnn"]);
+  assert.equal(out.cells[0].subtitles, true);
+  assert.equal(out.audible_cell, 0);
+  assert.equal(out.preset, "news");
+  assert.equal(out.stored, undefined);   // the wire-only flag is not part of the config
+});
+
 // ---- withCellChannel ----
 
 test("withCellChannel assigns a cell", () => {

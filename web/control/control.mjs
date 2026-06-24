@@ -80,7 +80,11 @@ async function refreshChannels() {
 // ----- save (every edit persists; the rendered wall then reflects it) -----
 
 /** Apply a pure config transform optimistically, then PUT. On rejection, show
- *  the helper's reason and reload the authoritative server config (revert). */
+ *  the helper's reason and reload the authoritative server config (revert).
+ *  Concurrency is last-write-wins on the server config: if two surfaces edit at
+ *  once, both PUTs apply in order and each side re-reads server truth on its
+ *  next poll/save — eventual-consistency for a single-operator tool (no locking,
+ *  no data loss; the latest save is authoritative). */
 async function commit(nextConfig, what) {
   config = normalizeConfig(nextConfig, validSlugs);
   render();

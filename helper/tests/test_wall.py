@@ -101,6 +101,63 @@ def test_validate_allows_null_audible_and_null_preset():
     assert out["preset"] is None
 
 
+# --- adversarial negative paths: every malformed shape rejected (not crashed) ---
+
+def test_validate_rejects_non_object_top_level():
+    with pytest.raises(store.WallConfigError, match="JSON object"):
+        store.validate_wall_config([1, 2, 3], set(VALID))
+
+
+@pytest.mark.parametrize("layout", [None, "2x2", 42, []])
+def test_validate_rejects_layout_not_object(layout):
+    with pytest.raises(store.WallConfigError, match="layout"):
+        store.validate_wall_config(_good_config(layout=layout), set(VALID))
+
+
+@pytest.mark.parametrize("bad", [True, False, "2", 2.5, None])
+def test_validate_rejects_non_int_dims_including_bool(bad):
+    # bool is a subclass of int in Python — the validator must exclude it so a
+    # `true` can't sneak through as 1.
+    with pytest.raises(store.WallConfigError, match="layout"):
+        store.validate_wall_config(_good_config(layout={"rows": bad, "cols": 2}), set(VALID))
+
+
+def test_validate_rejects_cells_not_a_list():
+    with pytest.raises(store.WallConfigError, match="cells must be a list"):
+        store.validate_wall_config(_good_config(cells={"0": {"channel": None}}), set(VALID))
+
+
+def test_validate_rejects_non_object_cell():
+    with pytest.raises(store.WallConfigError, match="cells\\[1\\]"):
+        store.validate_wall_config(_good_config(cells=[{"channel": None}, "nope", {"channel": None}, {"channel": None}]), set(VALID))
+
+
+def test_validate_rejects_non_string_channel():
+    cfg = _good_config()
+    cfg["cells"][0]["channel"] = 123
+    with pytest.raises(store.WallConfigError, match="slug string or null"):
+        store.validate_wall_config(cfg, set(VALID))
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, [], {}])
+def test_validate_rejects_non_bool_subtitles(bad):
+    cfg = _good_config()
+    cfg["cells"][0]["subtitles"] = bad
+    with pytest.raises(store.WallConfigError, match="subtitles must be"):
+        store.validate_wall_config(cfg, set(VALID))
+
+
+def test_validate_rejects_bool_audible_cell():
+    # True is int 1, but the audible cell must be a real index, not a bool.
+    with pytest.raises(store.WallConfigError, match="audible_cell"):
+        store.validate_wall_config(_good_config(audible_cell=True), set(VALID))
+
+
+def test_validate_rejects_non_string_preset():
+    with pytest.raises(store.WallConfigError, match="preset"):
+        store.validate_wall_config(_good_config(preset=7), set(VALID))
+
+
 def test_default_config_fills_from_news_preset_and_is_valid():
     cfg = store.default_wall_config(VALID)
     assert cfg["layout"] == {"rows": 2, "cols": 2}
