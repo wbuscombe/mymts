@@ -58,16 +58,21 @@ _BY_SLUG: dict[str, str] = {
     "cnn": US_NEWS,
     "livenow-fox": US_NEWS,
     "newsmax": US_NEWS,
-    "c-span": US_NEWS,
     "white-house-tv": GOVERNMENT,
     "bbc-news": GLOBAL_NEWS,
     "dw-news-en": GLOBAL_NEWS,
     "france24-en": GLOBAL_NEWS,
-    "cnn-international": GLOBAL_NEWS,
     "sky-news": GLOBAL_NEWS,
     "bloomberg-tv": BUSINESS,
     "fox-weather": WEATHER,
     "accuweather-now": WEATHER,
+    # WeatherNation re-added 2026-06-24 after its NAS-prober TLS handshake was
+    # fixed (the Stirr CDN offers only an RSA-kx cipher Python's default omits;
+    # fetcher now enables it WITHOUT weakening cert verification). WeatherSpy
+    # added (free Rakuten/CloudFront FAST weather). Both validated 200 + #EXTM3U
+    # (master→variant) from the NAS prober vantage before seeding.
+    "weathernation": WEATHER,
+    "weatherspy": WEATHER,
     # --- 2026-06 lineup expansion (free 24/7 direct-HLS origins; each validated
     #     HTTP 200 + #EXTM3U from the NAS prober's US vantage before seeding,
     #     matching the docs/findings/05 sourcing standard). Existing channels
@@ -146,15 +151,21 @@ _BY_SLUG: dict[str, str] = {
     "manatee-cam": NATURE,
     "decorah-eagles": NATURE,
     # Still honestly OMITTED:
-    #   • C-SPAN main → already shipped as a direct-HLS channel (`c-span`,
-    #     cspan1 akamai); the YouTube /live only offered a far-future scheduled
-    #     event, so re-adding it as kind='youtube' would just duplicate the slug.
     #   • Arirang → could NOT confirm a live HLS from the NAS vantage (every
     #     candidate handle 404'd or reported not-live); omitted to ship no dead
     #     channel — revisit when a stable live handle is confirmed.
     #   • Paywall / cable-auth: CNN, Fox News, MSNBC, CBS Sports Network.
     #   • Web-embed only (no HLS): C-SPAN 2 & 3.
-    #   • Known NAS-prober TLS handshake failure: WeatherNation.
+    #   • cnn-international (PRUNED 2026-06-24) → its Wurl/Rakuten FAST host is
+    #     DNS-dead and CNN International is no longer on any US FAST platform
+    #     (Pluto's "CNN Headlines"/"CNN Originals" are different curated channels,
+    #     not the international linear feed). No clean free source — verdict on
+    #     BACKLOG. The free C-SPAN path is the gov feeds below, not this.
+    #   • c-span (the branded cspan1 akamai, PRUNED 2026-06-24) → now http_403;
+    #     the three linear C-SPAN networks online are MVPD-login-gated, and the
+    #     only token-FREE C-SPAN path is the government event streams — which ARE
+    #     built (the `us-senate-floor` / `us-senate-committees` cspan resolvers,
+    #     unaffected by this prune). No token-free cspan1 linear HLS — BACKLOG.
 }
 
 

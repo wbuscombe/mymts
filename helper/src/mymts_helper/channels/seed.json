@@ -24,22 +24,10 @@
     "source_url": "https://turnerlive.warnermediacdn.com/hls/live/586495/cnngo/cnn_slate/VIDEO_2_1964000.m3u8"
   },
   {
-    "slug": "cnn-international",
-    "label": "CNN International",
-    "kind": "hls",
-    "source_url": "https://cnn-cnninternational-1-fr.rakuten.wurl.tv/playlist.m3u8"
-  },
-  {
     "slug": "livenow-fox",
     "label": "LiveNOW from FOX",
     "kind": "hls",
     "source_url": "https://pb-k5p02dtnr2162.akamaized.net/LiveNOW_from_FOX.m3u8"
-  },
-  {
-    "slug": "c-span",
-    "label": "C-SPAN",
-    "kind": "hls",
-    "source_url": "https://cspan1-lh.akamaihd.net/i/cspan1_1@179085/master.m3u8"
   },
   {
     "slug": "nasa-tv",
@@ -100,6 +88,18 @@
     "label": "AccuWeather NOW",
     "kind": "hls",
     "source_url": "https://cdn-ue1-prod.tsv2.amagi.tv/linear/amg00684-accuweather-accuweather-plex/playlist.m3u8"
+  },
+  {
+    "slug": "weathernation",
+    "label": "WeatherNation",
+    "kind": "hls",
+    "source_url": "https://stream.weathernationtv.com/WNTVStirr_eokxldieulowixkdimn/ND1/playlistSCTE35.m3u8"
+  },
+  {
+    "slug": "weatherspy",
+    "label": "WeatherSpy",
+    "kind": "hls",
+    "source_url": "https://d12gab6t5iutxf.cloudfront.net/playlist.m3u8"
   },
   {
     "slug": "abc-news-live",

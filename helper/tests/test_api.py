@@ -202,16 +202,20 @@ def test_api_channels_expanded_lineup(phantom_client: TestClient) -> None:
         "euronews": "Global News", "wion": "Global News", "ndtv": "Global News",
         "i24news-en": "Global News", "cbs-golazo": "Sports",
     }
-    for slug, cat in {**added, **added_youtube}.items():
+    # Weather additions (2026-06-24): WeatherNation re-added after its NAS-prober
+    # TLS handshake was fixed (RSA-kx cipher enabled, verification preserved);
+    # WeatherSpy added — both free FAST weather, validated from the NAS vantage.
+    added_weather = {"weathernation": "Weather", "weatherspy": "Weather"}
+    for slug, cat in {**added, **added_youtube, **added_weather}.items():
         assert slug in by_slug, f"new channel {slug} missing from lineup"
         assert by_slug[slug] == cat, f"{slug} should be {cat}, got {by_slug.get(slug)}"
 
-    # Still honestly-omitted (paywall / web-embed / no confirmable live HLS).
-    # cnn IS kept — already seeded; c-span main stays direct-HLS (the YouTube
-    # /live was a far-future scheduled event, re-adding would duplicate the slug);
-    # arirang couldn't be confirmed live from the NAS vantage.
-    for slug in ("cbs-news", "arirang", "weathernation", "c-span-2",
-                 "fox-news", "msnbc"):
+    # Still honestly-omitted (paywall / web-embed / no confirmable free HLS).
+    # cnn IS kept (already seeded). cnn-international + c-span (the branded cspan1
+    # akamai) were PRUNED 2026-06-24 — no clean free source (DNS-dead / 403); the
+    # free C-SPAN path is the us-senate-* gov resolvers, not the branded linear.
+    for slug in ("cbs-news", "arirang", "c-span-2", "fox-news", "msnbc",
+                 "cnn-international", "c-span"):
         assert slug not in by_slug, f"omitted channel {slug} should NOT be seeded"
 
 
