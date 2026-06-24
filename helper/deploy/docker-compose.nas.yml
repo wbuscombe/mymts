@@ -68,6 +68,10 @@ services:
       # the operator is enabling it. Set WEB_CLIENT_DIR= (empty) in .env
       # to disable without removing the mount.
       WEB_CLIENT_DIR: ${WEB_CLIENT_DIR:-/app/web}
+      # Renderer HLS (headless-container version). The renderer writes its HLS
+      # to the shared mymts-stream volume; the helper serves it at /api/stream
+      # (one LAN listener) for VLC / Apple TV. Read-only mount below.
+      STREAM_DIR: ${STREAM_DIR:-/stream}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -89,6 +93,10 @@ services:
       # helper/, so it is NOT in the image build context — a bind mount is
       # how it reaches the container without an image rebuild for web edits.)
       - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_web:/app/web:ro
+      # Renderer HLS output — the shared volume the renderer writes (rw) and the
+      # helper serves READ-ONLY. A compromised helper cannot write the stream;
+      # a compromised renderer cannot reach the helper's data/cert volumes.
+      - mymts-stream:/stream:ro
     networks:
       - mymts-net
     # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed
@@ -111,6 +119,63 @@ services:
       retries: 3
       start_period: 10s
 
+  # ---- renderer (headless-container version, second half) ----
+  # Runs the config-driven web wall (/app/?render=1) on a virtual display and
+  # streams the composited video + the audible cell's audio as HLS to the shared
+  # mymts-stream volume; the helper serves it at /api/stream for VLC / Apple TV.
+  # Same mymts-net as the helper → egress is the SAME residential WAN path the
+  # helper uses (the helper + the public HLS the tiles play). No baked secrets.
+  renderer:
+    container_name: mymts-renderer
+    image: mymts-renderer:${BUILD_VERSION:-0.0.0-dev}
+    build:
+      # Rsynced to ${MYMTS_HELPER_REMOTE_PATH}/_renderer/ by deploy-helper.sh.
+      context: ./_renderer
+      args:
+        BUILD_SHA: ${BUILD_SHA:-dev}
+        BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
+    restart: unless-stopped
+    depends_on:
+      - helper
+    # NOT read-only-rootfs: Chromium needs writable profile/cache + the X socket
+    # + the Pulse runtime dir — all confined to tmpfs (/tmp) below. Chromium runs
+    # --no-sandbox (it only ever loads OUR OWN same-origin /app/), so the Linux
+    # sandbox caps aren't needed and ALL capabilities are dropped.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      # Chromium profile/cache, the Xvfb socket, and the Pulse runtime dir all
+      # live here; sized for Chromium's churn. Software x264 + N decoders are the
+      # heavy part — bounded by the cpus/mem caps so it can't starve the NAS.
+      - /tmp:size=768m
+    shm_size: 256m
+    cpus: 4.0
+    mem_limit: 2g
+    environment:
+      # The config-driven wall in render mode (?render=1 hides chrome + cursor).
+      # The helper is on the same Docker network → reachable by container name
+      # over HTTPS (self-signed; Chromium runs with --ignore-certificate-errors).
+      HELPER_URL: ${RENDER_HELPER_URL:-https://mymts-helper:8443/app/?render=1}
+      STREAM_DIR: /stream
+      RENDER_WIDTH: ${RENDER_WIDTH:-1920}
+      RENDER_HEIGHT: ${RENDER_HEIGHT:-1080}
+      RENDER_FPS: ${RENDER_FPS:-30}
+      RENDER_VIDEO_BITRATE: ${RENDER_VIDEO_BITRATE:-6M}
+      RENDER_X264_PRESET: ${RENDER_X264_PRESET:-veryfast}
+      BUILD_SHA: ${BUILD_SHA:-dev}
+      BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
+    volumes:
+      - mymts-stream:/stream:rw
+    networks:
+      - mymts-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   mymts-net:
     name: mymts-net
@@ -123,3 +188,7 @@ networks:
 volumes:
   mymts-helper-data:
     name: mymts-helper-data
+  # Shared HLS stream: renderer writes (rw), helper serves (ro). Docker-managed
+  # so the non-root users on both sides write/read without host permission churn.
+  mymts-stream:
+    name: mymts-stream

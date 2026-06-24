@@ -107,6 +107,16 @@ rsync -az --delete \
     --exclude '.DS_Store' \
     web/ "$HOST:$REMOTE_PATH/_web/"
 
+# Renderer build context (headless-container version): the renderer/ tree
+# (Dockerfile + supervisor + run.py) is the build context for the mymts-renderer
+# service in the compose. Rsynced like the helper source; it has no secrets.
+echo "==> rsyncing renderer build context"
+ssh "$HOST" "mkdir -p '$REMOTE_PATH/_renderer'"
+rsync -az --delete \
+    --exclude '.DS_Store' \
+    --exclude '__pycache__/' \
+    renderer/ "$HOST:$REMOTE_PATH/_renderer/"
+
 echo "==> rendering compose.yml on the helper host"
 ssh "$HOST" "cp '$REMOTE_PATH/_src/deploy/docker-compose.nas.yml' '$REMOTE_PATH/compose.yml'"
 
@@ -138,6 +148,7 @@ FEED_POLL_INTERVAL_SECONDS=300
 FEED_RETENTION_DAYS=14
 CHANNEL_PROBE_INTERVAL_SECONDS=1800
 WEB_CLIENT_DIR=/app/web
+STREAM_DIR=/stream
 EOF
 
 echo "==> docker compose build --pull + up -d (the full cycle)"
