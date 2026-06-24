@@ -154,11 +154,17 @@ def chromium_cmd() -> list[str]:
 def ffmpeg_cmd() -> list[str]:
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin",
+        # Larger capture queues so a transient decode/encode load spike (the
+        # heavy part is software-decoding N video tiles) buffers instead of
+        # dropping frames or blocking the grab — robustness under the exact load
+        # the cell count drives.
         # video: the X framebuffer, cursor suppressed (belt-and-suspenders with
         # the page's render-mode cursor:none).
+        "-thread_queue_size", "1024",
         "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(FPS),
         "-video_size", f"{WIDTH}x{HEIGHT}", "-i", DISPLAY,
         # audio: the null sink's monitor (the audible cell's audio).
+        "-thread_queue_size", "1024",
         "-f", "pulse", "-i", f"{SINK}.monitor",
         "-c:v", "libx264", "-preset", X264_PRESET, "-pix_fmt", "yuv420p",
         "-g", str(FPS * 2), "-b:v", VIDEO_BITRATE, "-maxrate", VIDEO_BITRATE,
