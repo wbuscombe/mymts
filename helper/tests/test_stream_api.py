@@ -83,3 +83,39 @@ def test_garbage_segment_name_is_404(tmp_path: Path):
     # strict seg_<n>.ts pattern → 404, never serving an arbitrary file.
     for bad in ["secret.txt", "..%2Fsecret.txt", "playlist.m3u8.ts", "seg_.ts", "seg_1.tsx"]:
         assert client.get(f"/api/stream/{bad}").status_code == 404
+
+
+def test_segment_name_regex_rejects_trailing_newline():
+    # The renderer name is matched with fullmatch (not .match, whose `$` would
+    # also accept `seg_1.ts\n`) — close the anchor-bypass at the regex level.
+    from mymts_helper.stream import api as stream_api
+    assert stream_api._SEGMENT_RE.fullmatch("seg_00001.ts")
+    assert stream_api._SEGMENT_RE.fullmatch("seg_00001.ts\n") is None
+    assert stream_api._SEGMENT_RE.fullmatch("seg_1.ts/../x") is None
+
+
+def test_segment_symlink_escape_is_refused(tmp_path: Path):
+    # The shared volume is renderer-WRITABLE; a compromised renderer could plant
+    # a symlink whose NAME passes the filter but whose target resolves, in the
+    # HELPER's namespace, to the TLS key / DB. The route must refuse it — the
+    # isolation guarantee the feature advertises.
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n")
+    secret = tmp_path / "helper.key"          # stands in for /etc/ssl/mymts/helper.key
+    secret.write_text("TOP-SECRET-PRIVATE-KEY")
+    (sd / "seg_00001.ts").symlink_to(secret)  # name passes seg_<n>.ts
+    r = _client(tmp_path, stream_dir=str(sd)).get("/api/stream/seg_00001.ts")
+    assert r.status_code == 404
+    assert "TOP-SECRET-PRIVATE-KEY" not in r.text   # the target was NEVER served
+
+
+def test_playlist_symlink_escape_is_refused(tmp_path: Path):
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    secret = tmp_path / "helper.key"
+    secret.write_text("TOP-SECRET-PRIVATE-KEY")
+    (sd / "playlist.m3u8").symlink_to(secret)
+    r = _client(tmp_path, stream_dir=str(sd)).get("/api/stream/playlist.m3u8")
+    assert r.status_code == 503                      # treated as not-ready
+    assert "TOP-SECRET-PRIVATE-KEY" not in r.text     # never serves the target

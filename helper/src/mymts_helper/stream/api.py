@@ -19,10 +19,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 PLAYLIST_NAME = "playlist.m3u8"
-# The renderer's ffmpeg writes `seg_%05d.ts`; accept that exact shape only. The
-# `{segment}` path param can't contain a '/', and this regex forbids '.' / '..'
-# / separators, so a crafted name can never resolve outside the stream dir.
-_SEGMENT_RE = re.compile(r"^seg_\d+\.ts$")
+# The renderer's ffmpeg writes `seg_%05d.ts`; accept that exact shape only,
+# matched with re.fullmatch (NOT .match, whose `$` would also accept a trailing
+# newline — `seg_1.ts\n`). The `{segment}` path param can't contain a '/'.
+_SEGMENT_RE = re.compile(r"seg_\d+\.ts")
 
 # no-store: HLS is live; never let a cache pin a stale playlist/segment.
 _NO_CACHE = {"Cache-Control": "no-store"}
@@ -32,23 +32,40 @@ def get_router(stream_dir: str) -> APIRouter:
     router = APIRouter(prefix="/api/stream", tags=["stream"])
     base = Path(stream_dir)
 
+    def _serve(name: str, media_type: str) -> FileResponse:
+        """Serve a file from the stream dir, refusing anything that isn't a plain
+        regular file INSIDE it. The shared volume is written by the renderer
+        (rw); the helper only reads it (ro) — but a compromised renderer could
+        plant a SYMLINK whose name passes the filter and whose target resolves,
+        in the HELPER's mount namespace, to the TLS private key (/etc/ssl/mymts)
+        or the SQLite DB (/data). So: reject symlinks, and confirm the resolved
+        real path stays within the stream dir, before serving. Defense in depth
+        on the new write→read surface; keeps the isolation guarantee real."""
+        f = base / name
+        try:
+            if f.is_symlink():
+                raise HTTPException(status_code=404, detail="not found")
+            real = f.resolve(strict=True)
+            real.relative_to(base.resolve())
+            if not real.is_file():
+                raise HTTPException(status_code=404, detail="not found")
+        except (OSError, ValueError) as e:
+            raise HTTPException(status_code=404, detail="not found") from e
+        return FileResponse(real, media_type=media_type, headers=_NO_CACHE)
+
     @router.get("/playlist.m3u8")
     def playlist() -> FileResponse:
         f = base / PLAYLIST_NAME
-        if not f.is_file():
-            # The renderer hasn't produced a playlist yet (booting / restarting).
+        # Absent (or a broken/symlink shape) → the renderer hasn't produced a
+        # real playlist yet: an honest "not ready" rather than a 404.
+        if not f.exists() or f.is_symlink():
             raise HTTPException(status_code=503, detail="stream not ready")
-        return FileResponse(
-            f, media_type="application/vnd.apple.mpegurl", headers=_NO_CACHE,
-        )
+        return _serve(PLAYLIST_NAME, "application/vnd.apple.mpegurl")
 
     @router.get("/{segment}")
     def segment(segment: str) -> FileResponse:
-        if not _SEGMENT_RE.match(segment):
+        if not _SEGMENT_RE.fullmatch(segment):
             raise HTTPException(status_code=404, detail="not found")
-        f = base / segment
-        if not f.is_file():
-            raise HTTPException(status_code=404, detail="not found")
-        return FileResponse(f, media_type="video/mp2t", headers=_NO_CACHE)
+        return _serve(segment, "video/mp2t")
 
     return router

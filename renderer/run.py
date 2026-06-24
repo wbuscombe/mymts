@@ -243,8 +243,11 @@ def main() -> int:
         for c in children:
             rc = c.poll()
             if rc is not None:
-                c.tracker.record(time.time())
-                if c.tracker.is_crash_looping(time.time()):
+                # monotonic: crash-loop windowing is an INTERVAL measure, immune
+                # to wall-clock/NTP jumps (segment freshness, by contrast, must
+                # use wall-clock time.time() to compare against file mtimes).
+                c.tracker.record(time.monotonic())
+                if c.tracker.is_crash_looping(time.monotonic()):
                     log(f"{c.name} is crash-looping — restarting the container stack")
                     for x in children:
                         x.terminate()
