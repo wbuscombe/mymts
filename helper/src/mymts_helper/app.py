@@ -35,6 +35,7 @@ from .health import FreshnessSnapshotter, HealthState
 from .log import configure_logging
 from .playlist.api import get_router as playlist_router
 from .playlist.profiles import load_profiles
+from .stream.api import get_router as stream_router
 from .ticker.api import get_router as ticker_router
 from .wall.api import get_router as wall_router
 from .ticker.pollers import MarketsPoller, SportsPoller
@@ -196,6 +197,12 @@ def create_app(
     # it. Helper-hosted by necessity — a headless wall has no device to hold
     # its lineup. Persisted in the data dir (seedless, gitignored).
     app.include_router(wall_router(db_path, cfg.data_dir))
+    # Renderer HLS stream (headless-container version, second half): serve the
+    # playlist + segments the renderer writes to the shared volume, so VLC /
+    # Apple TV opens one URL. Opt-in via STREAM_DIR; absent → no route added.
+    if cfg.stream_dir:
+        app.include_router(stream_router(cfg.stream_dir))
+        log.info("stream_route_mounted", extra={"dir": cfg.stream_dir})
 
     # LAN web client (optional, off by default). When WEB_CLIENT_DIR is
     # set to an existing directory, serve it as static files at `/app`

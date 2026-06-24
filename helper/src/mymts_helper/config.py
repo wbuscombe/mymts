@@ -88,6 +88,13 @@ class Config:
     # (every live channel). Operator data, kept out of git — like the cert
     # paths above, only the path comes from the environment.
     profiles_file: str | None = None
+    # Renderer HLS stream (headless-container version, 2026-06-24). When set to a
+    # directory, the helper serves the HLS playlist + segments the renderer
+    # container writes there at /api/stream (one serving surface for VLC / Apple
+    # TV). The directory is a SHARED volume the renderer mounts rw and the helper
+    # mounts read-only. OFF by default — unset → no /api/stream route, the helper
+    # is byte-identical to its prior self.
+    stream_dir: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -139,6 +146,7 @@ class Config:
             ssl_certfile=_opt_str("SSL_CERTFILE"),
             web_client_dir=web_dir,
             profiles_file=_opt_str("PROFILES_FILE"),
+            stream_dir=_opt_str("STREAM_DIR"),
         )
 
     def has_https(self) -> bool:

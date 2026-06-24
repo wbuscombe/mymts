@@ -1,0 +1,85 @@
+"""Endpoint tests for /api/stream — the renderer's HLS serve route.
+
+Exercise: a present playlist/segment serve with the right HLS media types, an
+absent playlist is an honest 503 (renderer booting), a traversal/garbage
+segment name is 404 (never escapes the stream dir), and the route is absent
+when STREAM_DIR is unset (opt-in). Seeded DB + TestClient, same harness as the
+other API tests.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from mymts_helper.app import create_app
+from mymts_helper.config import Config
+
+
+async def _block_all_resolver(host: str) -> list[str]:
+    return ["127.0.0.1"]
+
+
+def _cfg(tmp_path: Path, *, stream_dir: str | None = None) -> Config:
+    return Config(
+        phantom_mode=False, port=8091, log_level="warning",
+        build_sha="dev", build_version="0.0.0-dev",
+        data_dir=str(tmp_path / "data"),
+        feed_poll_interval_seconds=3600, channel_probe_interval_seconds=3600,
+        stream_dir=stream_dir,
+    )
+
+
+def _client(tmp_path: Path, *, stream_dir: str | None = None) -> TestClient:
+    return TestClient(create_app(_cfg(tmp_path, stream_dir=stream_dir), resolver=_block_all_resolver))
+
+
+def test_no_route_when_stream_dir_unset(tmp_path: Path):
+    # Opt-in: with STREAM_DIR unset the helper adds no /api/stream surface.
+    r = _client(tmp_path).get("/api/stream/playlist.m3u8")
+    assert r.status_code == 404
+
+
+def test_playlist_503_when_renderer_not_ready(tmp_path: Path):
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    r = _client(tmp_path, stream_dir=str(sd)).get("/api/stream/playlist.m3u8")
+    assert r.status_code == 503  # honest "not ready", not a 404
+
+
+def test_serves_playlist_and_segment_with_hls_media_types(tmp_path: Path):
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:4.0,\nseg_00001.ts\n")
+    (sd / "seg_00001.ts").write_bytes(b"\x47" + b"\x00" * 187)  # a TS-ish blob
+    client = _client(tmp_path, stream_dir=str(sd))
+
+    pl = client.get("/api/stream/playlist.m3u8")
+    assert pl.status_code == 200
+    assert pl.headers["content-type"].startswith("application/vnd.apple.mpegurl")
+    assert pl.headers.get("cache-control") == "no-store"
+    assert pl.text.startswith("#EXTM3U")
+
+    seg = client.get("/api/stream/seg_00001.ts")
+    assert seg.status_code == 200
+    assert seg.headers["content-type"].startswith("video/mp2t")
+
+
+def test_unknown_segment_is_404(tmp_path: Path):
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n")
+    r = _client(tmp_path, stream_dir=str(sd)).get("/api/stream/seg_99999.ts")
+    assert r.status_code == 404  # well-formed name but no such file
+
+
+def test_garbage_segment_name_is_404(tmp_path: Path):
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "secret.txt").write_text("nope")
+    client = _client(tmp_path, stream_dir=str(sd))
+    # a non-seg name (and any traversal-ish single segment) must not match the
+    # strict seg_<n>.ts pattern → 404, never serving an arbitrary file.
+    for bad in ["secret.txt", "..%2Fsecret.txt", "playlist.m3u8.ts", "seg_.ts", "seg_1.tsx"]:
+        assert client.get(f"/api/stream/{bad}").status_code == 404
