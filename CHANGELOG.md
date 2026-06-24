@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(channels): Weather pass — re-add WeatherNation + add WeatherSpy; prune dead cnn-international + c-span (2026-06-24)
+
+Server-authoritative channel cleanup (helper-only; both clients pick up with no rebuild).
+Weather category **2 → 4**:
+
+- **WeatherNation re-added** — it was pulled for a NAS-prober TLS handshake failure
+  (`SSLV3_ALERT_HANDSHAKE_FAILURE`). Diagnosed: its Stirr CDN offers **only** a
+  non-forward-secret RSA-key-exchange AES-GCM cipher that Python's hardened default SSL
+  context omits (curl/openssl complete the handshake; httpx didn't). The `fetcher` now uses
+  a context that re-enables that cipher **without weakening verification** — `CERT_REQUIRED`
+  + `check_hostname` stay on and SECLEVEL stays the default 2 (the cert-acceptance bar is
+  unchanged; forward secrecy is moot for public manifests). Validated `live` from the NAS
+  prober.
+- **WeatherSpy added** — free Rakuten/CloudFront FAST weather (US distribution), master→variant
+  validated from the NAS.
+- **cnn-international + c-span pruned** — re-sourced, no clean free source. CNN International's
+  Wurl host is DNS-dead and it's on no US FAST platform; the branded `c-span` (cspan1 akamai)
+  is `http_403` and the linear C-SPAN networks online are MVPD-gated. The token-FREE C-SPAN
+  path stays the gov event streams (the `us-senate-*` `cspan` resolvers, unaffected). Verdicts
+  on BACKLOG.
+
+Lineup stays **52** (−2 dead HLS, +2 live weather HLS). Also: `deploy-helper.sh --only
+<service>` scopes a helper deploy to one compose service, so a helper-only change leaves the
+sibling renderer's live stream untouched. No native change → no APK, no tag.
+
 ## feat(renderer+helper): headless container version — render → HLS → VLC engine (2026-06-24)
 
 The half that puts the wall on the TV. A new **renderer container** (`mymts-renderer`)

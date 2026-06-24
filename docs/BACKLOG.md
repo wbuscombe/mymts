@@ -50,11 +50,17 @@ vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's o
 
 ## Follow-ups from the 2026-06-22 perf + channel pass
 
-- **Re-source candidates (persistently dead, retained honest-offline).** `c-span` (cspan1
-  Akamai now `http_403`) and `cnn-international` (Rakuten/Wurl host `dns_failure`) have ~1000
-  consecutive probe failures but were kept (they're in the news FALLBACK lists) rather than pruned.
-  Re-source a working URL or prune on a future pass. (Pruned outright this pass: `cnbc` placeholder,
-  `al-jazeera-en`, `cgtn-en`, `trt-world` — hosts gone.)
+- **~~Re-source candidates (persistently dead).~~ RESOLVED 2026-06-24 — re-sourced + pruned.**
+  `c-span` (the branded cspan1 Akamai, `http_403`) and `cnn-international` (Rakuten/Wurl host
+  `dns_failure`) were re-sourced this pass and, finding **no clean free source**, **pruned**:
+  - **cnn-international** — host DNS-dead; CNN International is on no US FAST platform (Pluto's
+    "CNN Headlines"/"CNN Originals" are different curated channels, not the international linear
+    feed); iptv-org US has no entry. No clean free source.
+  - **c-span** (branded cspan1) — `http_403`; the three linear C-SPAN networks online are
+    MVPD-login-gated. The token-FREE C-SPAN path is the **government event streams** — already
+    built as the `us-senate-floor` / `us-senate-committees` `cspan` resolvers (unaffected by
+    this prune). A branded-cspan1 token-handshake sidecar stays deferred (out of "re-source a URL").
+  (Earlier prune this lineage: `cnbc` placeholder, `al-jazeera-en`, `cgtn-en`, `trt-world`.)
 - **P-N2 full scope-isolation (deferred).** `@Immutable WallSettings` landed; the deeper
   `WallScreen` refactor (read each settings group in a narrow wrapper so a ticker-speed nudge
   recomposes only the ticker subtree) was deferred — high-risk on a 700-line composable for an
@@ -597,7 +603,7 @@ The data plumbing is being built (real markets + sports ticker, 13 feed sources,
 
 **What:** three follow-ons from the weather-feed research (`docs/findings/20-weather-feed-research.md`):
 1. **The Weather Channel (proper)** and **central-Illinois/Midwest local stations** (WMBD/WEEK/WHOI/WCIA/WAND…) are **login/auth-gated or YouTube-page-only** — no public keyless HLS. Out of scope under the **no-stored-credentials** posture; would need credentials the box must not hold.
-2. **WeatherSpy** (Rakuten) is also confirmed streamable but niche — left out to avoid clutter; trivially addable if the operator wants more weather options. **WeatherNation** is streamable from a dev egress but the NAS prober fails its TLS handshake (`SSLV3_ALERT_HANDSHAKE_FAILURE`) — recover via a different WeatherNation CDN endpoint or a prober TLS-compat tweak (httpx/OpenSSL cipher/SNI), then re-add.
+2. **~~WeatherSpy + WeatherNation~~ — both ADDED 2026-06-24 (Weather category 2 → 4).** WeatherSpy added (free Rakuten/CloudFront FAST weather, US distribution, master→variant validated from the NAS). WeatherNation re-added after diagnosing its handshake failure: its Stirr CDN offers **only** a non-forward-secret RSA-kx AES-GCM cipher that Python's hardened default omits (curl/openssl complete it; httpx didn't) — so the `fetcher` now enables that cipher suite **without weakening verification** (CERT_REQUIRED + check_hostname stay on, SECLEVEL stays 2; FS is moot for public manifests). Both validated `live` from the NAS prober (the gate). The *NAS-prober-is-the-gate* lesson held — the fix was proven from the helper container, not the dev Mac.
 3. **NWS / NOAA radar** is image-loops/data, **not a video stream** — could be a future *non-video* weather widget (radar tile / current-conditions panel), a different component from the HLS video tiles.
 
 **Why-not-now:** (1) violates the keyless/no-credentials Trust Bar; (2) cosmetic — three nationals already cover it; (3) is a new widget type, not a channel — outside the video-tile model shipped today.
