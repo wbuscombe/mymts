@@ -21,7 +21,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
     cat <<EOF
-Usage: $0 [--host <user@host>] [--remote-path <path>]
+Usage: $0 [--host <user@host>] [--remote-path <path>] [--only <service>]
+
+  --only <service>  Scope build + up to ONE compose service (e.g. \`helper\`),
+                    leaving the sibling \`renderer\` untouched (it shares this
+                    compose since the headless-container version). Default: all.
 
 Defaults:
   --host         my-helper-host           (set in scripts/deploy.local.env)
@@ -50,11 +54,17 @@ EOF
 HOST="${MYMTS_NAS_HOST:-my-helper-host}"   # SSH alias resolves to your helper host
 REMOTE_PATH="${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}"
 export MYMTS_HELPER_REMOTE_PATH="$REMOTE_PATH"
+# --only <service>: scope the build + up to ONE compose service (e.g. `helper`)
+# so a helper-only change does NOT rebuild/recreate the sibling `renderer`
+# (which shares this compose since the headless-container version). Empty =
+# all services (the prior behavior). The /health verify always targets helper.
+ONLY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --host) HOST="$2"; shift 2 ;;
         --remote-path) REMOTE_PATH="$2"; export MYMTS_HELPER_REMOTE_PATH="$2"; shift 2 ;;
+        --only) ONLY="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown arg: $1" >&2; usage ;;
     esac
@@ -152,7 +162,7 @@ STREAM_DIR=/stream
 EOF
 
 echo "==> docker compose build --pull + up -d (the full cycle)"
-ssh "$HOST" "cd '$REMOTE_PATH' && docker compose -f compose.yml --env-file .env build --pull && docker compose -f compose.yml --env-file .env up -d"
+ssh "$HOST" "cd '$REMOTE_PATH' && docker compose -f compose.yml --env-file .env build --pull $ONLY && docker compose -f compose.yml --env-file .env up -d $ONLY"
 
 echo "==> waiting for /health to report the new SHA"
 # HTTPS-only since the TLS cutover (2026-06-04): the helper serves
