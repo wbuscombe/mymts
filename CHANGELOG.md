@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper+web): headless container version — server-side wall config + picker control surface (2026-06-23)
+
+The first half of the **headless NAS-container version**: a server-side wall
+config + a lightweight picker control surface that writes it, with the rendered
+web wall wired to read from it. **Helper + web only — native is unchanged (no
+new APK).**
+
+- **Server-side wall config (`/api/wall`).** A helper-hosted resource — layout
+  (rows × cols) + per-cell channel + per-cell subtitles + a single audible cell,
+  modelling the SAME controls as the native app. `GET` returns the stored config
+  or a server-computed news-filled default (so `/app/` is never blank); `PUT`
+  validates against the live channel registry (no unknown/disabled channel, no
+  bad cell index, no audible empty cell) and persists atomically to
+  `wall.local.json` in the data dir (seedless, gitignored). A bad/absent file
+  degrades to the default.
+- **Picker control surface (`/control/`).** The wall's layout in a browser, but
+  each cell is a feed-PICKER + per-cell audio + subtitle controls — **no video
+  decode**, so it runs on a phone. Every change writes the wall config.
+- **`/app/` renders FROM the config.** The web wall reads the wall config
+  (polled) and, when stored, treats it as authoritative for the grid; its own
+  edits write it too, so a pick in `/control/` drives the rendered wall.
+
+Helper-hosted state by necessity (a headless wall has no device) — resolves the
+cross-device-profile question server-side for this context without prejudging
+the native sync decision. The headless **render → HLS → VLC** engine is the
+next phase (BACKLOG). Verified end-to-end in a browser + on the deployed NAS
+container. Tests: pure wall-config validation + GET/PUT round-trip (helper) +
+the pure picker transforms + `/app/`-reads-config (web). No tag this milestone —
+native is untouched, so no APK republish.
+
 ## [0.3.0] - 2026-06-23
 
 ## feat(app): News genre groups — two-level feed-source filter (2026-06-23)

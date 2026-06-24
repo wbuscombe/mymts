@@ -216,6 +216,22 @@ async function main() {
     console.log("skipped wall-preset-nature.png:", e.message);
   }
 
+  // 10. Picker control surface (/control/) — the headless-container version's
+  // wall editor: each cell is a feed-PICKER + per-cell audio + subtitle controls
+  // (no video decode). Drives the server-side wall config that /app/ renders.
+  // A SEPARATE page so /app/'s localStorage init script doesn't apply here.
+  try {
+    const control = await ctx.newPage();
+    await control.goto(`${HELPER_URL}/control/`, { waitUntil: "domcontentloaded" });
+    await control.waitForSelector(".cell .cell-picker", { timeout: 15000 });
+    await control.waitForTimeout(500);
+    await control.screenshot({ path: path.join(OUT_DIR, "control.png") });
+    console.log("captured control.png");
+    await control.close();
+  } catch (e) {
+    console.log("skipped control.png:", e.message);
+  }
+
   await browser.close();
   console.log("done →", OUT_DIR);
 }

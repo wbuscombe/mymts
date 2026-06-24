@@ -133,6 +133,15 @@ correct a physical panel and are honestly absent from the web.
 
 ![The settings modal — 2×3 grid default, category-grouped feed sources, captions off by default](docs/screenshots/web/settings.png)
 
+**Headless-container version (in progress) — a picker control surface.** A second web
+surface at `/control/` is the wall's layout in a browser, but **each cell is a feed-picker**
+(channel dropdown) + per-cell audio + subtitle toggles — **no video decode**, so it runs on a
+phone. It writes a **server-side wall config** the rendered wall (`/app/`) reads from, so a pick
+drives playback. This is the control plane for the headless wall the renderer will stream to
+VLC / an Apple TV (next phase).
+
+![The picker control surface — each cell a feed/audio/subtitle picker, driving the server-side wall config](docs/screenshots/web/control.png)
+
 ### 🟢 Honest degradation — a design value, not an afterthought
 This is the differentiator. **The wall never fakes liveness.** Sample data wears a `SAMPLE`
 pill; aged real data wears `STALE`; an unreachable channel is a quiet labeled **offline** tile;

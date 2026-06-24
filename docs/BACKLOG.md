@@ -67,6 +67,29 @@ vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's o
   hls.js worker/buffer tuning, per-poll DOM rebuilds — logged from the read-only analysis, low-risk
   but deferred to keep this pass focused on the `.92` CPU triad.
 
+## Headless container version — render → HLS → VLC engine (THE NEXT PHASE, 2026-06-23)
+
+The **first half** of the headless NAS-container version shipped: a server-side
+wall config (`/api/wall`), a picker control surface (`/control/`) that writes it,
+and `/app/` rendering FROM it (see `ARCHITECTURE.md §26`). The **immediate next
+phase** is the headless **render → HLS → VLC** engine:
+
+- a headless renderer (browser/Chromium or a compositor) that renders the
+  `/app/` wall from the server config and **encodes it to an HLS stream**;
+- served by the helper (or a sidecar) so a generic player — **VLC, an Apple TV
+  in another room** — plays the whole composed wall as one stream;
+- the per-cell audio (single-audible) + subtitle state from the wall config
+  drives the mixed output; the picker (`/control/`) remains the lightweight,
+  decode-free control plane.
+
+This composes with the existing **M3U playlist / profiles** foundation (§24): the
+playlist serves the channel *list*; the headless engine serves the composed
+*wall*. **Profile decision (resolved by necessity for this context):** the
+headless wall's state lives server-side because it has no device — so the
+cross-device-profile question (item H) is answered server-side for the headless
+context, **without** prejudging the native app's device-local model or a future
+cross-device sync. Build the render→encode→serve pipeline next.
+
 ## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
 
 The native feed-source filter became a **two-level genre → source filter** in v0.3.0

@@ -27,6 +27,7 @@ screenshots show exactly that.
 | `channel-picker.png` | The channel picker (opened from a slot's Channel row) — the channel lineup **sectioned by category** (Sports / US News / Global News / … / **Government** / Cameras / Nature / Space) with the honest **live / on-the-TV-wall-only / offline** legend. The free **government** feeds (chamber floors, live committee hearings, federal agencies, the White House feed) live in their own **Government** section so US News reads live-dense. |
 | `feed-story-highlighted.png` | A feed headline **selected** (accent-bar highlight) — the highlight→select interaction, keyboard/remote-friendly. |
 | `feed-story-expanded.png` | The **news-story detail** (expand) — the item's own source / time / title / summary (inert plain text) + a "Read at source ↗" link-out. MyMTS never fetches the article itself (A1). |
+| `control.png` | The **picker control surface** (`/control/`) — the headless-container version's wall editor. The wall's layout in a browser, but **each cell is a feed-PICKER** (a category-grouped channel dropdown) + per-cell **Audio** (single-audible) + **Subtitles** toggles, plus grid rows×cols + preset selectors. **No video decode** — it runs on a phone; every change writes the server-side wall config that `/app/` renders from. |
 
 **Honest note on the demo:** phantom mode does **not** exercise the four bespoke
 individual-sport cards (PGA / UFC / Tennis / F1) — those need live ESPN data, so the demo
