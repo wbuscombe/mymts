@@ -89,6 +89,15 @@ container for hardware decode + encode — lower CPU, more tiles / higher fps. D
 needs device passthrough config on the NAS (and must still never disturb the helper / other
 containers / PIA). Revisit if the CPU-only renderer's cell count or fps proves limiting.
 
+**Renderer hardening follow-ups (minor, from the pre-push review).** The symlink-escape
+blocker was fixed + live-verified; these remain as optional v1.1 hardening: (a) a
+**branded holding frame** until the helper answers, so a cold-boot race never shows a brief
+connection-error page in the stream (today it self-heals within a poll); (b) **pin the
+helper's self-signed cert** in the renderer instead of `--ignore-certificate-errors` (a LAN
+footgun if the URL behavior changes); (c) **read-only-rootfs** for the renderer (Chromium
+needs writable dirs — would need a careful overlay/tmpfs layout). None are correctness or
+isolation issues today.
+
 ## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
 
 The native feed-source filter became a **two-level genre → source filter** in v0.3.0
