@@ -67,28 +67,27 @@ vs **free-but-ToS-gray** (free, no DRM, but obtained by bypassing the source's o
   hls.js worker/buffer tuning, per-poll DOM rebuilds — logged from the read-only analysis, low-risk
   but deferred to keep this pass focused on the `.92` CPU triad.
 
-## Headless container version — render → HLS → VLC engine (THE NEXT PHASE, 2026-06-23)
+## ~~Headless container version — render → HLS → VLC engine~~ — DONE (2026-06-24)
 
-The **first half** of the headless NAS-container version shipped: a server-side
-wall config (`/api/wall`), a picker control surface (`/control/`) that writes it,
-and `/app/` rendering FROM it (see `ARCHITECTURE.md §26`). The **immediate next
-phase** is the headless **render → HLS → VLC** engine:
+**Done — the wall is on the TV.** Both halves of the headless NAS-container version
+shipped: the server-side wall config (`/api/wall`) + picker (`/control/`) + `/app/`
+rendering from it (`ARCHITECTURE.md §26`), and the **render → HLS → VLC engine**
+(`§27`): a `mymts-renderer` container (Xvfb + Chromium `/app/?render=1` + a PulseAudio
+null sink + ffmpeg `x11grab` → HLS), the helper serving it at `/api/stream/playlist.m3u8`,
+config-driven-live (a `/control/` pick reflected in the stream with no restart). Verified
+on the deployed NAS: valid advancing HLS (h264 1080p + AAC), live tiles + feed + ticker,
+a live `/control/` change reflected. The **Apple TV / stream-out** goal is met — VLC opens
+one URL. Composes with the M3U playlist / profiles foundation (§24): the playlist serves
+the channel *list*, the renderer serves the composed *wall*. The profile question stays
+resolved-by-necessity for the headless context (server-side state), without prejudging the
+native device-local model.
 
-- a headless renderer (browser/Chromium or a compositor) that renders the
-  `/app/` wall from the server config and **encodes it to an HLS stream**;
-- served by the helper (or a sidecar) so a generic player — **VLC, an Apple TV
-  in another room** — plays the whole composed wall as one stream;
-- the per-cell audio (single-audible) + subtitle state from the wall config
-  drives the mixed output; the picker (`/control/`) remains the lightweight,
-  decode-free control plane.
-
-This composes with the existing **M3U playlist / profiles** foundation (§24): the
-playlist serves the channel *list*; the headless engine serves the composed
-*wall*. **Profile decision (resolved by necessity for this context):** the
-headless wall's state lives server-side because it has no device — so the
-cross-device-profile question (item H) is answered server-side for the headless
-context, **without** prejudging the native app's device-local model or a future
-cross-device sync. Build the render→encode→serve pipeline next.
+**Future optimization (not now): GPU passthrough for the renderer.** v1 is **CPU-only**
+software x264 + N tile decoders (the cell count drives the load), bounded by the compose
+cpus/mem caps. A future optimization is GPU passthrough (VA-API / NVENC) into the renderer
+container for hardware decode + encode — lower CPU, more tiles / higher fps. Deferred:
+needs device passthrough config on the NAS (and must still never disturb the helper / other
+containers / PIA). Revisit if the CPU-only renderer's cell count or fps proves limiting.
 
 ## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
 

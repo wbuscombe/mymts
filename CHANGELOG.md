@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(renderer+helper): headless container version — render → HLS → VLC engine (2026-06-24)
+
+The half that puts the wall on the TV. A new **renderer container** (`mymts-renderer`)
+runs the config-driven web wall (`/app/?render=1`) on an **Xvfb** virtual display,
+captures the composited video (`x11grab`) + the **audible cell's** audio (a PulseAudio
+null-sink monitor), and encodes to **HLS**; the helper serves it at **`/api/stream/playlist.m3u8`**
+so VLC / an Apple TV opens one URL. Because `/app/` live-polls `/api/wall`, a `/control/`
+pick is reflected in the stream with **NO restart**. Helper + web + a new container — **no
+native change, no new APK**.
+
+- **Renderer** (`renderer/`): Xvfb + Chromium (kiosk, `--no-sandbox`, autoplay relaxed,
+  software decode into the framebuffer) + ffmpeg → HLS. Pinned Debian base (by digest),
+  non-root, `cap_drop ALL`, no baked secrets; a supervisor restarts Chromium/ffmpeg with
+  backoff and a crash-loop escalation, and the HEALTHCHECK gates on **fresh segments**.
+- **Helper** `/api/stream`: serves the renderer's playlist + segments (correct HLS media
+  types, honest 503-while-booting, strict `seg_<n>.ts` no-traversal match). Opt-in via
+  `STREAM_DIR`.
+- **`/app/` render mode** (`?render=1`): hides the gear/cursor so the capture shows only the
+  wall; the config's audible cell unmutes with no gesture.
+- **Compose**: the renderer shares only the helper's `mymts-net` (egress over the **same
+  residential WAN path as the helper — never a VPN**, 0 VPN refs) + a shared `mymts-stream`
+  volume (renderer rw, helper ro); bounded cpus/mem so software encode can't starve the NAS.
+
+Verified on the deployed NAS container: valid advancing HLS (h264 1080p + AAC), the wall
+renders with **live video tiles** + feed + ticker, and a `/control/` change (a 1×1
+single-channel wall) reflected in the stream within the poll interval with no restart.
+Tests: the pure supervision logic (segment-freshness/health, backoff, crash-loop) +
+the `/api/stream` route. GPU passthrough is a future optimization (BACKLOG). The operator's
+one manual check: open `https://<nas>:8443/api/stream/playlist.m3u8` in VLC on the Apple TV.
+
 ## feat(helper+web): headless container version — server-side wall config + picker control surface (2026-06-23)
 
 The first half of the **headless NAS-container version**: a server-side wall

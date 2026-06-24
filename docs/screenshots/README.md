@@ -34,6 +34,13 @@ individual-sport cards (PGA / UFC / Tennis / F1) — those need live ESPN data, 
 ticker shows team games only. They're a shipped feature; the **device** hero shots (real,
 live-data wall) are where they show up. The feed in demo is a 3-item fixture.
 
+**Headless renderer stream — n/a as a gallery still.** The headless-container version's
+output (`ARCHITECTURE.md §27`) is a **live HLS video stream** (the composited wall the
+`mymts-renderer` container produces, served at `/api/stream/playlist.m3u8` for VLC / an
+Apple TV), not a static page — so it has no automated phantom-mode still here. It's verified
+by playing the stream (ffprobe / VLC) on the deployed NAS, not by a committed screenshot;
+the `/control/` picker that steers it is captured in [`control.png`](#) above.
+
 ## Regenerating the `web/` shots
 
 The capture is a small Playwright tool in [`../../tools/screenshots/`](../../tools/screenshots/):
