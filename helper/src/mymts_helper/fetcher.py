@@ -25,6 +25,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+import ssl
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -36,6 +37,33 @@ log = logging.getLogger("mymts_helper.fetcher")
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=20.0, write=10.0, pool=5.0)
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024  # 8MB — plenty for any feed or .m3u8
 DEFAULT_MAX_REDIRECTS = 3
+
+
+def _build_ssl_context() -> ssl.SSLContext:
+    """The fetcher's TLS context. Cert verification + hostname checking STAY ON
+    (CERT_REQUIRED + check_hostname) — MITM protection is non-negotiable and the
+    cert-acceptance bar is UNCHANGED (SECLEVEL stays the default 2). We ONLY
+    broaden the offered cipher list to also include the RSA-key-exchange AES-GCM
+    suites that Python's hardened default omits.
+
+    Why: some legitimate free FAST-platform origins (e.g. WeatherNation's Stirr
+    CDN) offer ONLY a non-forward-secret RSA-kx AES-GCM cipher, so Python's
+    default context fails their handshake (`SSLV3_ALERT_HANDSHAKE_FAILURE`) even
+    though curl/openssl complete it. Forward secrecy is moot here — the fetcher
+    retrieves only PUBLIC HLS manifests / RSS (no secrets or credentials in the
+    traffic) — while cert AUTHENTICITY (preserved) is what guards against a fake
+    origin. So we ADD a cipher; we do NOT weaken which certs we trust, and we do
+    NOT disable verification. `AES256-GCM-SHA384`/`AES128-GCM-SHA256` are strong
+    (256/128-bit) and clear SECLEVEL 2's floor; only their lack of PFS kept them
+    out of Python's default list.
+    """
+    ctx = ssl.create_default_context()
+    ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
+    return ctx
+
+
+# Built once at import; read-only thereafter (safe to share across requests).
+_SSL_CONTEXT = _build_ssl_context()
 
 Resolver = Callable[[str], Awaitable[list[str]]]
 
@@ -160,7 +188,9 @@ async def fetch(
         async with httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=False,
-            verify=True,
+            # Verification stays ON; the context only adds legacy-cipher compat
+            # for FAST origins that offer no PFS suite (see _build_ssl_context).
+            verify=_SSL_CONTEXT,
         ) as client:
             try:
                 resp = await client.request(method, current_url, headers=req_headers)

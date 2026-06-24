@@ -127,3 +127,20 @@ async def test_rejects_unparseable_resolver_output() -> None:
             "https://example.test/feed",
             resolver=await _fake_resolver_factory(["this-is-not-an-ip"]),
         )
+
+
+def test_ssl_context_preserves_verification_and_adds_legacy_cipher() -> None:
+    # The fetcher's TLS context must keep cert verification + hostname checking
+    # ON (MITM protection / cert authenticity is non-negotiable) while ALSO
+    # offering the RSA-kx AES-GCM cipher some free FAST origins (WeatherNation's
+    # Stirr CDN) require — fixing the SSLV3_ALERT_HANDSHAKE_FAILURE without
+    # weakening what certs we trust.
+    import ssl as _ssl
+
+    from mymts_helper.fetcher import _SSL_CONTEXT
+
+    assert _SSL_CONTEXT.verify_mode == _ssl.CERT_REQUIRED   # verification ON
+    assert _SSL_CONTEXT.check_hostname is True               # hostname checked
+    names = {c["name"] for c in _SSL_CONTEXT.get_ciphers()}
+    assert "AES256-GCM-SHA384" in names                      # legacy RSA-GCM offered
+    assert "AES128-GCM-SHA256" in names
