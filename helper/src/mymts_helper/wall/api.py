@@ -47,11 +47,18 @@ def get_router(db_path: Path, data_dir: str) -> APIRouter:
 
     @router.put("")
     def put_wall(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        slugs = _valid_slugs()
         try:
-            config = store.validate_wall_config(payload, set(_valid_slugs()))
+            config = store.validate_wall_config(payload, set(slugs))
         except store.WallConfigError as e:
             # 422: the body is well-formed JSON but fails the wall contract.
             raise HTTPException(status_code=422, detail=str(e)) from e
+        # Force-reload counters are MONOTONIC — never let a write rewind one below
+        # the stored value (e.g. an /app/ edit that echoed a stale-lower epoch
+        # before its first hydrate must not undo a /control/ "reload all"). This is
+        # the authoritative guard; the clients also avoid sending a stale value.
+        existing, _ = store.load_wall_config(data_dir, slugs)
+        config = store.clamp_reload_monotonic(config, existing)
         store.save_wall_config(data_dir, config)
         return _payload(config, True)
 

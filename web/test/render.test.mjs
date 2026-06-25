@@ -60,8 +60,9 @@ import {
   feedDetailModel,
   classifyVideoFailure,
   videoRetryDecision,
-  VIDEO_RECONNECT_INTERVAL_MS,
-  VIDEO_MAX_RECONNECTS,
+  videoBackoffMs,
+  VIDEO_BACKOFF_BASE_MS,
+  VIDEO_BACKOFF_CAP_MS,
   clampFeedPct,
   feedPctFromPointer,
   FEED_PANE_MIN_PCT,
@@ -838,32 +839,42 @@ test("classifyVideoFailure: transient failures ARE retryable", () => {
   assert.equal(classifyVideoFailure("mediaError").retryable, true);     // buffer/decode
   assert.equal(classifyVideoFailure("stall").retryable, true);          // froze mid-play
   assert.equal(classifyVideoFailure("native", "MEDIA_ERR_NETWORK").retryable, true);
-  assert.equal(classifyVideoFailure("somethingNew").retryable, true);   // unknown → bounded retry
+  assert.equal(classifyVideoFailure("somethingNew").retryable, true);   // unknown → conservatively retryable (indefinite on the capped backoff)
 });
 
-test("reconnect schedule: ~15s interval over a ~3-min window (~12 attempts)", () => {
-  assert.equal(VIDEO_RECONNECT_INTERVAL_MS, 15_000);          // poll every 15s
-  assert.equal(VIDEO_MAX_RECONNECTS, 12);                     // 3 min / 15s
+test("videoBackoffMs: capped exponential — quick first retries, settle at the cap", () => {
+  assert.equal(videoBackoffMs(0), 2_000);    // first retry ~2s (catch a blip fast)
+  assert.equal(videoBackoffMs(1), 4_000);
+  assert.equal(videoBackoffMs(2), 8_000);
+  assert.equal(videoBackoffMs(3), 16_000);
+  assert.equal(videoBackoffMs(4), 32_000);
+  assert.equal(videoBackoffMs(5), VIDEO_BACKOFF_CAP_MS);    // 2·2^5 = 64s → capped to 45s
+  assert.equal(videoBackoffMs(50), VIDEO_BACKOFF_CAP_MS);   // stays capped (no overflow to Infinity)
+  assert.equal(videoBackoffMs(-3), VIDEO_BACKOFF_BASE_MS);  // defensive: negative → base
+  assert.equal(videoBackoffMs("x"), VIDEO_BACKOFF_BASE_MS); // defensive: NaN → base
 });
 
-test("videoRetryDecision: never retries the unplayable (no poll loop on a hopeless stream)", () => {
+test("videoRetryDecision: never retries the unplayable (no loop on a hopeless stream)", () => {
   const drm = classifyVideoFailure("keySystemError");
   assert.equal(videoRetryDecision(0, drm).retry, false);   // not even attempt 0 — marks immediately
   assert.equal(videoRetryDecision(0, classifyVideoFailure("no-hls-support")).retry, false);
   assert.equal(videoRetryDecision(0, classifyVideoFailure("native", "src_not_supported")).retry, false);
 });
 
-test("videoRetryDecision: polls a transient drop every 15s, then GIVES UP at the window", () => {
+test("videoRetryDecision: transient drop reconnects INDEFINITELY on the capped backoff", () => {
   const net = classifyVideoFailure("networkError");
-  // attempts 0..max-1 schedule the next reconnect at the FIXED 15s interval.
-  for (let a = 0; a < VIDEO_MAX_RECONNECTS; a++) {
+  // Quick early retries grow per attempt…
+  assert.deepEqual(
+    [0, 1, 2, 3, 4].map((a) => videoRetryDecision(a, net).delayMs),
+    [2_000, 4_000, 8_000, 16_000, 32_000],
+  );
+  // …then settle at the cap and KEEP retrying — an unattended wall self-heals, it
+  // never "gives up" to a permanently-dead tile (no operator to press ↻).
+  for (const a of [5, 12, 100, 10_000]) {
     const d = videoRetryDecision(a, net);
-    assert.equal(d.retry, true, `attempt ${a} should reconnect`);
-    assert.equal(d.delayMs, VIDEO_RECONNECT_INTERVAL_MS, "fixed 15s cadence, not a backoff");
+    assert.equal(d.retry, true, `attempt ${a} still reconnects (indefinite)`);
+    assert.equal(d.delayMs, VIDEO_BACKOFF_CAP_MS, `attempt ${a} at the settle cap`);
   }
-  // at the window's end it gives up to the honest state — NEVER polls forever
-  assert.equal(videoRetryDecision(VIDEO_MAX_RECONNECTS, net).retry, false);
-  assert.equal(videoRetryDecision(VIDEO_MAX_RECONNECTS, net).reason, "exhausted");
 });
 
 // ----- draggable feed/video divider (A) — resize/clamp math -----

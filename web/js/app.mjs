@@ -528,6 +528,20 @@ let wallStored = false;
 let cellSubtitles = {};          // { cellIndex: true } — per-cell subtitle state (native captionsOnSlots parity)
 let lastWallEditAt = 0;          // timestamp of the last LOCAL edit (the re-hydration grace window)
 
+// Force-reload epochs mirrored from the server config: /control/ bumps these
+// (whole-wall `reload_epoch`, per-cell `reload`) to make this rendered wall
+// reattach a tile's player with NO channel change. We remember the last-seen
+// values so we (a) reattach only when one INCREASES (never on a routine poll)
+// and (b) echo them back unchanged in buildWallConfig, so an /app/-side edit
+// doesn't rewind the server's monotonic counters (which would make a subsequent
+// /control/ reload look like it went backwards and get missed). The baseline is
+// seeded from the FIRST server read (seedReloadBaseline) so the echo is never
+// 0-from-null; the helper ALSO clamps the counters monotonically on write
+// (store.clamp_reload_monotonic), so the invariant holds even against a stale
+// PUT — defense in depth, the helper being authoritative.
+let lastReloadEpoch = null;      // null until the first server read seeds it (seedReloadBaseline)
+let lastCellReloads = [];        // per-cell reload epochs, by index
+
 /** Whether captions/subtitles are ON for a given cell. Per-cell when a config
  *  is stored (native per-slot model); else the wall-wide settings toggle. */
 function cellCaptionsOn(index) {
@@ -540,7 +554,9 @@ function buildWallConfig() {
   const layout = gridConfig();
   const cells = [];
   for (let i = 0; i < layout.count; i++) {
-    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true });
+    // Echo each cell's last-seen reload epoch so an edit here never rewinds a
+    // /control/ per-cell reload counter (monotonic; default 0).
+    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true, reload: lastCellReloads[i] || 0 });
   }
   const audible = (audibleIndex >= 0 && audibleIndex < layout.count && cells[audibleIndex].channel)
     ? audibleIndex : null;
@@ -549,6 +565,7 @@ function buildWallConfig() {
     layout: { rows: layout.rows, cols: layout.cols },
     preset: prefs.activePreset || null,
     audible_cell: audible,
+    reload_epoch: lastReloadEpoch || 0,   // echo (don't rewind) the whole-wall epoch
     cells,
   };
 }
@@ -603,6 +620,36 @@ function hydrateFromWall(config) {
   // buildGrid() resets the audio pointer; re-apply from the hydrated config.
   if (dimsChanged) { audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1; audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null; }
   applyWallAudioCaptions();
+  applyReloadSignal(config, dimsChanged);   // honor a /control/ force-reload
+}
+
+/** Honor the force-reload epochs in a freshly-hydrated config (the /control/
+ *  signal): an INCREASED whole-wall `reload_epoch` reattaches every video tile;
+ *  an increased per-cell `reload` reattaches just that tile. The last-seen values
+ *  are the baseline, so loading a config never self-triggers a reload — and a
+ *  grid that JUST rebuilt (dims changed → every tile already freshly attached)
+ *  only adopts the values rather than tearing the new tiles straight back down. */
+function applyReloadSignal(config, rebuilt) {
+  const wallEpoch = Number.isInteger(config.reload_epoch) ? config.reload_epoch : 0;
+  const cellReloads = (config.cells || []).map((c) => (Number.isInteger(c.reload) ? c.reload : 0));
+  if (lastReloadEpoch === null || rebuilt) {
+    lastReloadEpoch = wallEpoch;
+    lastCellReloads = cellReloads;
+    return;
+  }
+  if (wallEpoch > lastReloadEpoch) {
+    lastReloadEpoch = wallEpoch;
+    lastCellReloads = cellReloads;   // a whole-wall reload subsumes per-cell bumps
+    refreshAllVideo();
+    return;
+  }
+  cellReloads.forEach((r, i) => {
+    if (r > (lastCellReloads[i] || 0)) {
+      const cell = cells[i];
+      if (cell && cell.isVideo) refreshCell(cell);
+    }
+  });
+  lastCellReloads = cellReloads;
 }
 
 /** Poll the server wall config. When STORED + outside the post-edit grace
@@ -612,10 +659,30 @@ async function pollWall() {
   try {
     const wall = await api.wall();
     wallStored = wall.stored === true;
+    // Seed the force-reload baseline from the FIRST server read we ever see —
+    // even a non-stored default, or a poll inside the post-edit grace window —
+    // BEFORE the early returns below. Otherwise lastReloadEpoch stays null until
+    // the first hydrate, and an /app/ edit in that window would echo
+    // reload_epoch:0 via buildWallConfig and REWIND the server's counter (the
+    // "never rewinds" guarantee). Once seeded it's left alone; applyReloadSignal
+    // owns it thereafter.
+    seedReloadBaseline(wall);
     if (!wallStored) return;                                   // standalone default — keep local behaviour
     if (Date.now() - lastWallEditAt < WALL_EDIT_GRACE_MS) return;   // a local edit is settling
     hydrateFromWall(normalizeConfig(wall));
   } catch { /* helper unreachable — keep the last good wall */ }
+}
+
+/** Establish the reload-epoch baseline from the first server read, so an /app/
+ *  edit before the first hydrate echoes the server's REAL epoch (not 0-from-null)
+ *  and can't rewind a /control/-bumped counter. Idempotent — only the first read
+ *  (lastReloadEpoch === null) seeds; later reads are owned by applyReloadSignal. */
+function seedReloadBaseline(wall) {
+  if (lastReloadEpoch !== null) return;
+  lastReloadEpoch = Number.isInteger(wall && wall.reload_epoch) ? wall.reload_epoch : 0;
+  lastCellReloads = Array.isArray(wall && wall.cells)
+    ? wall.cells.map((c) => (Number.isInteger(c && c.reload) ? c.reload : 0))
+    : [];
 }
 
 async function pollChannels() {
@@ -902,26 +969,30 @@ function renderCell(cell, slug, ch, bp) {
       // THE CRUX: classifyVideoFailure separates a transient failure (CDN
       // blip / decode hiccup / freeze → worth a fresh attempt) from a
       // genuinely-unplayable one (DRM / codec / no-HLS / unsupported source →
-      // a browser can NEVER play it, so retrying is pointless). videoRetry
-      // Decision then caps the transient retries so a flaky stream that never
-      // recovers still gives up to an honest state instead of looping forever.
+      // a browser can NEVER play it, so retrying is pointless). For a transient
+      // failure, videoRetryDecision re-resolves + reconnects INDEFINITELY on a
+      // capped backoff (this is an unattended wall — no one is here to press ↻,
+      // so a tile must heal itself). Only a genuinely-unplayable stream STOPS, at
+      // the honest "on the TV wall" rest state.
       const cls = classifyVideoFailure(detail && detail.kind, detail && detail.details);
       const decision = videoRetryDecision(cell.videoAttempt, cls);
       cell.gen++;                       // neutralize any further events from THIS (failed) handle
       if (decision.retry) {
         // Keep cell.teardown pointing at the now-neutralized handle so a grid
         // rebuild DURING the backoff still tears it down (no leak); otherwise
-        // reattachCell tears it down when the timer fires, then re-renders.
-        showReconnecting(cell, label, cell.videoAttempt);
+        // reattachCell tears it down when the timer fires, then re-renders from
+        // the freshest channel snapshot (a re-resolved URL if the helper rotated it).
+        showReconnecting(cell, label);
         cell.retryTimer = setTimeout(() => {
           cell.retryTimer = null;
           cell.videoAttempt += 1;
           reattachCell(cell);
         }, decision.delayMs);
       } else {
-        // Genuinely unplayable, OR transient retries exhausted → STOP. Tear the
-        // dead handle down off the event path; the tile then rests (honest)
-        // until a manual ↻ or a channel-status change — never an infinite retry.
+        // Genuinely unplayable in a browser → STOP. Tear the dead handle down off
+        // the event path; the tile then rests (honest "on the TV wall") until a
+        // manual ↻, a /control/ force-reload, or a channel-status change — never
+        // an infinite retry on a stream the browser fundamentally can't play.
         const dead = handle.teardown; cell.teardown = null; cell.streamHandle = null;
         setTimeout(() => { try { dead(); } catch {} }, 0);
         showDeadVideo(cell, label, decision.reason);
@@ -933,15 +1004,18 @@ function renderCell(cell, slug, ch, bp) {
 }
 
 /** Honest "Reconnecting…" state while a transient failure backs off. Never
- *  shown as live; the dot stays the neutral "checking" colour. */
-function showReconnecting(cell, label, attempt) {
+ *  shown as live; the dot stays the neutral "checking" colour. The retry count is
+ *  deliberately NOT shown: reconnect is now indefinite (the unattended-wall
+ *  self-heal), so a visible "attempt N" would climb without bound on the captured
+ *  TV stream — the raw count lives in cell.videoAttempt for the backoff math only. */
+function showReconnecting(cell, label) {
   const tile = cell.el;
   tile.replaceChildren();
   cell.streamHandle = null; cell.audioBadge = null;
   const s = node("div", "tile-state reconnecting");
   s.appendChild(node("div", "big", "↻"));
   s.appendChild(node("div", "head", label));
-  s.appendChild(node("div", "sub", `Reconnecting… (attempt ${attempt + 1})`));
+  s.appendChild(node("div", "sub", "Reconnecting…"));
   tile.appendChild(s);
   tile.appendChild(node("span", "tile-dot dot-unknown"));
   tile.onclick = () => openSlotControls(cell.index);
@@ -975,10 +1049,13 @@ function showDeadVideo(cell, label, reason) {
   syncSlotModal(cell);
 }
 
-/** Honest, reason-specific copy. A browser-fundamental limitation (DRM / codec
- *  / no-HLS) is stated plainly as "on the TV wall" (the helper confirmed the
- *  stream HTTPS-clean for bp yes/maybe; ExoPlayer plays what the browser
- *  can't). A retries-exhausted transient hedges with "may be". */
+/** Honest, reason-specific copy for a tile that rests at the dead state. Only a
+ *  browser-fundamental limitation (DRM / codec / no-HLS / unsupported source)
+ *  reaches here now — a *transient* failure reconnects indefinitely and never
+ *  gives up (so there is no "exhausted" copy). Each is stated plainly as "on the
+ *  TV wall" (the helper confirmed the stream HTTPS-clean for bp yes/maybe;
+ *  ExoPlayer plays what the browser can't). The default hedges with "may be" for
+ *  any unexpected reason. */
 function deadReasonCopy(reason) {
   switch (reason) {
     case "no-browser-hls":     return "Browser can't play HLS — on the TV wall";
@@ -986,7 +1063,6 @@ function deadReasonCopy(reason) {
     case "codec":              return "Codec not supported in browser — on the TV wall";
     case "remux":              return "Can't be repackaged for the browser — on the TV wall";
     case "unsupported-source": return "Browser can't play this source — on the TV wall";
-    case "exhausted":          return "Couldn't reconnect — may be on the TV wall";
     default:                   return "Couldn't play in browser — may be on the TV wall";
   }
 }

@@ -10,6 +10,7 @@ import {
   WALL_SCHEMA_VERSION,
   resizeCells, cellCount, normalizeConfig,
   withCellChannel, withCellSubtitles, withAudibleCell, withLayout, withPreset,
+  withCellReload, withWallReload,
 } from "../js/wallConfig.mjs";
 
 const VALID = ["bbc-news", "cnn", "cbs-sports-hq", "bloomberg-tv"];
@@ -34,8 +35,13 @@ function cfg2x2() {
 test("resizeCells preserves by index, pads with empties", () => {
   const out = resizeCells([{ channel: "a", subtitles: true }], 3);
   assert.equal(out.length, 3);
-  assert.deepEqual(out[0], { channel: "a", subtitles: true });
-  assert.deepEqual(out[1], { channel: null, subtitles: false });
+  assert.deepEqual(out[0], { channel: "a", subtitles: true, reload: 0 });
+  assert.deepEqual(out[1], { channel: null, subtitles: false, reload: 0 });
+});
+
+test("resizeCells carries the per-cell reload epoch along by index", () => {
+  const out = resizeCells([{ channel: "a", subtitles: false, reload: 5 }, { channel: "b", reload: 2 }], 1);
+  assert.equal(out[0].reload, 5);   // preserved through a truncating resize
 });
 
 test("resizeCells truncates the overflow", () => {
@@ -178,4 +184,60 @@ test("withPreset filters slugs that are not real channels", () => {
   const out = withPreset(cfg2x2(), preset, VALID);
   // ghost dropped → cnn lands in cell 0, rest empty
   assert.deepEqual(out.cells.map((c) => c.channel), ["cnn", null, null]);
+});
+
+// ---- force-reload epochs (the /control/ → /app/ reload signal) ----
+
+test("normalizeConfig defaults the reload epochs (additive to schema v1)", () => {
+  const out = normalizeConfig({ layout: { rows: 1, cols: 2 }, cells: [{ channel: "bbc-news" }, { channel: null }] });
+  assert.equal(out.reload_epoch, 0);
+  assert.ok(out.cells.every((c) => c.reload === 0));
+});
+
+test("normalizeConfig preserves bumped reload epochs from the wire", () => {
+  const out = normalizeConfig({
+    schema_version: 1, layout: { rows: 1, cols: 2 }, reload_epoch: 7,
+    cells: [{ channel: "bbc-news", reload: 3 }, { channel: "cnn", reload: 0 }],
+  }, VALID);
+  assert.equal(out.reload_epoch, 7);
+  assert.equal(out.cells[0].reload, 3);
+});
+
+test("normalizeConfig clamps a negative/garbage reload epoch to 0 (monotonic counter)", () => {
+  const out = normalizeConfig({ layout: { rows: 1, cols: 1 }, reload_epoch: -4,
+    cells: [{ channel: "bbc-news", reload: "x" }] }, VALID);
+  assert.equal(out.reload_epoch, 0);
+  assert.equal(out.cells[0].reload, 0);
+});
+
+test("withWallReload bumps ONLY the whole-wall epoch (+1), cells untouched", () => {
+  const out = withWallReload(cfg2x2());
+  assert.equal(out.reload_epoch, 1);                       // 0 → 1
+  assert.ok(out.cells.every((c) => c.reload === 0));       // per-cell epochs unchanged
+  assert.equal(withWallReload(out).reload_epoch, 2);       // monotonic on repeat
+});
+
+test("withCellReload bumps ONLY that cell's epoch (+1), others + wall untouched", () => {
+  const out = withCellReload(cfg2x2(), 1);
+  assert.equal(out.cells[1].reload, 1);                    // 0 → 1
+  assert.equal(out.cells[0].reload, 0);                    // sibling unchanged
+  assert.equal(out.reload_epoch, 0);                       // whole-wall epoch unchanged
+  assert.equal(withCellReload(out, 1).cells[1].reload, 2); // monotonic on repeat
+});
+
+test("withCellReload on an out-of-range index is a no-op", () => {
+  const out = withCellReload(cfg2x2(), 9);
+  assert.deepEqual(out.cells.map((c) => c.reload), [0, 0, 0, 0]);
+});
+
+test("edit transforms preserve the whole-wall reload epoch (never rewind it)", () => {
+  const base = withWallReload(cfg2x2());   // reload_epoch = 1
+  assert.equal(withCellChannel(base, 2, "bloomberg-tv").reload_epoch, 1);
+  assert.equal(withCellSubtitles(base, 0).reload_epoch, 1);
+  assert.equal(withAudibleCell(base, 1).reload_epoch, 1);
+  assert.equal(withLayout(base, 1, 2).reload_epoch, 1);
+  // a preset reshapes the grid (fresh cells, reload 0) but carries the wall epoch
+  const out = withPreset(base, { id: "x", grid: { rows: 1, cols: 1 }, slugs: ["cnn"] }, VALID);
+  assert.equal(out.reload_epoch, 1);
+  assert.ok(out.cells.every((c) => c.reload === 0));
 });

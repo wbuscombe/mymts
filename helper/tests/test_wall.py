@@ -46,15 +46,17 @@ def test_validate_accepts_and_normalises_a_good_config():
     out = store.validate_wall_config(_good_config(), set(VALID))
     assert out["layout"] == {"rows": 2, "cols": 2}
     assert out["audible_cell"] == 0
-    assert out["cells"][1] == {"channel": "cnn", "subtitles": True}
-    # extra keys are stripped; subtitles defaults present
-    assert set(out.keys()) == {"schema_version", "layout", "preset", "audible_cell", "cells"}
+    assert out["cells"][1] == {"channel": "cnn", "subtitles": True, "reload": 0}
+    # extra keys are stripped; subtitles + reload defaults present
+    assert set(out.keys()) == {
+        "schema_version", "layout", "preset", "audible_cell", "reload_epoch", "cells"
+    }
 
 
 def test_validate_strips_unknown_cell_keys_and_defaults_subtitles():
     cfg = _good_config(cells=[{"channel": "bbc-news", "bogus": 1}] + [{"channel": None}] * 3)
     out = store.validate_wall_config(cfg, set(VALID))
-    assert out["cells"][0] == {"channel": "bbc-news", "subtitles": False}
+    assert out["cells"][0] == {"channel": "bbc-news", "subtitles": False, "reload": 0}
     assert "bogus" not in out["cells"][0]
 
 
@@ -158,6 +160,123 @@ def test_validate_rejects_non_string_preset():
         store.validate_wall_config(_good_config(preset=7), set(VALID))
 
 
+# --- force-reload epochs (additive to schema v1: default 0, validated >= 0) ---
+
+
+def test_validate_defaults_reload_epochs_to_zero():
+    out = store.validate_wall_config(_good_config(), set(VALID))
+    assert out["reload_epoch"] == 0
+    assert all(c["reload"] == 0 for c in out["cells"])
+
+
+def test_validate_preserves_bumped_reload_epochs():
+    cfg = _good_config(reload_epoch=4)
+    cfg["cells"][0]["reload"] = 2
+    out = store.validate_wall_config(cfg, set(VALID))
+    assert out["reload_epoch"] == 4
+    assert out["cells"][0]["reload"] == 2
+
+
+@pytest.mark.parametrize("bad", [-1, True, 2.5, "3", []])
+def test_validate_rejects_bad_wall_reload_epoch(bad):
+    with pytest.raises(store.WallConfigError, match="reload_epoch"):
+        store.validate_wall_config(_good_config(reload_epoch=bad), set(VALID))
+
+
+@pytest.mark.parametrize("bad", [-1, True, 2.5, "3"])
+def test_validate_rejects_bad_cell_reload_epoch(bad):
+    cfg = _good_config()
+    cfg["cells"][0]["reload"] = bad
+    with pytest.raises(store.WallConfigError, match=r"cells\[0\].reload"):
+        store.validate_wall_config(cfg, set(VALID))
+
+
+def test_default_config_includes_zero_reload_epochs():
+    cfg = store.default_wall_config(VALID)
+    assert cfg["reload_epoch"] == 0
+    assert all(c["reload"] == 0 for c in cfg["cells"])
+
+
+def test_clamp_reload_monotonic_never_decreases_counters():
+    old = store.validate_wall_config(_good_config(reload_epoch=5), set(VALID))
+    old["cells"][1]["reload"] = 3
+    old = store.validate_wall_config(old, set(VALID))
+    # a stale write echoing LOWER counters (e.g. an /app/ edit before its hydrate)
+    new = store.validate_wall_config(_good_config(reload_epoch=0), set(VALID))
+    clamped = store.clamp_reload_monotonic(new, old)
+    assert clamped["reload_epoch"] == 5            # not rewound to 0
+    assert clamped["cells"][1]["reload"] == 3      # per-cell not rewound either
+
+
+def test_clamp_reload_monotonic_allows_an_increase():
+    old = store.validate_wall_config(_good_config(reload_epoch=2), set(VALID))
+    new = store.validate_wall_config(_good_config(reload_epoch=3), set(VALID))
+    new["cells"][0]["reload"] = 1
+    new = store.validate_wall_config(new, set(VALID))
+    clamped = store.clamp_reload_monotonic(new, old)
+    assert clamped["reload_epoch"] == 3            # a genuine bump goes through
+    assert clamped["cells"][0]["reload"] == 1
+
+
+def test_clamp_reload_monotonic_handles_a_grid_resize():
+    # old 2x2 (4 cells), new 1x2 (2 cells) — clamp by index, new cells with no old
+    # counterpart floor at their own value (no IndexError).
+    old = store.validate_wall_config(_good_config(reload_epoch=4), set(VALID))
+    new = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 2}, "preset": None, "audible_cell": None,
+        "reload_epoch": 0,
+        "cells": [{"channel": "bbc-news", "subtitles": False, "reload": 0},
+                  {"channel": None, "subtitles": False, "reload": 0}],
+    }
+    clamped = store.clamp_reload_monotonic(new, old)
+    assert clamped["reload_epoch"] == 4
+    assert len(clamped["cells"]) == 2
+
+
+def test_put_cannot_rewind_a_reload_counter(tmp_path: Path):
+    client = _client(tmp_path)
+    base = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 1}, "preset": "news", "audible_cell": None,
+        "cells": [{"channel": "bbc-news", "subtitles": False, "reload": 0}],
+    }
+    # /control/ bumps the whole-wall reload to 3
+    client.put("/api/wall", json={**base, "reload_epoch": 3})
+    # a stale /app/ edit echoes reload_epoch 0 — the server must NOT rewind it
+    got = client.put("/api/wall", json={**base, "reload_epoch": 0}).json()
+    assert got["reload_epoch"] == 3
+    assert client.get("/api/wall").json()["reload_epoch"] == 3
+
+
+def test_bumped_reload_epochs_survive_save_load_round_trip(tmp_path: Path):
+    cfg = store.validate_wall_config(_good_config(reload_epoch=9), set(VALID))
+    cfg["cells"][1]["reload"] = 3
+    cfg = store.validate_wall_config(cfg, set(VALID))   # re-validate post-edit
+    store.save_wall_config(tmp_path, cfg)
+    loaded, stored = store.load_wall_config(tmp_path, VALID)
+    assert stored is True
+    assert loaded["reload_epoch"] == 9
+    assert loaded["cells"][1]["reload"] == 3
+
+
+def test_put_persists_a_force_reload_bump(tmp_path: Path):
+    client = _client(tmp_path)
+    payload = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 1},
+        "preset": "news",
+        "audible_cell": None,
+        "reload_epoch": 1,
+        "cells": [{"channel": "bbc-news", "subtitles": False, "reload": 2}],
+    }
+    put = client.put("/api/wall", json=payload)
+    assert put.status_code == 200, put.text
+    got = client.get("/api/wall").json()
+    assert got["reload_epoch"] == 1
+    assert got["cells"][0]["reload"] == 2
+
+
 def test_default_config_fills_from_news_preset_and_is_valid():
     cfg = store.default_wall_config(VALID)
     assert cfg["layout"] == {"rows": 2, "cols": 2}
@@ -257,7 +376,7 @@ def test_put_then_get_round_trips_and_marks_stored(tmp_path: Path):
     got = client.get("/api/wall").json()
     assert got["stored"] is True
     assert got["layout"] == {"rows": 1, "cols": 2}
-    assert got["cells"][0] == {"channel": "bbc-news", "subtitles": True}
+    assert got["cells"][0] == {"channel": "bbc-news", "subtitles": True, "reload": 0}
     assert got["audible_cell"] == 0
     # persisted to the data dir as the gitignored runtime file
     assert store.wall_config_path(tmp_path).is_file()

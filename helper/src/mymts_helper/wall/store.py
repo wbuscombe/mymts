@@ -8,11 +8,18 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "layout": {"rows": 2, "cols": 2},
       "preset": "news",                       # informational: last-applied preset
       "audible_cell": 0 | null,               # single-audible-cell model
+      "reload_epoch": 0,                      # whole-wall force-reload counter
       "cells": [                              # length == rows*cols (by index)
-        {"channel": "bbc-news" | null, "subtitles": false},
+        {"channel": "bbc-news" | null, "subtitles": false, "reload": 0},
         ...
       ]
     }
+
+**Force-reload epochs** are monotonic counters a control surface bumps to tell
+the rendered wall (`/app/`) to re-attach a tile's player without a channel change:
+``reload_epoch`` (whole wall) and per-cell ``reload``. ``/app/`` reattaches when it
+sees a value INCREASE. They are additive to schema v1 (default 0), so an old
+stored file without them loads fine.
 
 **Per-cell model mirrors the native app**, not invented controls:
   - per-cell ``channel`` (the slot's assigned channel slug, or null = empty),
@@ -76,14 +83,28 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
     for i in range(count):
         channel = news[i] if i < len(news) else None
-        cells.append({"channel": channel, "subtitles": False})
+        cells.append({"channel": channel, "subtitles": False, "reload": 0})
     return {
         "schema_version": WALL_SCHEMA_VERSION,
         "layout": {"rows": DEFAULT_ROWS, "cols": DEFAULT_COLS},
         "preset": DEFAULT_PRESET_ID,
         "audible_cell": None,
+        "reload_epoch": 0,
         "cells": cells,
     }
+
+
+def _validate_reload(value: Any, name: str) -> int:
+    """A force-reload epoch: a non-negative integer (default 0 when absent).
+    Additive to schema v1, so a missing field is the un-bumped default, not an
+    error."""
+    if value is None:
+        return 0
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise WallConfigError(f"{name} must be a non-negative integer")
+    if value < 0:
+        raise WallConfigError(f"{name} must be a non-negative integer")
+    return value
 
 
 def _validate_dim(value: Any, name: str) -> int:
@@ -151,7 +172,8 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         subtitles = cell.get("subtitles", False)
         if not isinstance(subtitles, bool):
             raise WallConfigError(f"cells[{i}].subtitles must be true/false")
-        cells.append({"channel": channel, "subtitles": subtitles})
+        reload = _validate_reload(cell.get("reload"), f"cells[{i}].reload")
+        cells.append({"channel": channel, "subtitles": subtitles, "reload": reload})
 
     audible = raw.get("audible_cell")
     if audible is not None:
@@ -171,11 +193,42 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
     if preset is not None and not isinstance(preset, str):
         raise WallConfigError("preset must be a string or null")
 
+    reload_epoch = _validate_reload(raw.get("reload_epoch"), "reload_epoch")
+
     return {
         "schema_version": WALL_SCHEMA_VERSION,
         "layout": {"rows": rows, "cols": cols},
         "preset": preset,
         "audible_cell": audible,
+        "reload_epoch": reload_epoch,
+        "cells": cells,
+    }
+
+
+def clamp_reload_monotonic(
+    new_config: dict[str, Any], old_config: dict[str, Any]
+) -> dict[str, Any]:
+    """Enforce the **monotonic** contract of the force-reload counters at the
+    authoritative layer: a write must never DECREASE ``reload_epoch`` or any
+    per-cell ``reload`` below the currently-stored value.
+
+    A client that echoes a stale-lower value — e.g. an ``/app/`` edit that fired
+    its PUT before its first config hydrate seeded the local baseline — must not
+    be able to rewind a force-reload another surface (``/control/``) already
+    bumped. Per-cell counters clamp **by index** (the same slot model the rest of
+    the config uses); a grid resize simply has no old counterpart for new indices
+    (→ floor 0). Pure; returns a new dict (never mutates the inputs).
+    """
+    old_cells = old_config.get("cells") or []
+    cells: list[dict[str, Any]] = []
+    for i, cell in enumerate(new_config.get("cells") or []):
+        old_reload = old_cells[i].get("reload", 0) if i < len(old_cells) else 0
+        cells.append({**cell, "reload": max(cell.get("reload", 0), old_reload)})
+    return {
+        **new_config,
+        "reload_epoch": max(
+            new_config.get("reload_epoch", 0), old_config.get("reload_epoch", 0)
+        ),
         "cells": cells,
     }
 

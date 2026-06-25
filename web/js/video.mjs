@@ -138,21 +138,17 @@ export function attachStream(videoEl, url, onState) {
     }
   }, 2000);
 
-  if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
-    // Native HLS (Safari / some TVs).
-    videoEl.src = url;
-    videoEl.addEventListener("loadeddata", () => tryPlay(), { once: true });
-    videoEl.addEventListener("error", () => {
-      const code = videoEl.error ? videoEl.error.code : 0;
-      set("error", { kind: "native", details: MEDIA_ERR[code] || "MEDIA_ERR_UNKNOWN" });
-    }, { once: true });
-    // Native HLS surfaces caption tracks on the <video>; force them to the desired
-    // (default-off) state as they arrive so none auto-shows.
-    if (videoEl.textTracks && typeof videoEl.textTracks.addEventListener === "function") {
-      videoEl.textTracks.addEventListener("addtrack", onTracksChanged);
-      videoEl.textTracks.addEventListener("removetrack", onTracksChanged);
-    }
-  } else if (Hls() && Hls().isSupported()) {
+  if (Hls() && Hls().isSupported()) {
+    // hls.js (MSE) is the PREFERRED path on every engine that supports it —
+    // Chrome, Chromium, Firefox, Edge, desktop Safari. We check it BEFORE native
+    // HLS deliberately: some Chromium builds (notably the headless renderer's
+    // Debian `chromium`) report canPlayType("application/vnd.apple.mpegurl") ===
+    // "maybe" yet their half-baked native HLS pipeline CANNOT actually play most
+    // live FAST/CDN streams — it throws MEDIA_ERR_SRC_NOT_SUPPORTED (the "Browser
+    // can't play this source" tiles). hls.js plays those same CORS-clean H.264/
+    // AAC streams reliably via MSE. Preferring it means the headless renderer (and
+    // every MSE browser) gets the working demuxer; native HLS is reserved for the
+    // ONE engine with no MSE for hls.js to use (iOS Safari).
     // subtitleDisplay:false → don't auto-render a default subtitle track (the regression).
     hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, maxBufferLength: 12, backBufferLength: 12, subtitleDisplay: false });
     hls.on(Hls().Events.MANIFEST_PARSED, () => tryPlay());
@@ -174,6 +170,23 @@ export function attachStream(videoEl, url, onState) {
     });
     hls.loadSource(url);
     hls.attachMedia(videoEl);
+  } else if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
+    // Native HLS — ONLY when hls.js (MSE) is unavailable, i.e. iOS Safari, where
+    // native HLS is excellent and is the sole working path (no MSE for hls.js).
+    // Desktop/Chromium engines never reach this branch (hls.js wins above), so
+    // the Chromium "maybe"-but-can't-actually-play trap is sidestepped entirely.
+    videoEl.src = url;
+    videoEl.addEventListener("loadeddata", () => tryPlay(), { once: true });
+    videoEl.addEventListener("error", () => {
+      const code = videoEl.error ? videoEl.error.code : 0;
+      set("error", { kind: "native", details: MEDIA_ERR[code] || "MEDIA_ERR_UNKNOWN" });
+    }, { once: true });
+    // Native HLS surfaces caption tracks on the <video>; force them to the desired
+    // (default-off) state as they arrive so none auto-shows.
+    if (videoEl.textTracks && typeof videoEl.textTracks.addEventListener === "function") {
+      videoEl.textTracks.addEventListener("addtrack", onTracksChanged);
+      videoEl.textTracks.addEventListener("removetrack", onTracksChanged);
+    }
   } else {
     set("error", { kind: "no-hls-support" });
   }

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(web): rendered-wall tiles play (hls.js over Chromium's broken native HLS) + indefinite self-heal + /control/ force-reload (2026-06-25)
+
+On the headless wall, most tiles showed the honest **"Browser can't play this source — on
+the TV wall"** — only BBC played. **Diagnosed on the live NAS (confirmed, not assumed):**
+
+- Every "failing" channel (LiveNOW from FOX, Fox Weather, AccuWeather NOW, Newsmax, CBS
+  Sports HQ) is a **direct HLS** stream, `status=live`, `browser_playable=true` — the SAME
+  path as BBC. Their CDNs are **CORS-clean end-to-end** (manifest + media playlist + `.ts`
+  segment all return `Access-Control-Allow-Origin`) and standard **H.264/AAC**. So it was
+  **not** CORS, **not** codecs, **not** mixed-content, **not** a render-mode/IFrame fallback.
+- The tile string `"Browser can't play this source"` is reason `unsupported-source`, which
+  the classifier emits **only** for a native `<video>` `MEDIA_ERR_SRC_NOT_SUPPORTED`. The
+  player took the **native HLS branch**, which fires when
+  `canPlayType("application/vnd.apple.mpegurl")` is truthy. Probed the renderer's Chromium
+  directly: **`Chromium 149` (Debian) returns `"maybe"`** there (stock desktop Chrome
+  returns `""`), yet its half-baked native HLS pipeline can't actually play most live
+  FAST/CDN streams (it plays simple ones like BBC, fails the rest). hls.js + MSE is fully
+  supported in that build and plays them all. A **renderer-build quirk surfaced through the
+  web client's branch order** — it failed only in the container, never in desktop Chrome.
+
+**Fix (pure web client — no container rebuild):**
+
+- **`video.mjs` prefers hls.js whenever it's supported** (`Hls.isSupported()` first, native
+  HLS reserved for the one engine with no MSE — iOS Safari), the hls.js project's own
+  recommended order. The renderer (and every MSE browser) now gets the working demuxer.
+  **Verified on the live stream: all six tiles play** (the 5 dead FAST channels + BBC).
+- **Auto-reload is now indefinite** for an unattended wall. A *retryable* drop (network /
+  decode / stall) re-resolves a fresh URL + reconnects on a **capped backoff** (quick early
+  retries 2→4→8→16→32s, settling at ~45s) and **never gives up** — replacing the old
+  ~3‑min/~12‑attempt window that left a dead tile no operator was there to ↻. A
+  *genuinely-unplayable* failure (DRM / codec / no-HLS / unsupported source) still NEVER
+  auto-retries — it rests at the honest "on the TV wall" state (honest-offline preserved).
+- **`/control/` force-reload.** New monotonic reload epochs in the wall config —
+  `reload_epoch` (whole wall) + per-cell `reload` (additive to schema v1, default 0,
+  validated `>= 0`). `/app/` watches them on its existing `/api/wall` poll and reattaches
+  the affected tile(s) when one **increases**. The counters are monotonic — the helper
+  clamps them on every write (`clamp_reload_monotonic`) so a stale PUT can't rewind one,
+  and `/app/` seeds its baseline from the first server read, so a `/control/` reload is
+  never lost to a backwards-looking counter. `/control/` gains a **"↻ Reload all tiles"**
+  button + a per-cell **"↻ Reload"** pill. Remote, unattended recovery of a wedged tile
+  without restarting the renderer. **Verified live: a per-cell bump reattached that tile
+  (fresh re-resolved content) while the rest of the wall kept playing.**
+
+Web client + helper only (the playback path was a web fix; the helper carries the new
+config fields). No native change → no APK; renderer image unchanged (only its served
+`/app/` JS, picked up by a renderer page reload).
+
 ## fix(stream): plain-HTTP HLS for Apple TV VLC + self-heal a wedged stream (2026-06-25)
 
 Apple TV VLC hung forever at "please wait" on the stream URL though desktop VLC played

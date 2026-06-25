@@ -842,25 +842,37 @@ export function shouldReassertAudio(audibleIndex, audibleSlug, cellIndex, cellSl
   return isAudible(audibleIndex, cellIndex) && cellSlug != null && cellSlug === audibleSlug;
 }
 
-// ----- in-browser video auto-recovery (retry transient, give up on hopeless) -----
+// ----- in-browser video auto-recovery (self-heal transient, give up on hopeless) -----
 //
-// An always-on wall can't leave a tile dead until a manual reload. A RETRYABLE
-// drop (transient network/stream hiccup, was-playing-then-dropped) reconnects on
-// a steady ~15s cadence for up to a ~3-min window (~12 attempts), then HONESTLY
-// gives up to the persistent state (the centered ↻ for manual retry). A
-// genuinely-unplayable failure (DRM / unsupported codec / native-ExoPlayer-only)
+// This is an UNATTENDED, always-on wall: a tile that drops must heal itself with
+// no operator present. A RETRYABLE drop (transient network/stream hiccup, was-
+// playing-then-dropped, stall) re-resolves a fresh URL + reconnects on a CAPPED
+// BACKOFF — quick first retries (so a momentary blip recovers in seconds) that
+// settle to a steady ~45s cadence — and keeps doing so INDEFINITELY (never gives
+// up to a dead tile, because the wall has no one to press ↻). A genuinely-
+// unplayable failure (DRM / unsupported codec / native-only / unsupported source)
 // NEVER auto-retries — looping forever on a stream the browser fundamentally
-// can't play is its own bad behaviour (wasted cycles, flicker, never succeeds).
-// These are pure so the classification + the reconnect schedule are unit-tested
-// against the real hls.js/native failure signals.
+// can't play is its own bad behaviour (wasted cycles, flicker, never succeeds);
+// it rests at the honest "on the TV wall" state instead. These are pure so the
+// classification + the backoff schedule are unit-tested against the real hls.js/
+// native failure signals.
 
-/** Fixed reconnect cadence + total window for a RETRYABLE drop. Polling (a steady
- *  interval) suits a transient outage that may clear at any time, better than an
- *  exponential backoff that would wait minutes between late attempts. Named for
- *  tunability. */
-export const VIDEO_RECONNECT_INTERVAL_MS = 15_000;   // reconnect every ~15s
-export const VIDEO_RECONNECT_WINDOW_MS = 180_000;    // for up to a ~3-min window
-export const VIDEO_MAX_RECONNECTS = Math.round(VIDEO_RECONNECT_WINDOW_MS / VIDEO_RECONNECT_INTERVAL_MS); // ~12
+/** Capped-exponential reconnect backoff for a RETRYABLE drop. Quick early retries
+ *  (base 2s, doubling: 2s, 4s, 8s, 16s, 32s) catch a momentary blip fast, then the
+ *  delay settles at the cap (~45s) so a persistent outage is retried calmly and
+ *  indefinitely without hammering the helper/CDN. Named for tunability. */
+export const VIDEO_BACKOFF_BASE_MS = 2_000;    // first retry ~2s (catch a blip fast)
+export const VIDEO_BACKOFF_CAP_MS = 45_000;    // settle at ~45s (calm, indefinite)
+
+/** The backoff delay (ms) for reconnect `attempt` (0-based): base·2^attempt,
+ *  capped. Pure, defensive on a negative/NaN attempt (→ base). */
+export function videoBackoffMs(attempt, base = VIDEO_BACKOFF_BASE_MS, cap = VIDEO_BACKOFF_CAP_MS) {
+  const n = Math.max(0, Math.floor(Number(attempt) || 0));
+  // 2^n grows fast; clamp the exponent so a huge attempt count can't overflow to
+  // Infinity before the Math.min (defensive — the cap would catch it anyway).
+  const factor = n >= 30 ? Infinity : 2 ** n;
+  return Math.min(cap, base * factor);
+}
 
 /**
  * Classify a video failure signal into RETRYABLE (transient — worth a backoff
@@ -887,23 +899,28 @@ export function classifyVideoFailure(kind, details = "") {
   if (k === "networkError" || k === "mediaError" || k === "stall" || k === "native") {
     return { retryable: true, reason: k };
   }
-  // Unknown failure → conservatively retryable, but still BOUNDED by the cap
-  // (videoRetryDecision) so an unknown-but-hopeless stream can't loop forever.
+  // Unknown failure → conservatively treated as retryable, so it reconnects
+  // INDEFINITELY on the capped backoff (the cap bounds the cadence ~45s, NOT the
+  // attempt count) — the unattended-wall self-heal policy. The cost of an
+  // unknown-but-permanently-broken stream is one quiet re-attach per ~45s; it is
+  // never faked-live. Only the explicitly-classified unplayable reasons above
+  // (drm/codec/remux/no-hls/unsupported-source) rest at the honest dead state.
   return { retryable: true, reason: k || "unknown" };
 }
 
 /**
- * Decide what to do after a failure: schedule the next reconnect (a fixed
- * [VIDEO_RECONNECT_INTERVAL_MS] poll) or give up to the honest persistent state.
- * NEVER retries a non-retryable failure (the crux); NEVER retries past
- * `maxRetries` (so a flaky stream can't poll forever — it gives up after the
- * window). Returns { retry, delayMs?, reason }.
+ * Decide what to do after a failure: schedule the next reconnect on the capped
+ * backoff, or rest at the honest persistent state. A RETRYABLE failure retries
+ * INDEFINITELY (the unattended-wall requirement — there is no operator to press
+ * ↻, so the tile must keep trying to heal itself), with the delay growing per
+ * `attempt` up to the ~45s cap. A genuinely-unplayable failure NEVER retries (the
+ * crux): the browser fundamentally can't play it, so it rests at "on the TV wall".
+ * Returns { retry, delayMs?, reason }.
  */
-export function videoRetryDecision(attempt, classification, maxRetries = VIDEO_MAX_RECONNECTS) {
+export function videoRetryDecision(attempt, classification) {
   const c = classification || { retryable: false, reason: "unknown" };
   if (!c.retryable) return { retry: false, reason: c.reason };
-  if (Math.floor(Number(attempt) || 0) >= maxRetries) return { retry: false, reason: "exhausted" };
-  return { retry: true, delayMs: VIDEO_RECONNECT_INTERVAL_MS, reason: c.reason };
+  return { retry: true, delayMs: videoBackoffMs(attempt), reason: c.reason };
 }
 
 // ----- feed source filter (browser-local view pref, mirrors the wall) -----

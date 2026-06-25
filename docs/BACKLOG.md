@@ -114,6 +114,33 @@ stream could go back to HTTPS-everywhere. Deferred: needs cert provisioning/trus
 player side; the HTTP-on-LAN path is the pragmatic, working fix and is not a security issue
 for public video.
 
+## Headless wall — layout normalization + multi-resolution (DEFERRED, the next pass — 2026-06-25)
+
+Reliability landed first (the tiles play — `ARCHITECTURE.md §28`); this is the **presentation
+pass**, deliberately sequenced AFTER so the layout is tuned against a wall that's actually
+full, not one that's mostly fallback cards. Scope:
+
+- **Normalize cell sizing / spacing** — uniform tiles, consistent gutters, no ragged edges.
+- **Feed-column ↔ video-grid fit** as one cohesive composition (the two panes read as a
+  single designed wall, not two independently-sized regions).
+- **Proportion-based / responsive scaling** — no hardcoded px; the wall scales cleanly with
+  the render resolution instead of assuming 1080p geometry.
+- **Configurable render resolution** end-to-end (Xvfb `screen` size + ffmpeg encode +
+  web scaling), surfaced in `/api/wall` and/or `/control/`. **Keep 1080p the default**; 4K
+  is **opt-in** and documented-heavy (the CPU-only renderer is already ≈2 cores at 1080p on
+  the 1920X — see the GPU-passthrough item above; 4K software-x264 + N decoders is a large
+  step up, so it must be a deliberate operator choice, not the default).
+
+## Headless wall — re-resolve cadence on persistent tile failure (minor, 2026-06-25)
+
+The indefinite auto-reload (`§28`) re-resolves a tile's URL by re-reading the latest
+`/api/channels` snapshot on each reattach — which `/app/` polls every 60s. So a tile that
+keeps failing picks up a freshly-rotated FAST URL within ~a minute (well inside the ~45s
+backoff settle). A possible future refinement: on a tile that's failed several times,
+proactively trigger a channel re-poll (or a targeted re-resolve) so a token-expired URL is
+refreshed faster than the 60s cadence. Not needed today (the 60s poll + 45s backoff already
+converge); revisit only if a specific CDN's URL TTL proves shorter than the poll interval.
+
 ## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
 
 The native feed-source filter became a **two-level genre → source filter** in v0.3.0

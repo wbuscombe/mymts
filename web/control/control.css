@@ -59,6 +59,18 @@ a { color: var(--accent); }
 .ctl span { text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
 .grid-note { margin-left: auto; color: var(--muted); font-size: 13px; align-self: center; }
 
+/* Whole-wall force-reload — a deliberate action button. The grid-note keeps
+   margin-left:auto, so it and this button sit together at the row's right edge. */
+.reload-all {
+  align-self: center; cursor: pointer;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 13px; font-size: 13px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.reload-all:hover { background: #232c3d; border-color: var(--accent); }
+.reload-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 select {
   background: var(--panel-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 8px;

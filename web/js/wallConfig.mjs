@@ -11,18 +11,24 @@ import { clampGridDim } from "./render.mjs";
 
 export const WALL_SCHEMA_VERSION = 1;
 
-/** A fresh empty cell. */
-function emptyCell() { return { channel: null, subtitles: false }; }
+/** A non-negative integer reload counter (else 0). Force-reload epochs are
+ *  monotonic counters: a surface bumps one to signal "reload"; the rendered wall
+ *  reattaches when it sees the value INCREASE. Defensive read for the wire. */
+function reloadInt(v) { return Number.isInteger(v) && v >= 0 ? v : 0; }
+
+/** A fresh empty cell. `reload` is the per-cell force-reload epoch (0 = never). */
+function emptyCell() { return { channel: null, subtitles: false, reload: 0 }; }
 
 /** Resize a cells array to exactly `count`, preserving assignments BY INDEX
  *  (pad with empties, truncate the overflow) — native LineupStore behaviour on
- *  a grid-dim change. Returns a new array (never mutates the input). */
+ *  a grid-dim change. The per-cell `reload` epoch rides along by index. Returns a
+ *  new array (never mutates the input). */
 export function resizeCells(cells, count) {
   const src = Array.isArray(cells) ? cells : [];
   const out = [];
   for (let i = 0; i < count; i++) {
     const c = src[i];
-    out.push(c ? { channel: c.channel ?? null, subtitles: c.subtitles === true } : emptyCell());
+    out.push(c ? { channel: c.channel ?? null, subtitles: c.subtitles === true, reload: reloadInt(c.reload) } : emptyCell());
   }
   return out;
 }
@@ -58,8 +64,26 @@ export function normalizeConfig(raw, validSlugs = null) {
     layout: { rows, cols },
     preset: typeof cfg.preset === "string" ? cfg.preset : null,
     audible_cell: audible,
+    reload_epoch: reloadInt(cfg.reload_epoch),
     cells,
   };
+}
+
+/** Bump the WHOLE-WALL force-reload epoch (+1): the rendered wall reattaches
+ *  EVERY video tile when it sees this increase. The "Reload all" action. Pure. */
+export function withWallReload(config) {
+  const cfg = normalizeConfig(config);
+  return { ...cfg, reload_epoch: reloadInt(cfg.reload_epoch) + 1 };
+}
+
+/** Bump ONE cell's force-reload epoch (+1): the rendered wall reattaches just
+ *  that tile when it sees the increase. The per-cell "Reload" action. Pure. */
+export function withCellReload(config, index) {
+  const cfg = normalizeConfig(config);
+  if (index < 0 || index >= cfg.cells.length) return cfg;
+  const cells = cfg.cells.map((c, i) =>
+    i === index ? { ...c, reload: reloadInt(c.reload) + 1 } : c);
+  return { ...cfg, cells };
 }
 
 /** Assign (or clear, slug=null) a cell's channel. Clearing a cell that owns the
@@ -119,13 +143,17 @@ export function withPreset(config, preset, validSlugs) {
   const fill = (Array.isArray(preset.slugs) ? preset.slugs : []).filter((s) => ok.has(s));
   const cells = [];
   for (let i = 0; i < count; i++) {
-    cells.push({ channel: i < fill.length ? fill[i] : null, subtitles: false });
+    cells.push({ channel: i < fill.length ? fill[i] : null, subtitles: false, reload: 0 });
   }
   return {
     schema_version: WALL_SCHEMA_VERSION,
     layout: { rows, cols },
     preset: preset.id ?? null,
     audible_cell: null,
+    // A preset reshapes the grid (fresh cells → per-cell reload resets to 0) but
+    // the WHOLE-WALL reload epoch is monotonic, so carry it forward (resetting it
+    // would make a later "reload all" look like it went backwards → missed).
+    reload_epoch: reloadInt(cfg.reload_epoch),
     cells,
   };
 }

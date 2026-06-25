@@ -17,7 +17,7 @@ import {
 } from "/app/js/render.mjs";
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withAudibleCell,
-  withLayout, withPreset, cellCount,
+  withLayout, withPreset, cellCount, withCellReload, withWallReload,
 } from "/app/js/wallConfig.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
@@ -210,6 +210,16 @@ function renderCell(index) {
   subBtn.addEventListener("click", () => commit(withCellSubtitles(config, index), "subtitles"));
   controls.appendChild(subBtn);
 
+  // Per-cell force-reload: bump this cell's reload epoch so the rendered wall
+  // re-attaches just this tile's player (re-resolving a fresh stream URL) —
+  // recovers a single wedged/dead tile without disturbing the rest of the wall.
+  const reloadBtn = node("button", "pill", "↻ Reload");
+  reloadBtn.type = "button";
+  reloadBtn.disabled = !hasChannel;
+  reloadBtn.title = hasChannel ? "Reload just this tile on the wall" : "Assign a channel first";
+  reloadBtn.addEventListener("click", () => commit(withCellReload(config, index), `reload cell ${index + 1}`));
+  controls.appendChild(reloadBtn);
+
   card.appendChild(controls);
   return card;
 }
@@ -235,6 +245,14 @@ function wire() {
     if (!p) return;
     commit(withPreset(config, p, validSlugs), `preset “${p.name || p.id}”`);
     e.target.value = "";   // it's an action, not a persistent selection
+  });
+  // Whole-wall force-reload: bump the wall reload epoch so the rendered wall
+  // re-attaches EVERY video tile — recovers a wall that's silently degraded
+  // (several wedged tiles) in one tap, the remote analog of /app/'s header ↻.
+  const reloadAll = el("reload-all");
+  if (reloadAll) reloadAll.addEventListener("click", () => {
+    if (!config) return;
+    commit(withWallReload(config), "reload all tiles");
   });
 }
 
