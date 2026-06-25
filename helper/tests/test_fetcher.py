@@ -144,3 +144,7 @@ def test_ssl_context_preserves_verification_and_adds_legacy_cipher() -> None:
     names = {c["name"] for c in _SSL_CONTEXT.get_ciphers()}
     assert "AES256-GCM-SHA384" in names                      # legacy RSA-GCM offered
     assert "AES128-GCM-SHA256" in names
+    # No unauthenticated / PSK / SRP suites are offered — keep the list tight +
+    # the intent unmistakable (they're inert on a callback-less client anyway,
+    # but a future widening of the cipher string must not silently add them).
+    assert not any("PSK" in n or "SRP" in n or "NULL" in n for n in names)

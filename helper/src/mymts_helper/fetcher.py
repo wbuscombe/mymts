@@ -52,13 +52,21 @@ def _build_ssl_context() -> ssl.SSLContext:
     though curl/openssl complete it. Forward secrecy is moot here — the fetcher
     retrieves only PUBLIC HLS manifests / RSS (no secrets or credentials in the
     traffic) — while cert AUTHENTICITY (preserved) is what guards against a fake
-    origin. So we ADD a cipher; we do NOT weaken which certs we trust, and we do
-    NOT disable verification. `AES256-GCM-SHA384`/`AES128-GCM-SHA256` are strong
-    (256/128-bit) and clear SECLEVEL 2's floor; only their lack of PFS kept them
-    out of Python's default list.
+    origin. So we re-enable the RSA-GCM suites; we do NOT weaken which certs we
+    trust, and we do NOT disable verification. `AES256-GCM-SHA384`/
+    `AES128-GCM-SHA256` are strong (256/128-bit) and clear SECLEVEL 2's floor;
+    only their lack of PFS kept them out of Python's default list.
+
+    `DEFAULT:` re-expands to OpenSSL's fuller default (broader than Python's
+    pared list), so we explicitly `!PSK:!SRP` to keep the offered list tight +
+    the intent unmistakable. Those PSK/SRP suites are in any case INERT on this
+    client: a Python `ssl` client never registers a PSK identity
+    (`set_psk_client_callback` is never called) and the module exposes no SRP
+    client API, so neither can be negotiated — a malicious PSK-only server is
+    rejected with a handshake failure, never a cert-validation bypass.
     """
     ctx = ssl.create_default_context()
-    ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
+    ctx.set_ciphers("DEFAULT:!PSK:!SRP:AES256-GCM-SHA384:AES128-GCM-SHA256")
     return ctx
 
 
