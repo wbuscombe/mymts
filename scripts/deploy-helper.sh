@@ -159,6 +159,7 @@ FEED_RETENTION_DAYS=14
 CHANNEL_PROBE_INTERVAL_SECONDS=1800
 WEB_CLIENT_DIR=/app/web
 STREAM_DIR=/stream
+STREAM_HTTP_PORT=8082
 EOF
 
 echo "==> docker compose build --pull + up -d (the full cycle)"

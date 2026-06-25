@@ -72,6 +72,10 @@ services:
       # to the shared mymts-stream volume; the helper serves it at /api/stream
       # (one LAN listener) for VLC / Apple TV. Read-only mount below.
       STREAM_DIR: ${STREAM_DIR:-/stream}
+      # Plain-HTTP, stream-ONLY listener (2026-06-25): a strict tvOS VLC hangs on
+      # the self-signed HTTPS, so the HLS is ALSO served over plain HTTP on this
+      # LAN port (the same hardened /api/stream route; API/control/app stay HTTPS).
+      STREAM_HTTP_PORT: ${STREAM_HTTP_PORT:-8082}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -104,6 +108,9 @@ services:
     # container is still non-root + cap-dropped + read-only-rootfs.
     ports:
       - "8443:8443"
+      # Plain-HTTP HLS stream (stream-only app) for strict LAN players (Apple TV
+      # VLC). LAN-bound; serves ONLY the hardened /api/stream route, no API/keys.
+      - "8082:8082"
     logging:
       driver: json-file
       options:
