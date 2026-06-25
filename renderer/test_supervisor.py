@@ -64,6 +64,23 @@ class StreamFreshness(unittest.TestCase):
         self.assertFalse(sup.is_stream_healthy(self.tmp, now, max_age_seconds=20))
 
 
+class WedgeRestart(unittest.TestCase):
+    def test_no_restart_before_stream_ever_healthy(self):
+        # startup: never healthy yet → don't restart (let it boot)
+        self.assertFalse(sup.stale_stack_restart(None, 1000.0, healthy=False, threshold_s=30))
+
+    def test_no_restart_while_healthy(self):
+        self.assertFalse(sup.stale_stack_restart(900.0, 1000.0, healthy=True, threshold_s=30))
+
+    def test_no_restart_within_threshold(self):
+        # was healthy at t=980, now t=1000 (20s stale) < 30s → tolerate the blip
+        self.assertFalse(sup.stale_stack_restart(980.0, 1000.0, healthy=False, threshold_s=30))
+
+    def test_restart_when_stale_past_threshold(self):
+        # was healthy at t=960, now t=1000 (40s stale) > 30s + processes alive → wedged
+        self.assertTrue(sup.stale_stack_restart(960.0, 1000.0, healthy=False, threshold_s=30))
+
+
 class Backoff(unittest.TestCase):
     def test_exponential_then_capped(self):
         self.assertEqual(sup.next_backoff_seconds(0, base=1, cap=30), 1)

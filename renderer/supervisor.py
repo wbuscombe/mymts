@@ -63,6 +63,33 @@ def is_stream_healthy(
     return age is not None and 0 <= age <= max_age_seconds
 
 
+DEFAULT_STALE_RESTART_S = 30.0
+
+
+def stale_stack_restart(
+    last_fresh_monotonic: float | None,
+    now_monotonic: float,
+    healthy: bool,
+    threshold_s: float = DEFAULT_STALE_RESTART_S,
+) -> bool:
+    """Decide whether a WEDGED-but-alive stack should be force-restarted.
+
+    The supervisor restarts a child that *exits*, but ffmpeg/Chromium can HANG —
+    still running, no longer advancing the stream (e.g. ffmpeg "frames
+    duplicated" + a blocked pulse queue). That is exactly the "please wait
+    forever" symptom for a player, and `poll()` never catches it. So once the
+    stream has been healthy (``last_fresh_monotonic`` set), if it has now been
+    stale (not healthy) longer than ``threshold_s``, the stack is wedged and the
+    runtime restarts it. Pure: the runtime supplies the monotonic clock + the
+    ``healthy`` flag from :func:`is_stream_healthy`, so it is deterministic +
+    unit-testable. Returns False before the stream was ever healthy (don't
+    restart during normal startup) and whenever it's currently healthy.
+    """
+    if healthy or last_fresh_monotonic is None:
+        return False
+    return (now_monotonic - last_fresh_monotonic) > threshold_s
+
+
 def next_backoff_seconds(restart_count: int, base: float = 1.0, cap: float = 30.0) -> float:
     """Exponential backoff for a crashing child: base, 2·base, 4·base … capped.
     `restart_count` is how many times this child has already been restarted (0 →

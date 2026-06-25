@@ -232,11 +232,25 @@ def main() -> int:
         c.start()
 
     log(f"streaming {HELPER_URL} → {STREAM_DIR}/{supervisor.PLAYLIST_NAME}")
+    last_fresh = None   # monotonic time the stream was last HEALTHY (advancing)
     while not _stop:
         # Xvfb is foundational — if it dies, the whole stack is broken; exit so
         # the container restarts cleanly (compose restart: unless-stopped).
         if xvfb.poll() is not None:
             log("Xvfb exited — restarting the container stack")
+            for c in children:
+                c.terminate()
+            return 1
+        # WEDGE detection: ffmpeg/Chromium can hang (alive but the stream stops
+        # advancing — "frames duplicated" / blocked pulse queue), which poll()
+        # never catches and which leaves a player at "please wait". Once the
+        # stream has been healthy, if it goes stale past the threshold, restart
+        # the stack so it self-heals instead of streaming a frozen frame forever.
+        healthy = supervisor.is_stream_healthy(STREAM_DIR, time.time())
+        if healthy:
+            last_fresh = time.monotonic()
+        elif supervisor.stale_stack_restart(last_fresh, time.monotonic(), healthy):
+            log("stream wedged (stale while processes alive) — restarting the container stack")
             for c in children:
                 c.terminate()
             return 1
