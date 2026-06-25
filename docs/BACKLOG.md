@@ -104,6 +104,16 @@ footgun if the URL behavior changes); (c) **read-only-rootfs** for the renderer 
 needs writable dirs — would need a careful overlay/tmpfs layout). None are correctness or
 isolation issues today.
 
+**Stream serving: HTTP for tvOS today; HTTPS-everywhere a future alternative (2026-06-25).**
+The HLS is served over **plain HTTP on `8082`** because Apple TV VLC hangs on the helper's
+**self-signed** HTTPS (it won't prompt to accept; the segments ride the same HTTPS, so they
+stall too — see `ARCHITECTURE.md §27`). HTTP is fine for a LAN-bound public video stream
+(the API + `/control/` + `/app/` stay HTTPS), but a future alternative is a **trusted LAN
+cert** (e.g. an internal CA the Apple TV trusts, or a real cert for a LAN hostname) so the
+stream could go back to HTTPS-everywhere. Deferred: needs cert provisioning/trust on the
+player side; the HTTP-on-LAN path is the pragmatic, working fix and is not a security issue
+for public video.
+
 ## Web-feed-filter parity for News genre groups — conscious deferral (2026-06-23)
 
 The native feed-source filter became a **two-level genre → source filter** in v0.3.0

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(stream): plain-HTTP HLS for Apple TV VLC + self-heal a wedged stream (2026-06-25)
+
+Apple TV VLC hung forever at "please wait" on the stream URL though desktop VLC played
+it and ffprobe validated the HLS. **Diagnosed on the live NAS:** the helper's cert is
+**self-signed** (`curl` without `-k` → "self signed certificate"; the SAN *does* include
+the IP, so it's the self-signed trust, not a mismatch) — a strict tvOS client hangs
+rather than prompting, and the `.ts` segments ride the same HTTPS so they'd stall too;
+desktop VLC is laxer. Content-types + the playlist were already correct/sane.
+
+**Fix:** a LAN video stream needs no TLS, so the helper now ALSO serves the HLS over
+**plain HTTP on `8082`** via a separate minimal app exposing **only** the hardened
+`/api/stream` route — the API + `/control/` + `/app/` stay HTTPS-only. It reuses the same
+symlink-safe serving (the path-traversal hardening is retained — a planted symlink → the
+TLS key still 404s on the HTTP path). The stream routes also answer **HEAD** now (a
+strict player's HEAD-probe got a 405 before). **New Apple-TV URL:**
+`http://<nas>:8082/api/stream/playlist.m3u8`.
+
+Also fixed a secondary "please wait" cause found during diagnosis: ffmpeg/Chromium can
+**hang** (alive but the stream stops advancing), which the supervisor's exit-only restart
+never caught. The supervise loop now **self-heals a wedged stream** — stale past ~30s
+while alive → restart the stack. Helper + renderer only; no native change → no APK.
+
 ## feat(channels): Weather pass — re-add WeatherNation + add WeatherSpy; prune dead cnn-international + c-span (2026-06-24)
 
 Server-authoritative channel cleanup (helper-only; both clients pick up with no rebuild).
