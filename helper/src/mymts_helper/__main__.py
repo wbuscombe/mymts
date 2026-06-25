@@ -25,7 +25,7 @@ import logging
 
 import uvicorn
 
-from .app import create_app
+from .app import create_app, create_stream_app
 from .config import Config
 
 log = logging.getLogger("mymts_helper.entry")
@@ -72,6 +72,24 @@ async def _serve(cfg: Config) -> None:
             "listener_https_configured",
             extra={"port": cfg.https_port, "cert": cfg.ssl_certfile},
         )
+
+    # Plain-HTTP, stream-ONLY listener (2026-06-25). A strict tvOS client (VLC on
+    # Apple TV) hangs forever on the self-signed HTTPS; a LAN video stream needs
+    # no TLS. This serves a SEPARATE minimal app exposing only the hardened
+    # /api/stream route — the API / /control/ / /app/ stay HTTPS-only on the main
+    # app above. No lifespan (no pollers; it only reads the shared stream volume).
+    if cfg.stream_http_port and cfg.stream_dir:
+        stream_app = create_stream_app(cfg.stream_dir)
+        stream_cfg = uvicorn.Config(
+            app=stream_app,
+            host="0.0.0.0",  # noqa: S104 — Docker NAT terminates here; host port is LAN-only
+            port=cfg.stream_http_port,
+            log_config=None,
+            access_log=False,
+            lifespan="off",
+        )
+        servers.append(uvicorn.Server(stream_cfg))
+        log.info("listener_stream_http_configured", extra={"port": cfg.stream_http_port})
 
     if not servers:
         raise RuntimeError(

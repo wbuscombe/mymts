@@ -95,6 +95,14 @@ class Config:
     # mounts read-only. OFF by default — unset → no /api/stream route, the helper
     # is byte-identical to its prior self.
     stream_dir: str | None = None
+    # Plain-HTTP listener for the HLS stream ONLY (2026-06-25). A strict tvOS
+    # client (VLC on Apple TV) hangs forever on the helper's SELF-SIGNED HTTPS
+    # rather than prompting to accept it — and the .ts segments ride the same
+    # HTTPS, so they'd stall too. A LAN video stream needs no TLS, so when set
+    # (with stream_dir) the helper ALSO serves the SAME hardened /api/stream route
+    # over plain HTTP on this port. The API + /control/ + /app/ stay HTTPS-only on
+    # the main listener. LAN-bound. Unset → no extra listener (unchanged).
+    stream_http_port: int | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -147,6 +155,7 @@ class Config:
             web_client_dir=web_dir,
             profiles_file=_opt_str("PROFILES_FILE"),
             stream_dir=_opt_str("STREAM_DIR"),
+            stream_http_port=_opt_int("STREAM_HTTP_PORT"),
         )
 
     def has_https(self) -> bool:

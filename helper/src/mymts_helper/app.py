@@ -245,3 +245,33 @@ def create_app(
         },
     )
     return app
+
+
+def create_stream_app(stream_dir: str) -> FastAPI:
+    """A MINIMAL app exposing ONLY the hardened ``/api/stream`` route, for a
+    plain-HTTP LAN listener.
+
+    A strict tvOS client (VLC on Apple TV) hangs forever on the helper's
+    SELF-SIGNED HTTPS rather than prompting to accept it, and the ``.ts`` segments
+    ride the same HTTPS so they stall too — a LAN video stream needs no TLS. So
+    the entry point also serves the HLS over plain HTTP via this app. It is
+    deliberately MINIMAL: the API, ``/control/`` and ``/app/`` are NOT included —
+    they stay HTTPS-only on the main app. It reuses the SAME symlink-safe
+    ``stream_router`` (one hardened serving path; no second, divergent one to
+    drift / reintroduce the traversal hole the review closed). No DB, no pollers,
+    no lifespan — it only reads the shared read-only stream volume.
+    """
+    app = FastAPI(
+        title="MyMTS Stream",
+        version="stream",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.include_router(stream_router(stream_dir))
+
+    @app.get("/health")
+    def health() -> dict[str, object]:
+        return {"status": "ok", "stream": True}
+
+    return app

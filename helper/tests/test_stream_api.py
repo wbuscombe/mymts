@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mymts_helper.app import create_app
+from mymts_helper.app import create_app, create_stream_app
 from mymts_helper.config import Config
 
 
@@ -119,3 +119,70 @@ def test_playlist_symlink_escape_is_refused(tmp_path: Path):
     r = _client(tmp_path, stream_dir=str(sd)).get("/api/stream/playlist.m3u8")
     assert r.status_code == 503                      # treated as not-ready
     assert "TOP-SECRET-PRIVATE-KEY" not in r.text     # never serves the target
+
+
+def test_head_on_stream_returns_200_not_405(tmp_path: Path):
+    # Strict players (tvOS) may HEAD-probe before fetching; GET+HEAD so the probe
+    # gets 200 + the right content-type (headers only), never a 405 that stalls it.
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:4.0,\nseg_00001.ts\n")
+    (sd / "seg_00001.ts").write_bytes(b"\x47" + b"\x00" * 187)
+    client = _client(tmp_path, stream_dir=str(sd))
+    h = client.head("/api/stream/playlist.m3u8")
+    assert h.status_code == 200
+    assert h.headers["content-type"].startswith("application/vnd.apple.mpegurl")
+    assert h.content == b""   # HEAD → headers only, no body
+    hs = client.head("/api/stream/seg_00001.ts")
+    assert hs.status_code == 200
+    assert hs.headers["content-type"].startswith("video/mp2t")
+
+
+# ---- the stream-only HTTP app (for the plain-HTTP LAN listener) ----
+
+def _stream_client(tmp_path: Path) -> tuple[TestClient, Path]:
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    return TestClient(create_stream_app(str(sd))), sd
+
+
+def test_stream_app_serves_only_the_stream(tmp_path: Path):
+    # The plain-HTTP listener's app must expose ONLY /api/stream (+ /health) —
+    # NOT the API / channels / control / app (those stay HTTPS-only).
+    client, sd = _stream_client(tmp_path)
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n")
+    assert client.get("/api/stream/playlist.m3u8").status_code == 200
+    assert client.get("/health").json()["stream"] is True
+    # the rest of the surface is absent on this minimal app
+    assert client.get("/api/channels").status_code == 404
+    assert client.get("/api/wall").status_code == 404
+    assert client.get("/api/feed").status_code == 404
+
+
+def test_stream_app_reuses_the_symlink_guard(tmp_path: Path):
+    # The SAME hardened serving — a planted symlink is refused on the HTTP app too,
+    # so the isolation guarantee survives the new (plain-HTTP) serving path.
+    client, sd = _stream_client(tmp_path)
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n")
+    secret = tmp_path / "helper.key"
+    secret.write_text("TOP-SECRET-PRIVATE-KEY")
+    (sd / "seg_00001.ts").symlink_to(secret)
+    r = client.get("/api/stream/seg_00001.ts")
+    assert r.status_code == 404
+    assert "TOP-SECRET-PRIVATE-KEY" not in r.text
+
+
+def test_stream_app_head_and_media_types(tmp_path: Path):
+    client, sd = _stream_client(tmp_path)
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n")
+    (sd / "seg_00001.ts").write_bytes(b"\x47" + b"\x00" * 187)
+    assert client.head("/api/stream/playlist.m3u8").status_code == 200
+    assert client.get("/api/stream/seg_00001.ts").headers["content-type"].startswith("video/mp2t")
+
+
+def test_config_reads_stream_http_port(monkeypatch):
+    from mymts_helper.config import Config
+    monkeypatch.setenv("STREAM_HTTP_PORT", "8082")
+    assert Config.from_env().stream_http_port == 8082
+    monkeypatch.delenv("STREAM_HTTP_PORT", raising=False)
+    assert Config.from_env().stream_http_port is None

@@ -53,7 +53,12 @@ def get_router(stream_dir: str) -> APIRouter:
             raise HTTPException(status_code=404, detail="not found") from e
         return FileResponse(real, media_type=media_type, headers=_NO_CACHE)
 
-    @router.get("/playlist.m3u8")
+    # GET + HEAD: some strict players (incl. tvOS clients) HEAD-probe a manifest
+    # / segment before fetching; a GET-only route 405s the probe and can stall
+    # them. Starlette's FileResponse sends headers-only on a HEAD, so one handler
+    # serves both correctly (the symlink/traversal guard in _serve applies to
+    # HEAD identically).
+    @router.api_route("/playlist.m3u8", methods=["GET", "HEAD"])
     def playlist() -> FileResponse:
         f = base / PLAYLIST_NAME
         # Absent (or a broken/symlink shape) → the renderer hasn't produced a
@@ -62,7 +67,7 @@ def get_router(stream_dir: str) -> APIRouter:
             raise HTTPException(status_code=503, detail="stream not ready")
         return _serve(PLAYLIST_NAME, "application/vnd.apple.mpegurl")
 
-    @router.get("/{segment}")
+    @router.api_route("/{segment}", methods=["GET", "HEAD"])
     def segment(segment: str) -> FileResponse:
         if not _SEGMENT_RE.fullmatch(segment):
             raise HTTPException(status_code=404, detail="not found")
