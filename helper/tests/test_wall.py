@@ -325,6 +325,49 @@ def test_clamp_reload_monotonic_passes_render_through():
     assert clamped["render"] == {"resolution": "2160p"}
 
 
+# --- partial-merge (PATCH) write: absent preserves, present overrides ---
+
+
+def test_merge_preserves_omitted_top_level_fields():
+    stored = store.validate_wall_config(
+        _good_config(reload_epoch=5, render={"resolution": "2160p"}), set(VALID)
+    )
+    # incoming touches only `preset` — everything else must be preserved
+    merged = store.merge_wall_config(stored, {"preset": "weather"})
+    assert merged["preset"] == "weather"                    # overridden
+    assert merged["reload_epoch"] == 5                      # preserved (omitted)
+    assert merged["render"] == {"resolution": "2160p"}      # preserved (omitted)
+    assert merged["cells"] == stored["cells"]               # preserved (omitted)
+    assert merged["layout"] == stored["layout"]             # preserved (omitted)
+
+
+def test_merge_cells_preserves_omitted_per_cell_fields():
+    stored = store.validate_wall_config(_good_config(), set(VALID))
+    stored["cells"][0]["reload"] = 4
+    # an /app/-style cells write: channel + subtitles only, NO per-cell reload
+    incoming = {"cells": [
+        {"channel": "cnn", "subtitles": True},
+        {"channel": None}, {"channel": None}, {"channel": None},
+    ]}
+    merged = store.merge_wall_config(stored, incoming)
+    assert merged["cells"][0]["channel"] == "cnn"           # overridden
+    assert merged["cells"][0]["subtitles"] is True          # overridden
+    assert merged["cells"][0]["reload"] == 4                # preserved (omitted per-cell)
+
+
+def test_merge_explicit_null_clears_present_field():
+    # absent = preserve, but an EXPLICIT null is a PRESENT value → it overrides
+    stored = store.validate_wall_config(_good_config(audible_cell=0), set(VALID))
+    assert store.merge_wall_config(stored, {"audible_cell": None})["audible_cell"] is None
+
+
+def test_merge_non_dict_passes_through_for_the_validator_to_reject():
+    stored = store.validate_wall_config(_good_config(), set(VALID))
+    assert store.merge_wall_config(stored, [1, 2, 3]) == [1, 2, 3]
+    # and a non-list cells value rides through untouched (validator rejects it)
+    assert store.merge_wall_config(stored, {"cells": "nope"})["cells"] == "nope"
+
+
 def test_put_round_trips_the_resolution(tmp_path: Path):
     client = _client(tmp_path)
     payload = {
@@ -340,9 +383,9 @@ def test_put_round_trips_the_resolution(tmp_path: Path):
 
 
 def test_put_omitting_render_preserves_the_stored_resolution(tmp_path: Path):
-    # REGRESSION: /app/'s hand-built PUT writes only channels/grid/audio (no render);
-    # the helper must CARRY FORWARD the stored resolution, not default it to 1080p
-    # — otherwise any /app/ edit silently reverts a /control/-set 4K wall.
+    # REGRESSION (now via the partial-merge, not a per-field carry-forward): an
+    # /app/-style PUT that writes only channels/grid/audio (no render) must PRESERVE
+    # the stored resolution, never silently revert a /control/-set 4K wall to 1080p.
     client = _client(tmp_path)
     base = {
         "schema_version": store.WALL_SCHEMA_VERSION,
@@ -358,6 +401,78 @@ def test_put_omitting_render_preserves_the_stored_resolution(tmp_path: Path):
     # but /control/ can still explicitly downgrade
     back = client.put("/api/wall", json={**base, "render": {"resolution": "1080p"}}).json()
     assert back["render"] == {"resolution": "1080p"}
+
+
+def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
+    """THE CLASS-KILLER, generalized: establish a fully-customized wall, then for
+    EVERY top-level field PUT a payload that omits ONLY that field and assert the
+    stored value survives. Iterates the config's own keys, so a NEW field added to
+    the schema is automatically covered by this invariant — no per-field defence
+    needed. This is what makes the reload_epoch / per-cell-reload / render clobber
+    class structurally impossible to recur."""
+    client = _client(tmp_path)
+    full = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 2},
+        "preset": "news",
+        "audible_cell": 0,
+        "reload_epoch": 7,
+        "render": {"resolution": "2160p"},
+        "cells": [
+            {"channel": "bbc-news", "subtitles": True, "reload": 3},
+            {"channel": "cnn", "subtitles": False, "reload": 0},
+        ],
+    }
+    client.put("/api/wall", json=full)
+    stored = client.get("/api/wall").json()
+    stored.pop("stored", None)
+    # sanity: every field round-tripped non-default so a revert WOULD be detectable
+    assert stored["render"] == {"resolution": "2160p"} and stored["reload_epoch"] == 7
+
+    for field in list(stored.keys()):
+        partial = {k: v for k, v in stored.items() if k != field}
+        got = client.put("/api/wall", json=partial)
+        assert got.status_code == 200, f"omitting {field!r}: {got.text}"
+        body = got.json()
+        assert body[field] == stored[field], f"omitting {field!r} clobbered it"
+    # NOTE: for `reload_epoch` (and per-cell `reload`) the preservation is ALSO
+    # backstopped by clamp_reload_monotonic, so this end-to-end invariant can't
+    # alone prove the MERGE preserves them — that merge-isolated coverage is
+    # test_merge_preserves_omitted_top_level_fields (pure, no clamp). Every other
+    # field here is merge-only.
+
+
+def test_put_omitting_per_cell_field_preserves_it(tmp_path: Path):
+    # the per-cell sub-class, end-to-end. The write sends ONLY `channel`, omitting
+    # both `subtitles` and `reload`. `subtitles` preservation proves the MERGE in
+    # isolation (the clamp doesn't touch subtitles); `reload` preservation is the
+    # merge + the clamp backstop.
+    client = _client(tmp_path)
+    full = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 1}, "preset": "news", "audible_cell": None,
+        "cells": [{"channel": "bbc-news", "subtitles": True, "reload": 4}],
+    }
+    client.put("/api/wall", json=full)
+    got = client.put("/api/wall", json={**full, "cells": [{"channel": "cnn"}]}).json()
+    assert got["cells"][0]["channel"] == "cnn"          # overridden
+    assert got["cells"][0]["subtitles"] is True         # PRESERVED (merge-only — clamp-free field)
+    assert got["cells"][0]["reload"] == 4               # preserved (merge + clamp)
+
+
+def test_partial_write_rejects_an_inconsistent_merge(tmp_path: Path):
+    # post-merge validation still applies: a layout change with no matching cells
+    # leaves the stored (mismatched-count) cells → rejected, not half-applied.
+    client = _client(tmp_path)
+    base = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 2, "cols": 2}, "preset": "news", "audible_cell": None,
+        "cells": [{"channel": None}] * 4,
+    }
+    client.put("/api/wall", json=base)
+    r = client.put("/api/wall", json={"layout": {"rows": 1, "cols": 1}})  # no cells
+    assert r.status_code == 422
+    assert "rows*cols" in r.json()["detail"]
 
 
 def test_default_config_fills_from_news_preset_and_is_valid():

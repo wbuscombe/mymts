@@ -38,6 +38,7 @@ as the playlist profiles loader.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import tempfile
@@ -231,6 +232,61 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         "render": render,
         "cells": cells,
     }
+
+
+def _merge_cells(
+    stored_cells: list[Any], incoming_cells: list[Any]
+) -> list[dict[str, Any]]:
+    """Merge an incoming cells array onto the stored one BY INDEX: the incoming
+    length wins (a grid resize), and each incoming cell's PROVIDED fields override
+    the stored cell at that index while its OMITTED fields are preserved. A new
+    index (grid grew) has no stored counterpart, so its omitted fields fall to the
+    validator's defaults. A non-dict incoming cell passes through untouched so the
+    post-merge validator rejects it with a clear message. Pure."""
+    out: list[dict[str, Any]] = []
+    for i, cell in enumerate(incoming_cells):
+        if not isinstance(cell, dict):
+            out.append(cell)
+            continue
+        stored_cell = stored_cells[i] if i < len(stored_cells) else None
+        base = dict(stored_cell) if isinstance(stored_cell, dict) else {}
+        base.update(cell)
+        out.append(base)
+    return out
+
+
+def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
+    """**PATCH / partial-merge** an incoming wall config onto the stored one, the
+    structural defence against the partial-write clobber class: a write that OMITS
+    a field PRESERVES the stored value; a write that PROVIDES a field overrides it.
+
+    Two levels, so no client can clobber a field it didn't send at EITHER level:
+      - top-level: a key present in ``incoming`` overrides; an ABSENT key keeps the
+        stored value (so ``reload_epoch`` / ``render`` / any future field survive an
+        ``/app/`` edit that doesn't mention them);
+      - ``cells`` (when provided as a list): merged per-index by :func:`_merge_cells`
+        (so a per-cell field like ``reload`` survives a cells write that omits it).
+
+    Semantics: **absent = preserve, explicit null = set** (e.g. ``audible_cell:
+    null`` to mute, ``channel: null`` to clear a cell — both are PRESENT keys, so
+    they override). The merged result is returned UNVALIDATED; the caller validates
+    it (post-merge), so an inconsistent merge (e.g. a layout change without matching
+    cells) is still rejected by the normal rules. A non-dict ``incoming`` is
+    returned as-is for the validator to reject. Pure — never mutates the inputs.
+    """
+    if not isinstance(incoming, dict):
+        return incoming
+    # Deep-copy so the result never ALIASES the stored config's nested objects
+    # (an omitted `layout` / `render` / `cells` would otherwise share the stored
+    # object). The caller validates the result into a fresh config anyway, but a
+    # pure function shouldn't hand back structure aliased to its input.
+    merged = copy.deepcopy(stored)
+    for key, value in incoming.items():
+        if key == "cells" and isinstance(value, list):
+            merged["cells"] = _merge_cells(stored.get("cells") or [], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
 
 def clamp_reload_monotonic(

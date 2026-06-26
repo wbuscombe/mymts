@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## refactor(helper,web): wall-config writes are partial-merge (PATCH) — kill the partial-write clobber class (2026-06-26)
+
+The same bug was patched THREE times: `reload_epoch`, per-cell `reload`, and `render` were each
+silently reverted by an `/app/`-side write that didn't echo the field, and each was fixed
+field-by-field (client-echo + helper carry-forward). That's whack-a-mole on a class — the next
+config field would bite a fourth time. **Killed the class structurally.**
+
+- **Server-side partial-merge (`store.merge_wall_config`).** `PUT /api/wall` now MERGES the
+  incoming fields onto the stored config (PATCH semantics): a provided field overrides, an
+  **omitted field is preserved**. Two levels — top-level fields and per-cell fields (merged by
+  index) — so no client can clobber a field it didn't send at either level, and any **future
+  field is safe by default**. The merged result is validated (post-merge), so an inconsistent
+  merge (e.g. a layout change with no matching cells) is still rejected by the normal rules.
+  **Absent = preserve, explicit `null` = set** (e.g. `audible_cell: null` to mute).
+- **Retired the per-field carry-forward.** Removed the helper's `render` carry-forward special-
+  case and `/app/`'s field echoes (`lastRenderResolution`, the `reload_epoch` / `render` /
+  per-cell-`reload` echoes in `buildWallConfig`, and `seedReloadBaseline`) — the merge subsumes
+  them. `/app/` now sends ONLY the fields it owns (layout, preset, audible_cell, cells'
+  channel+subtitles); the merge preserves the rest.
+- **Kept** the `reload_epoch` monotonic clamp (`clamp_reload_monotonic`) — a separate invariant
+  (counters never rewind), and `normalizeConfig` / `withResolution` (needed for `/control/` to
+  SET render/reload). The reload-DETECTION path (`applyReloadSignal`) is unchanged; its baseline
+  now comes from its own first-hydrate branch rather than the retired seed.
+- **Generalized invariant test** — a write that omits ANY field preserves it, iterated over the
+  config's own keys, so a new field is automatically covered (the class can't recur).
+
+Verified live: an `/app/` edit that omits `render` / `reload_epoch` / per-cell `reload` preserves
+all three (incl. a non-default 4K render); `/control/` still applies a change; reload stays
+monotonic (a rewind to 0 clamped to 7). Helper + web only. No native change → no APK; PIA / other
+containers untouched.
+
 ## feat(web,renderer): responsive wall scale + normalized layout + configurable render resolution (1080p / 4K) (2026-06-25)
 
 A presentation pass on the rendered wall, sequenced after the reliability fix so the layout

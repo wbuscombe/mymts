@@ -48,24 +48,23 @@ def get_router(db_path: Path, data_dir: str) -> APIRouter:
     @router.put("")
     def put_wall(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         slugs = _valid_slugs()
+        # PARTIAL-MERGE (PATCH) write: merge the incoming fields onto the stored
+        # config so a write that OMITS a field PRESERVES it — no client can clobber
+        # a field it doesn't know about, and any future field is safe by default.
+        # This is the structural fix for the clobber class that bit reload_epoch,
+        # per-cell reload, and render one by one. Validation runs on the MERGED
+        # result, so an inconsistent merge is still rejected by the normal rules.
+        existing, _ = store.load_wall_config(data_dir, slugs)
+        merged = store.merge_wall_config(existing, payload)
         try:
-            config = store.validate_wall_config(payload, set(slugs))
+            config = store.validate_wall_config(merged, set(slugs))
         except store.WallConfigError as e:
             # 422: the body is well-formed JSON but fails the wall contract.
             raise HTTPException(status_code=422, detail=str(e)) from e
-        # Force-reload counters are MONOTONIC — never let a write rewind one below
-        # the stored value (e.g. an /app/ edit that echoed a stale-lower epoch
-        # before its first hydrate must not undo a /control/ "reload all"). This is
-        # the authoritative guard; the clients also avoid sending a stale value.
-        existing, _ = store.load_wall_config(data_dir, slugs)
+        # The reload counters are MONOTONIC — a separate invariant from the merge:
+        # never let a write DECREASE one below the stored value (an explicit
+        # stale-lower bump must not undo a /control/ "reload all").
         config = store.clamp_reload_monotonic(config, existing)
-        # CARRY-FORWARD the render resolution when the client OMITS it: /app/'s
-        # hand-built PUT writes only channels/grid/audio and has no `render` key, so
-        # without this the validator's default (1080p) would silently revert a
-        # /control/-set 4K wall on any /app/ edit. /control/ always sends render
-        # explicitly (so it can still change it); only an OMISSION is preserved.
-        if payload.get("render") is None:
-            config["render"] = existing["render"]
         store.save_wall_config(data_dir, config)
         return _payload(config, True)
 

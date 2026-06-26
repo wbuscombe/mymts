@@ -6,6 +6,17 @@ For each entry: **What** (one line), **Why-not-now** (which Vision principle def
 
 ---
 
+## ~~Wall-config partial-write clobber class~~ — CLOSED structurally (2026-06-26)
+
+`reload_epoch`, per-cell `reload`, and `render` were each silently reverted by an `/app/`-side
+write that didn't echo the field, and each was patched field-by-field. Killed the class:
+`PUT /api/wall` is now a **partial-merge (PATCH)** — an omitted field is preserved, so no client
+can clobber a field it didn't send and any future field is safe by default (`ARCHITECTURE.md §30`).
+**Caveat for future clients:** the merge is absent-preserves, NOT auto-reconcile — because of the
+`layout`↔`cells` length coupling, a grid resize must send BOTH `layout` and a matching `cells`
+(a layout-only PATCH is rejected post-merge by the `rows*cols` rule). The `wallConfig.mjs`
+transforms already do this; a hand-built client must too.
+
 ## Deferred from v1 (per `BUILD-PROMPT.md §9` and `04-TECHNICAL-APPROACH.md §5`)
 
 | What | Why-not-now | Reconsider when |

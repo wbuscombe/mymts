@@ -528,24 +528,15 @@ let wallStored = false;
 let cellSubtitles = {};          // { cellIndex: true } — per-cell subtitle state (native captionsOnSlots parity)
 let lastWallEditAt = 0;          // timestamp of the last LOCAL edit (the re-hydration grace window)
 
-// Force-reload epochs mirrored from the server config: /control/ bumps these
-// (whole-wall `reload_epoch`, per-cell `reload`) to make this rendered wall
-// reattach a tile's player with NO channel change. We remember the last-seen
-// values so we (a) reattach only when one INCREASES (never on a routine poll)
-// and (b) echo them back unchanged in buildWallConfig, so an /app/-side edit
-// doesn't rewind the server's monotonic counters (which would make a subsequent
-// /control/ reload look like it went backwards and get missed). The baseline is
-// seeded from the FIRST server read (seedReloadBaseline) so the echo is never
-// 0-from-null; the helper ALSO clamps the counters monotonically on write
-// (store.clamp_reload_monotonic), so the invariant holds even against a stale
-// PUT — defense in depth, the helper being authoritative.
-let lastReloadEpoch = null;      // null until the first server read seeds it (seedReloadBaseline)
+// Force-reload DETECTION state: /control/ bumps the config's `reload_epoch` /
+// per-cell `reload` to make this rendered wall reattach a tile's player with NO
+// channel change. We remember the last-seen values so applyReloadSignal reattaches
+// only when one INCREASES (never on a routine poll). This is purely for detection
+// — /app/ no longer echoes these back on write: the server's partial-merge
+// preserves any field /app/ omits, and the helper's monotonic clamp guards the
+// counters, so /app/ doesn't need to carry them forward itself.
+let lastReloadEpoch = null;      // null until applyReloadSignal adopts the first hydrate as baseline
 let lastCellReloads = [];        // per-cell reload epochs, by index
-// The render resolution is owned by /control/ (the renderer reads it) — /app/ only
-// MIRRORS the last-seen server value so buildWallConfig can echo it. Without this,
-// an /app/-side edit (pick/preset/grid/audio) would PUT a payload with no `render`,
-// and the helper would default it back to 1080p — silently reverting a 4K wall.
-let lastRenderResolution = "1080p";
 
 /** Whether captions/subtitles are ON for a given cell. Per-cell when a config
  *  is stored (native per-slot model); else the wall-wide settings toggle. */
@@ -554,14 +545,15 @@ function cellCaptionsOn(index) {
 }
 
 /** Build the server wall config from /app/'s CURRENT state (assignments + grid +
- *  the audible cell + per-cell subtitles) — the shape PUT to /api/wall. */
+ *  the audible cell + per-cell subtitles) — the shape PUT to /api/wall. We send
+ *  ONLY the fields /app/ owns: the server's partial-merge (PATCH) write preserves
+ *  every OMITTED field (`reload_epoch`, `render`, per-cell `reload`, and any future
+ *  field /app/ doesn't manage), so /app/ can never clobber what it didn't send. */
 function buildWallConfig() {
   const layout = gridConfig();
   const cells = [];
   for (let i = 0; i < layout.count; i++) {
-    // Echo each cell's last-seen reload epoch so an edit here never rewinds a
-    // /control/ per-cell reload counter (monotonic; default 0).
-    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true, reload: lastCellReloads[i] || 0 });
+    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true });
   }
   const audible = (audibleIndex >= 0 && audibleIndex < layout.count && cells[audibleIndex].channel)
     ? audibleIndex : null;
@@ -570,8 +562,6 @@ function buildWallConfig() {
     layout: { rows: layout.rows, cols: layout.cols },
     preset: prefs.activePreset || null,
     audible_cell: audible,
-    reload_epoch: lastReloadEpoch || 0,   // echo (don't rewind) the whole-wall epoch
-    render: { resolution: lastRenderResolution || "1080p" },   // echo (don't revert) the resolution
     cells,
   };
 }
@@ -665,35 +655,10 @@ async function pollWall() {
   try {
     const wall = await api.wall();
     wallStored = wall.stored === true;
-    // Mirror the server's render resolution on EVERY read (it's owned by /control/,
-    // not monotonic — just track the latest) so buildWallConfig echoes it back and
-    // an /app/ edit can't revert it. Runs before the early returns below.
-    const res = wall && wall.render && wall.render.resolution;
-    if (res === "1080p" || res === "2160p") lastRenderResolution = res;
-    // Seed the force-reload baseline from the FIRST server read we ever see —
-    // even a non-stored default, or a poll inside the post-edit grace window —
-    // BEFORE the early returns below. Otherwise lastReloadEpoch stays null until
-    // the first hydrate, and an /app/ edit in that window would echo
-    // reload_epoch:0 via buildWallConfig and REWIND the server's counter (the
-    // "never rewinds" guarantee). Once seeded it's left alone; applyReloadSignal
-    // owns it thereafter.
-    seedReloadBaseline(wall);
     if (!wallStored) return;                                   // standalone default — keep local behaviour
     if (Date.now() - lastWallEditAt < WALL_EDIT_GRACE_MS) return;   // a local edit is settling
     hydrateFromWall(normalizeConfig(wall));
   } catch { /* helper unreachable — keep the last good wall */ }
-}
-
-/** Establish the reload-epoch baseline from the first server read, so an /app/
- *  edit before the first hydrate echoes the server's REAL epoch (not 0-from-null)
- *  and can't rewind a /control/-bumped counter. Idempotent — only the first read
- *  (lastReloadEpoch === null) seeds; later reads are owned by applyReloadSignal. */
-function seedReloadBaseline(wall) {
-  if (lastReloadEpoch !== null) return;
-  lastReloadEpoch = Number.isInteger(wall && wall.reload_epoch) ? wall.reload_epoch : 0;
-  lastCellReloads = Array.isArray(wall && wall.cells)
-    ? wall.cells.map((c) => (Number.isInteger(c && c.reload) ? c.reload : 0))
-    : [];
 }
 
 async function pollChannels() {
