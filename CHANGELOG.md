@@ -29,11 +29,14 @@ and to offset zerolatency's lower compression efficiency. The resolution-bound g
 unchanged (sustainable resolutions ≤1080p already get the deep 1024 queue; only 4K gets the
 32-frame OOM guard). 1080p verified smooth post-tune: 300/300 unique, CFR 30, no dup/drop warnings.
 
-**The sustainable-resolution envelope on this NAS (no GPU), render-bound by software compositing
-(∝ canvas pixels):** 1080p (2.1 Mpx) → ~30fps **smooth**; 1440p (3.7 Mpx) → ~20fps marginal;
-1800p (5.8 Mpx) → ~14fps; 4K (8.3 Mpx) → ~10fps **not smooth** (1080p + 4K measured, the middle
-interpolated). **1080p is the smooth ceiling.** Higher resolutions are choppy regardless of
-encode tuning — the real lever is **GPU passthrough** (hardware compositing/decode), a separate,
+**The sustainable-resolution envelope on this NAS (no GPU), render-bound** (the encoder is not the
+limit): software render time per frame ≈ linear in canvas pixels + a fixed floor, so fps falls
+**sublinearly** (4× the pixels cost only ~3× the time, measured). 1080p (2.1 Mpx) → ~30fps
+**smooth**; 1440p (3.7 Mpx) → ~20fps marginal; 1800p (5.8 Mpx) → ~14fps; 4K (8.3 Mpx) → ~10fps
+**not smooth** (1080p + 4K **measured**, the middle **interpolated** on the affine render-time fit).
+**1080p is the smooth ceiling.** Higher resolutions are choppy regardless of encode tuning — the
+**dominant lever is GPU passthrough** (hardware compositing/decode; reducing tile count is a
+secondary lever, but it was choppy even at 2×2 so the canvas resolution dominates), a separate,
 bigger lift named honestly in BACKLOG rather than papered over. This envelope is the honest input
 to the resolution-freedom pass next (offer ≤1080p as smooth; annotate higher as heavy/needs-GPU).
 
