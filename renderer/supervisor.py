@@ -31,9 +31,11 @@ SEGMENT_SUFFIX = ".ts"
 # blow the real-time frame budget and wedge the stream). 1080p is the default.
 DEFAULT_RESOLUTION = "1080p"
 RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2160p": (3840, 2160)}
-# resolution → (video bitrate, vbv bufsize). bufsize ~= 2x bitrate so a 4K keyframe
-# isn't VBV-clipped. 1080p keeps today's 6M/12M exactly.
-RENDER_BITRATES = {"1080p": ("6M", "12M"), "2160p": ("16M", "32M")}
+# resolution → (video bitrate, vbv bufsize). bufsize ~= 2x bitrate so a keyframe
+# isn't VBV-clipped. Sized for the wall's MOTION (a continuous full-width ticker
+# crawl + N video tiles) and to offset -tune zerolatency's lower compression
+# efficiency (no B-frames/lookahead), so motion isn't crushed into blocky judder.
+RENDER_BITRATES = {"1080p": ("8M", "16M"), "2160p": ("20M", "40M")}
 
 
 def normalize_resolution(res: object) -> str:

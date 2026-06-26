@@ -124,9 +124,9 @@ class RenderResolution(unittest.TestCase):
         self.assertEqual(sup.resolution_to_dimensions("nonsense"), (1920, 1080))
 
     def test_bitrate_scales_with_resolution(self):
-        self.assertEqual(sup.resolution_to_bitrate("1080p"), ("6M", "12M"))   # unchanged from today
-        self.assertEqual(sup.resolution_to_bitrate("2160p"), ("16M", "32M"))  # heavier 4K encode
-        self.assertEqual(sup.resolution_to_bitrate("bogus"), ("6M", "12M"))   # fallback
+        self.assertEqual(sup.resolution_to_bitrate("1080p"), ("8M", "16M"))   # motion headroom
+        self.assertEqual(sup.resolution_to_bitrate("2160p"), ("20M", "40M"))  # heavier 4K encode
+        self.assertEqual(sup.resolution_to_bitrate("bogus"), ("8M", "16M"))   # fallback → 1080p
 
     def test_resolutions_are_16_9(self):
         for w, h in sup.RENDER_RESOLUTIONS.values():
@@ -139,6 +139,35 @@ class RenderResolution(unittest.TestCase):
         self.assertEqual(sup.grab_queue_size(3840), 32)
         # the bound holds for anything >= 4K width
         self.assertEqual(sup.grab_queue_size(4096), 32)
+
+
+class EncodePipeline(unittest.TestCase):
+    """Guard the real-time encode flags (the smoothness contract) in run.ffmpeg_cmd."""
+
+    def _cmd(self):
+        import run  # safe to import: module-level is config only, no side effects
+        return run.ffmpeg_cmd()
+
+    def _adjacent(self, cmd, flag, value):
+        # assert `flag value` appear consecutively in the argv
+        for i, tok in enumerate(cmd[:-1]):
+            if tok == flag and cmd[i + 1] == value:
+                return True
+        return False
+
+    def test_realtime_flags_present(self):
+        cmd = self._cmd()
+        self.assertTrue(self._adjacent(cmd, "-tune", "zerolatency"), "missing -tune zerolatency")
+        self.assertTrue(self._adjacent(cmd, "-fps_mode", "cfr"), "missing -fps_mode cfr (CFR)")
+        self.assertTrue(self._adjacent(cmd, "-c:v", "libx264"))
+        # CFR rate pinned to the configured FPS
+        import run
+        self.assertTrue(self._adjacent(cmd, "-r", str(run.FPS)))
+
+    def test_grab_queue_matches_resolution(self):
+        import run
+        cmd = self._cmd()
+        self.assertTrue(self._adjacent(cmd, "-thread_queue_size", str(sup.grab_queue_size(run.WIDTH))))
 
 
 if __name__ == "__main__":

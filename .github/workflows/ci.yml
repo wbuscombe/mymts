@@ -51,6 +51,9 @@ jobs:
       - name: Web client tests (node:test — render/cards/schema-guard/settings)
         run: node --test web/test/*.test.mjs
 
+      - name: Renderer pure tests (supervisor policy + encode-pipeline flags — stdlib, no deps)
+        run: python3 -m unittest discover -s renderer
+
       # ENFORCED docs-hygiene gate (MAINTENANCE-CHARTER.md) — BLOCKING (unlike the
       # advisory ruff debt above): catches NEW topology / personal-config leakage
       # in public docs. Fast grep, no secret. Allowlist covers the deliberate keeps.

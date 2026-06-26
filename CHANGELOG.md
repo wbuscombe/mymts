@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(renderer): real-time encode tuning for smooth motion + characterize the sustainable-resolution envelope (2026-06-26)
+
+The streamed wall (video AND the markets ticker) was choppy. **Diagnosed on the live NAS, stage
+by stage** (browser render in Xvfb → x11grab → x264 → HLS), measuring the actual unique-frame
+rate at each stage at 1080p AND 4K:
+
+- **At 1080p:** the browser software-renders ~30fps, the encoder uses ~1.1 cores (container ~3.1
+  of 6), and the **output is 30fps CFR with 300/300 unique frames — already smooth**. The
+  choppiness the operator saw was the wall being set to **4K** (the control panel was on 2160p).
+- **At 4K:** the browser renders only **~10fps** (unique-frame measured), while the encoder keeps
+  up (duplicating to 30fps) at ~2.4 cores — so the bottleneck is the **GPU-less software
+  compositing of the 4K wall, NOT the encoder**. The output is 30fps CFR but only ~10fps of
+  unique content → judder. No encode setting can lift this; it's render-bound.
+
+**Pipeline tuning (renderer ffmpeg):** `-tune zerolatency` (real-time encode — no B-frame/
+lookahead buffering, so the encoder never falls behind the live capture), explicit **CFR**
+(`-fps_mode cfr` + `-r FPS`, so the encoded motion — especially the continuous ticker crawl — is
+evenly paced), and a higher bitrate (1080p 6M→**8M**/16M, 4K 16M→20M/40M) sized for the motion
+and to offset zerolatency's lower compression efficiency. The resolution-bound grab queue is
+unchanged (sustainable resolutions ≤1080p already get the deep 1024 queue; only 4K gets the
+32-frame OOM guard). 1080p verified smooth post-tune: 300/300 unique, CFR 30, no dup/drop warnings.
+
+**The sustainable-resolution envelope on this NAS (no GPU), render-bound by software compositing
+(∝ canvas pixels):** 1080p (2.1 Mpx) → ~30fps **smooth**; 1440p (3.7 Mpx) → ~20fps marginal;
+1800p (5.8 Mpx) → ~14fps; 4K (8.3 Mpx) → ~10fps **not smooth** (1080p + 4K measured, the middle
+interpolated). **1080p is the smooth ceiling.** Higher resolutions are choppy regardless of
+encode tuning — the real lever is **GPU passthrough** (hardware compositing/decode), a separate,
+bigger lift named honestly in BACKLOG rather than papered over. This envelope is the honest input
+to the resolution-freedom pass next (offer ≤1080p as smooth; annotate higher as heavy/needs-GPU).
+
+Renderer only; no native change → no APK; renderer hard caps unchanged (can't starve the NAS/PIA).
+
 ## refactor(helper,web): wall-config writes are partial-merge (PATCH) — kill the partial-write clobber class (2026-06-26)
 
 The same bug was patched THREE times: `reload_epoch`, per-cell `reload`, and `render` were each

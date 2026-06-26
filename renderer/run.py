@@ -39,12 +39,12 @@ DISPLAY = os.environ.get("DISPLAY", ":99")
 WIDTH = int(os.environ.get("RENDER_WIDTH", "1920"))
 HEIGHT = int(os.environ.get("RENDER_HEIGHT", "1080"))
 FPS = int(os.environ.get("RENDER_FPS", "30"))
-VIDEO_BITRATE = os.environ.get("RENDER_VIDEO_BITRATE", "6M")
+VIDEO_BITRATE = os.environ.get("RENDER_VIDEO_BITRATE", "8M")
 # VBV bufsize (~2x bitrate). These env values are the FALLBACK when the helper's
 # wall config is unreachable at startup; normally the config's render.resolution
 # drives WIDTH/HEIGHT/VIDEO_BITRATE/BUFSIZE (config > env > default — see
 # resolve_render_dimensions()).
-BUFSIZE = os.environ.get("RENDER_BUFSIZE", "12M")
+BUFSIZE = os.environ.get("RENDER_BUFSIZE", "16M")
 AUDIO_BITRATE = os.environ.get("RENDER_AUDIO_BITRATE", "128k")
 # How often the supervise loop re-checks the configured resolution (seconds).
 RESOLUTION_POLL_S = 12
@@ -222,9 +222,22 @@ def ffmpeg_cmd() -> list[str]:
         # audio: the null sink's monitor (the audible cell's audio).
         "-thread_queue_size", "1024",
         "-f", "pulse", "-i", f"{SINK}.monitor",
-        "-c:v", "libx264", "-preset", X264_PRESET, "-pix_fmt", "yuv420p",
+        # REAL-TIME encode: -tune zerolatency disables B-frames + the lookahead
+        # buffer (sliced-threads, no frame reordering) so the encoder never falls
+        # behind the live capture and adds minimal latency — the right profile for
+        # a continuous screen-grab feed (vs the default, which buffers frames for
+        # compression and can judder/lag under a load spike).
+        "-c:v", "libx264", "-preset", X264_PRESET, "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p",
         "-g", str(FPS * 2), "-b:v", VIDEO_BITRATE, "-maxrate", VIDEO_BITRATE,
         "-bufsize", BUFSIZE,
+        # CONSTANT framerate end-to-end: x11grab samples at FPS, and -fps_mode cfr
+        # + -r FPS pace the OUTPUT to exactly FPS by duplicating/dropping, so the
+        # encoded motion (esp. the continuous ticker crawl) is evenly timed — no
+        # judder from grab/encode rate jitter. NOTE: the browser's software render
+        # rate caps the UNIQUE content (smooth ~30fps at 1080p; render-bound above
+        # it — see ARCHITECTURE §31), which no encode setting can lift (needs GPU).
+        "-fps_mode", "cfr", "-r", str(FPS),
         "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", "44100",
         "-f", "hls", "-hls_time", HLS_TIME, "-hls_list_size", HLS_LIST_SIZE,
         "-hls_flags", "delete_segments+append_list+independent_segments",

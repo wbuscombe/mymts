@@ -99,12 +99,22 @@ the channel *list*, the renderer serves the composed *wall*. The profile questio
 resolved-by-necessity for the headless context (server-side state), without prejudging the
 native device-local model.
 
-**Future optimization (not now): GPU passthrough for the renderer.** v1 is **CPU-only**
-software x264 + N tile decoders (the cell count drives the load), bounded by the compose
-cpus/mem caps. A future optimization is GPU passthrough (VA-API / NVENC) into the renderer
-container for hardware decode + encode — lower CPU, more tiles / higher fps. Deferred:
-needs device passthrough config on the NAS (and must still never disturb the helper / other
-containers / PIA). Revisit if the CPU-only renderer's cell count or fps proves limiting.
+**GPU passthrough for the renderer — now the NAMED lever for >1080p smoothness (2026-06-26).**
+v1 is **CPU-only** software compositing + x264 + N tile decoders. The smoothness pass measured the
+ceiling precisely (`ARCHITECTURE.md §31`): the wall is **render-bound** — the browser's software
+compositor sustains ~30fps at 1080p but only **~10fps at 4K** (the encoder is NOT the limit), so
+**1080p is the smooth ceiling and no encode setting can lift a higher resolution into smoothness.**
+The real fix for smooth high-res is **GPU passthrough** (VA-API hardware compositing + decode into
+the renderer container) — it offloads the per-pixel composite the CPU can't hold at high res.
+Deferred: needs device passthrough config on the NAS (and must still never disturb the helper /
+other containers / PIA). **Reconsider when** the operator wants genuinely-smooth >1080p output —
+that's the trigger, and it's a prerequisite for offering high resolutions as *smooth* (not just
+*available*) in the resolution-freedom pass.
+
+**Resolution-freedom pass (next).** Finer resolution choice (a range and/or custom W×H) + tunable
+feed width / feed font / ticker height, all fine-grained. Informed by §31's envelope: ≤1080p is
+smooth; 1440p+ is marginal→heavy on this hardware (annotate honestly, don't present 4K as smooth)
+until GPU passthrough lands.
 
 **Renderer hardening follow-ups (minor, from the pre-push review).** The symlink-escape
 blocker was fixed + live-verified; these remain as optional v1.1 hardening: (a) a
