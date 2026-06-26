@@ -10,7 +10,7 @@ import {
   WALL_SCHEMA_VERSION,
   resizeCells, cellCount, normalizeConfig,
   withCellChannel, withCellSubtitles, withAudibleCell, withLayout, withPreset,
-  withCellReload, withWallReload,
+  withCellReload, withWallReload, withResolution,
 } from "../js/wallConfig.mjs";
 
 const VALID = ["bbc-news", "cnn", "cbs-sports-hq", "bloomberg-tv"];
@@ -228,6 +228,49 @@ test("withCellReload bumps ONLY that cell's epoch (+1), others + wall untouched"
 test("withCellReload on an out-of-range index is a no-op", () => {
   const out = withCellReload(cfg2x2(), 9);
   assert.deepEqual(out.cells.map((c) => c.reload), [0, 0, 0, 0]);
+});
+
+// ---- render resolution (the multi-resolution config field) ----
+
+test("normalizeConfig defaults render to 1080p (additive to schema v1)", () => {
+  const out = normalizeConfig({ layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }] });
+  assert.deepEqual(out.render, { resolution: "1080p" });
+});
+
+test("normalizeConfig preserves a valid render and coerces a bad one", () => {
+  assert.deepEqual(
+    normalizeConfig({ layout: { rows: 1, cols: 1 }, render: { resolution: "2160p" }, cells: [{ channel: "bbc-news" }] }, VALID).render,
+    { resolution: "2160p" },
+  );
+  // bad/unknown resolution → 1080p (defensive — a commit() must never persist junk)
+  assert.deepEqual(
+    normalizeConfig({ layout: { rows: 1, cols: 1 }, render: { resolution: "720p" }, cells: [{ channel: "bbc-news" }] }, VALID).render,
+    { resolution: "1080p" },
+  );
+});
+
+test("withResolution sets the resolution; unknown coerces to 1080p", () => {
+  assert.deepEqual(withResolution(cfg2x2(), "2160p").render, { resolution: "2160p" });
+  assert.deepEqual(withResolution(cfg2x2(), "8k").render, { resolution: "1080p" });
+});
+
+test("REGRESSION: a commit()-style normalize round-trip never strips render", () => {
+  // The single highest-impact wiring bug: if normalizeConfig dropped render,
+  // every /control/ save would revert 4K to 1080p. Prove it survives a round-trip.
+  const c = withResolution(cfg2x2(), "2160p");
+  assert.deepEqual(normalizeConfig(c, VALID).render, { resolution: "2160p" });
+});
+
+test("render survives the other edit transforms (orthogonal to channels/layout)", () => {
+  const base = withResolution(cfg2x2(), "2160p");   // 4K wall
+  assert.deepEqual(withCellChannel(base, 2, "bloomberg-tv").render, { resolution: "2160p" });
+  assert.deepEqual(withLayout(base, 1, 2).render, { resolution: "2160p" });
+  assert.deepEqual(withAudibleCell(base, 1).render, { resolution: "2160p" });
+  // a preset reshapes channels/grid but must NOT revert the resolution
+  assert.deepEqual(
+    withPreset(base, { id: "x", grid: { rows: 1, cols: 1 }, slugs: ["cnn"] }, VALID).render,
+    { resolution: "2160p" },
+  );
 });
 
 test("edit transforms preserve the whole-wall reload epoch (never rewind it)", () => {

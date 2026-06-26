@@ -114,22 +114,21 @@ stream could go back to HTTPS-everywhere. Deferred: needs cert provisioning/trus
 player side; the HTTP-on-LAN path is the pragmatic, working fix and is not a security issue
 for public video.
 
-## Headless wall — layout normalization + multi-resolution (DEFERRED, the next pass — 2026-06-25)
+## ~~Headless wall — layout normalization + multi-resolution~~ — DONE (2026-06-25)
 
-Reliability landed first (the tiles play — `ARCHITECTURE.md §28`); this is the **presentation
-pass**, deliberately sequenced AFTER so the layout is tuned against a wall that's actually
-full, not one that's mostly fallback cards. Scope:
+The presentation pass shipped (`ARCHITECTURE.md §29`): cell sizing/spacing normalized to one
+`--gap` gutter rhythm with uniform `object-fit: contain` + a uniform per-tile caption; the feed
+↔ grid read as one composition; the whole wall is **responsive** off a single `--u` scale unit
+(`computeUx = min(w/1920, h/1080)` → `--ux`), so no hardcoded px breaks off-1080p; and
+**configurable render resolution** (`render.resolution` 1080p | 2160p in the wall config, a
+`/control/` selector) wired end-to-end (Xvfb + ffmpeg + the web auto-scale) with the renderer
+restarting its stack on a change. Verified live: 1080p ↔ 4K switching, 4K text sharp.
 
-- **Normalize cell sizing / spacing** — uniform tiles, consistent gutters, no ragged edges.
-- **Feed-column ↔ video-grid fit** as one cohesive composition (the two panes read as a
-  single designed wall, not two independently-sized regions).
-- **Proportion-based / responsive scaling** — no hardcoded px; the wall scales cleanly with
-  the render resolution instead of assuming 1080p geometry.
-- **Configurable render resolution** end-to-end (Xvfb `screen` size + ffmpeg encode +
-  web scaling), surfaced in `/api/wall` and/or `/control/`. **Keep 1080p the default**; 4K
-  is **opt-in** and documented-heavy (the CPU-only renderer is already ≈2 cores at 1080p on
-  the 1920X — see the GPU-passthrough item above; 4K software-x264 + N decoders is a large
-  step up, so it must be a deliberate operator choice, not the default).
+**4K is opt-in + bounded** — a live OOM (the deep x11grab queue ballooning a 4K raw frame ~33MB
+past `mem_limit:2g`) was fixed with a resolution-bound grab queue + 4K headroom on the renderer's
+own caps (`cpus 4→6`, `mem 2g→4g`). Open 4K follow-ups (not blocking): **GPU passthrough** (the
+existing item above) would make 4K cheap (hardware decode/encode vs ~4.3 software cores); and a
+weak NAS may need `RENDER_FPS=24` (documented lever) to hold 30fps at 4K.
 
 ## Headless wall — re-resolve cadence on persistent tile failure (minor, 2026-06-25)
 

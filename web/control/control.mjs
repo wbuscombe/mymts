@@ -17,7 +17,7 @@ import {
 } from "/app/js/render.mjs";
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withAudibleCell,
-  withLayout, withPreset, cellCount, withCellReload, withWallReload,
+  withLayout, withPreset, cellCount, withCellReload, withWallReload, withResolution,
 } from "/app/js/wallConfig.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
@@ -119,6 +119,8 @@ function populatePresets() {
 function syncLayoutControls() {
   el("rows").value = String(clampGridDim(config.layout.rows));
   el("cols").value = String(clampGridDim(config.layout.cols));
+  const res = el("resolution");
+  if (res) res.value = config.render?.resolution === "2160p" ? "2160p" : "1080p";
   const count = cellCount(config);
   el("grid-note").textContent = `${config.layout.rows} × ${config.layout.cols} = ${count} cell${count === 1 ? "" : "s"}`;
 }
@@ -240,6 +242,11 @@ function wire() {
     commit(withLayout(config, Number(e.target.value), config.layout.cols), "layout"));
   el("cols").addEventListener("change", (e) =>
     commit(withLayout(config, config.layout.rows, Number(e.target.value)), "layout"));
+  // Render resolution (1080p / 4K). Writing it restarts the renderer's Xvfb+ffmpeg
+  // stack at the new canvas (a brief stream blip); the web wall auto-scales to fit.
+  const resSel = el("resolution");
+  if (resSel) resSel.addEventListener("change", (e) =>
+    commit(withResolution(config, e.target.value), `resolution ${e.target.value}`));
   el("preset").addEventListener("change", (e) => {
     const p = presets.find((x) => x.id === e.target.value);
     if (!p) return;

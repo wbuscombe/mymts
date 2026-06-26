@@ -40,7 +40,18 @@ WIDTH = int(os.environ.get("RENDER_WIDTH", "1920"))
 HEIGHT = int(os.environ.get("RENDER_HEIGHT", "1080"))
 FPS = int(os.environ.get("RENDER_FPS", "30"))
 VIDEO_BITRATE = os.environ.get("RENDER_VIDEO_BITRATE", "6M")
+# VBV bufsize (~2x bitrate). These env values are the FALLBACK when the helper's
+# wall config is unreachable at startup; normally the config's render.resolution
+# drives WIDTH/HEIGHT/VIDEO_BITRATE/BUFSIZE (config > env > default — see
+# resolve_render_dimensions()).
+BUFSIZE = os.environ.get("RENDER_BUFSIZE", "12M")
 AUDIO_BITRATE = os.environ.get("RENDER_AUDIO_BITRATE", "128k")
+# How often the supervise loop re-checks the configured resolution (seconds).
+RESOLUTION_POLL_S = 12
+# The wall config the renderer reads its resolution from (derived from HELPER_URL).
+API_WALL_URL = os.environ.get(
+    "RENDER_API_WALL_URL", "https://mymts-helper:8443/api/wall"
+)
 HLS_TIME = os.environ.get("RENDER_HLS_TIME", "4")
 HLS_LIST_SIZE = os.environ.get("RENDER_HLS_LIST_SIZE", "6")
 X264_PRESET = os.environ.get("RENDER_X264_PRESET", "veryfast")
@@ -115,6 +126,44 @@ def wait_for_helper(url: str, timeout_s: float = 120.0) -> None:
     log(f"WARNING: helper not reachable after {timeout_s:.0f}s — starting anyway")
 
 
+def get_json(url: str, timeout_s: float = 5.0) -> dict | None:
+    """GET a JSON document from the helper over the LAN (self-signed cert → no
+    verify, same posture as wait_for_helper). Returns the parsed object, or None
+    on ANY error — the caller degrades (a helper hiccup never bricks the renderer).
+    Used to read the wall config's render.resolution."""
+    import json
+    import ssl
+    import urllib.request
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s, context=ctx) as r:
+            if r.status >= 400:
+                return None
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def resolve_render_dimensions() -> tuple[int, int, str, str]:
+    """(width, height, video_bitrate, bufsize) for the CURRENTLY-configured render
+    resolution. Reads the wall config's `render.resolution` and maps it via the
+    pure supervisor table; on an unreachable helper / absent field it falls back to
+    the current module globals (the env defaults at startup, the running values
+    later) so a helper blip never changes the canvas. Config > env > default."""
+    cfg = get_json(API_WALL_URL)
+    res = None
+    if isinstance(cfg, dict) and isinstance(cfg.get("render"), dict):
+        res = cfg["render"].get("resolution")
+    if res in supervisor.RENDER_RESOLUTIONS:
+        w, h = supervisor.resolution_to_dimensions(res)
+        bitrate, bufsize = supervisor.resolution_to_bitrate(res)
+        return w, h, bitrate, bufsize
+    return WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE
+
+
 def start_xvfb() -> subprocess.Popen:
     p = subprocess.Popen(
         ["Xvfb", DISPLAY, "-screen", "0", f"{WIDTH}x{HEIGHT}x24", "-nolisten", "tcp", "-dpi", "96"],
@@ -140,6 +189,11 @@ def chromium_cmd() -> list[str]:
         "--no-sandbox", "--no-first-run", "--no-default-browser-check",
         "--disable-gpu", "--disable-dev-shm-usage", "--disable-software-rasterizer",
         "--autoplay-policy=no-user-gesture-required",
+        # The wall sizes everything off the --u CSS unit (min ~8 design-px); pin
+        # Chromium's minimum font size to 0 so it can NEVER clamp a small label UP
+        # (which would break the proportional scale at 4K). Belt-and-suspenders —
+        # nothing renders below ~8px at 1080p / ~16px at 4K anyway.
+        "--blink-settings=minimumFontSize=0,minimumLogicalFontSize=0",
         "--ignore-certificate-errors",
         "--kiosk", "--start-fullscreen",
         f"--window-size={WIDTH},{HEIGHT}", "--window-position=0,0",
@@ -159,8 +213,10 @@ def ffmpeg_cmd() -> list[str]:
         # dropping frames or blocking the grab — robustness under the exact load
         # the cell count drives.
         # video: the X framebuffer, cursor suppressed (belt-and-suspenders with
-        # the page's render-mode cursor:none).
-        "-thread_queue_size", "1024",
+        # the page's render-mode cursor:none). The grab queue is RESOLUTION-bound
+        # (deep at 1080p, shallow at 4K) so a behind-the-encoder 4K stream drops
+        # frames within the mem_limit instead of OOM-ballooning the raw-frame queue.
+        "-thread_queue_size", str(supervisor.grab_queue_size(WIDTH)),
         "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(FPS),
         "-video_size", f"{WIDTH}x{HEIGHT}", "-i", DISPLAY,
         # audio: the null sink's monitor (the audible cell's audio).
@@ -168,7 +224,7 @@ def ffmpeg_cmd() -> list[str]:
         "-f", "pulse", "-i", f"{SINK}.monitor",
         "-c:v", "libx264", "-preset", X264_PRESET, "-pix_fmt", "yuv420p",
         "-g", str(FPS * 2), "-b:v", VIDEO_BITRATE, "-maxrate", VIDEO_BITRATE,
-        "-bufsize", "12M",
+        "-bufsize", BUFSIZE,
         "-c:a", "aac", "-b:a", AUDIO_BITRATE, "-ar", "44100",
         "-f", "hls", "-hls_time", HLS_TIME, "-hls_list_size", HLS_LIST_SIZE,
         "-hls_flags", "delete_segments+append_list+independent_segments",
@@ -220,8 +276,15 @@ def main() -> int:
 
     ensure_runtime_dir()
     start_pulse()
-    xvfb = start_xvfb()
+    # Reach the helper FIRST so we can read the configured render resolution
+    # BEFORE sizing Xvfb (Xvfb's screen size is fixed at start; it can't resize
+    # live — a resolution change restarts the whole stack). Pulse/Xvfb/helper are
+    # otherwise independent, so this reorder is safe.
     wait_for_helper(HELPER_URL)
+    global WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE
+    WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE = resolve_render_dimensions()
+    log(f"render canvas {WIDTH}x{HEIGHT} @ {VIDEO_BITRATE} (bufsize {BUFSIZE})")
+    xvfb = start_xvfb()
 
     env = dict(os.environ, DISPLAY=DISPLAY, PULSE_SINK=SINK)
     children = [
@@ -233,6 +296,7 @@ def main() -> int:
 
     log(f"streaming {HELPER_URL} → {STREAM_DIR}/{supervisor.PLAYLIST_NAME}")
     last_fresh = None   # monotonic time the stream was last HEALTHY (advancing)
+    next_res_check = time.monotonic() + RESOLUTION_POLL_S
     while not _stop:
         # Xvfb is foundational — if it dies, the whole stack is broken; exit so
         # the container restarts cleanly (compose restart: unless-stopped).
@@ -241,6 +305,21 @@ def main() -> int:
             for c in children:
                 c.terminate()
             return 1
+        # RESOLUTION change (from /control/): the canvas size is a process-start
+        # param for Xvfb/Chromium/ffmpeg and can't change live, so when the config
+        # picks a new resolution we restart the stack (the SAME self-heal path as
+        # Xvfb-death) and it comes back at the new canvas. An unreachable helper
+        # falls back to the running dims → no spurious restart.
+        if time.monotonic() >= next_res_check:
+            next_res_check = time.monotonic() + RESOLUTION_POLL_S
+            want_w, want_h, _, _ = resolve_render_dimensions()
+            if (want_w, want_h) != (WIDTH, HEIGHT):
+                log(f"render resolution changed {WIDTH}x{HEIGHT} → {want_w}x{want_h} — restarting the container stack")
+                for c in children:
+                    c.terminate()
+                if xvfb.poll() is None:
+                    xvfb.terminate()
+                return 1
         # WEDGE detection: ffmpeg/Chromium can hang (alive but the stream stops
         # advancing — "frames duplicated" / blocked pulse queue), which poll()
         # never catches and which leaves a player at "please wait". Once the

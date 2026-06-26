@@ -9,6 +9,7 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "preset": "news",                       # informational: last-applied preset
       "audible_cell": 0 | null,               # single-audible-cell model
       "reload_epoch": 0,                      # whole-wall force-reload counter
+      "render": {"resolution": "1080p"},      # renderer canvas: "1080p" | "2160p"
       "cells": [                              # length == rows*cols (by index)
         {"channel": "bbc-news" | null, "subtitles": false, "reload": 0},
         ...
@@ -53,6 +54,15 @@ GRID_DIM_MAX = 3
 DEFAULT_ROWS = 2
 DEFAULT_COLS = 2
 
+# Render resolution presets (the renderer's Xvfb/ffmpeg canvas). Both are 16:9 so
+# the web wall scales between them with one ratio. 1080p is the default; 2160p
+# (4K) is opt-in and CPU-heavy (software x264 on the CPU-only renderer). A closed
+# enum (heights are exact multiples of 1080) keeps the web scale factor an exact
+# integer — no sub-pixel drift. The renderer maps the chosen name → (w, h) + the
+# encode bitrate; the helper only stores/validates the CHOICE.
+RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2160p": (3840, 2160)}
+DEFAULT_RESOLUTION = "1080p"
+
 
 class WallConfigError(ValueError):
     """A wall config failed validation. The message is operator-facing (the
@@ -90,8 +100,24 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
         "preset": DEFAULT_PRESET_ID,
         "audible_cell": None,
         "reload_epoch": 0,
+        "render": {"resolution": DEFAULT_RESOLUTION},
         "cells": cells,
     }
+
+
+def _validate_render(value: Any) -> dict[str, Any]:
+    """The render block: a resolution name from :data:`RENDER_RESOLUTIONS`.
+    Additive to schema v1 — absent ``render`` defaults to 1080p (an old stored
+    file loads unchanged). Returns the normalised ``{"resolution": name}``."""
+    if value is None:
+        return {"resolution": DEFAULT_RESOLUTION}
+    if not isinstance(value, dict):
+        raise WallConfigError("render must be an object with a resolution")
+    res = value.get("resolution", DEFAULT_RESOLUTION)
+    if res not in RENDER_RESOLUTIONS:
+        allowed = ", ".join(RENDER_RESOLUTIONS)
+        raise WallConfigError(f"render.resolution must be one of {allowed} (got {res!r})")
+    return {"resolution": res}
 
 
 def _validate_reload(value: Any, name: str) -> int:
@@ -194,6 +220,7 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         raise WallConfigError("preset must be a string or null")
 
     reload_epoch = _validate_reload(raw.get("reload_epoch"), "reload_epoch")
+    render = _validate_render(raw.get("render"))
 
     return {
         "schema_version": WALL_SCHEMA_VERSION,
@@ -201,6 +228,7 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         "preset": preset,
         "audible_cell": audible,
         "reload_epoch": reload_epoch,
+        "render": render,
         "cells": cells,
     }
 

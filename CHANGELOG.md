@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web,renderer): responsive wall scale + normalized layout + configurable render resolution (1080p / 4K) (2026-06-25)
+
+A presentation pass on the rendered wall, sequenced after the reliability fix so the layout
+is tuned against a wall that's actually full of playing tiles.
+
+**Responsive scale (no more hardcoded px).** The wall CSS was almost entirely fixed px, so at
+4K it would have rendered at half the relative size (tiny text). Introduced a single scale
+unit: `--ux` (device-px per 1080p design-px, set by `app.mjs` from the live viewport via the
+pure, tested `computeUx = min(w/1920, h/1080)`) and `--u = calc(1px * var(--ux))`. Every fixed
+dimension in `styles.css` (~70 values: heights, gaps, paddings, radii, font-sizes) became
+`calc(N * var(--u))`. At 1080p `--ux=1` → identical to before; at 4K `--ux=2` → everything
+doubles, **laid out at 4K so text/borders are genuinely sharper** (no `transform:scale` upscale;
+the Xvfb→Chromium→ffmpeg chain stays device-scale-factor 1). Hairline `1px` borders, the vw/vh
+modal bounds, `%`/`fr` layout, and unitless line-heights are deliberately left literal. Chosen
+over a rem-as-design-px approach (avoids the inherited-tiny-font trap) and over CSS `zoom`
+(which would overflow the vw/vh modals) — via an adversarial design panel.
+
+**Normalized layout.** One shared `--gap` gutter token binds the composition: the inter-tile
+gutter == the grid's outer inset == every corner-overlay inset, so the tiles read as one even
+mosaic with a consistent rhythm against the feed. Uniform `object-fit: contain` (letterbox) is
+the single deliberate fit policy — `cover` would crop a news chyron/score-bar off-frame
+(dishonest), so every tile shows its whole frame onto `#000`. One uniform small per-tile channel
+caption.
+
+**Configurable render resolution.** New additive `render.resolution` ("1080p" | "2160p") in the
+wall config (helper `wall/store.py`, validated, default 1080p; carried through every
+`wallConfig.mjs` transform incl. `normalizeConfig` so a `/control/` save can't strip it). A
+`/control/` selector writes it; the renderer reads it at startup (maps → Xvfb screen + ffmpeg
+`-video_size` + bitrate: 1080p→6M/12M unchanged, 4K→16M/32M) and **restarts its stack on a
+resolution change** (the canvas is a process-start param). The web wall needs NO knowledge of
+the resolution — `--ux` derives from the real canvas, so the CSS can never desync.
+
+**4K is opt-in and bounded — verified live, incl. an OOM finding.** On the live NAS, 4K
+software x264 fell behind the encoder and the deep `-thread_queue_size 1024` x11grab buffer (a
+4K raw frame is ~33MB) ballooned and **OOM-killed ffmpeg (`rc=-9`)** under `mem_limit:2g` →
+crash-loop. Fixed by (1) a **resolution-bound grab queue** (`supervisor.grab_queue_size`: 1024
+at 1080p, 32 at 4K) so a slow 4K encoder drops frames within the cap instead of OOM-ballooning,
+and (2) 4K headroom on the renderer's OWN caps (`cpus 4→6`, `mem 2g→4g`, `shm 256m→512m`, `tmpfs
+768m→1g`) — still hard ceilings on the multi-core NAS, so 4K can never starve the host or PIA.
+After the fix, 4K streams 3840×2160@30fps at ~4.3 cores / ~3.7 GiB (stable). 1080p stays the
+default (uses ~2 cores / ~1 GiB); a weak NAS can fall back to `RENDER_FPS=24`. **Verified live:
+1080p → 4K → 1080p switching, all config-driven, 4K text sharp (laid out at 4K).** Documented in
+the compose + ARCHITECTURE §29 (the 4K resource note).
+
+Web client + renderer + helper config. No native change → no APK. PIA / other containers
+untouched; the symlink-safe stream serving is unchanged.
+
 ## fix(web): rendered-wall tiles play (hls.js over Chromium's broken native HLS) + indefinite self-heal + /control/ force-reload (2026-06-25)
 
 On the headless wall, most tiles showed the honest **"Browser can't play this source — on

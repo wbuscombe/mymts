@@ -43,6 +43,14 @@
           <option>1</option><option>2</option><option>3</option>
         </select>
       </label>
+      <label class="ctl">
+        <span>Resolution</span>
+        <select id="resolution" aria-label="Render resolution"
+                title="4K is CPU-heavy and briefly restarts the renderer (the stream blips). 1080p is the default.">
+          <option value="1080p">1080p</option>
+          <option value="2160p">4K (2160p)</option>
+        </select>
+      </label>
       <span id="grid-note" class="grid-note"></span>
       <button id="reload-all" type="button" class="reload-all"
               title="Force every video tile on the wall to re-attach its player (re-resolving a fresh stream URL)">↻ Reload all tiles</button>

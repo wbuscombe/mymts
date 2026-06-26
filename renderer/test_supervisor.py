@@ -113,5 +113,33 @@ class Tracker(unittest.TestCase):
         self.assertFalse(t2.is_crash_looping(40))
 
 
+class RenderResolution(unittest.TestCase):
+    def test_known_resolutions_map_to_dimensions(self):
+        self.assertEqual(sup.resolution_to_dimensions("1080p"), (1920, 1080))
+        self.assertEqual(sup.resolution_to_dimensions("2160p"), (3840, 2160))
+
+    def test_unknown_resolution_falls_back_to_1080p(self):
+        self.assertEqual(sup.normalize_resolution("720p"), "1080p")
+        self.assertEqual(sup.normalize_resolution(None), "1080p")
+        self.assertEqual(sup.resolution_to_dimensions("nonsense"), (1920, 1080))
+
+    def test_bitrate_scales_with_resolution(self):
+        self.assertEqual(sup.resolution_to_bitrate("1080p"), ("6M", "12M"))   # unchanged from today
+        self.assertEqual(sup.resolution_to_bitrate("2160p"), ("16M", "32M"))  # heavier 4K encode
+        self.assertEqual(sup.resolution_to_bitrate("bogus"), ("6M", "12M"))   # fallback
+
+    def test_resolutions_are_16_9(self):
+        for w, h in sup.RENDER_RESOLUTIONS.values():
+            self.assertAlmostEqual(w / h, 16 / 9, places=6)
+
+    def test_grab_queue_is_bounded_at_4k(self):
+        # 1080p keeps the deep drop-proof queue; 4K bounds it hard (a 4K raw frame
+        # is ~33MB, so a deep queue behind a slow encoder would OOM the container).
+        self.assertEqual(sup.grab_queue_size(1920), 1024)
+        self.assertEqual(sup.grab_queue_size(3840), 32)
+        # the bound holds for anything >= 4K width
+        self.assertEqual(sup.grab_queue_size(4096), 32)
+
+
 if __name__ == "__main__":
     unittest.main()

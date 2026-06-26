@@ -12,7 +12,7 @@ import {
   tickerStaleNote, feedChronological, sourceLabel, relativeTime, channelStatus,
   helperUnreachable, filterHiddenSources, browserPlayability,
   groupTickerCards, tickerSchemaNote, newsTickerEntries,
-  gridLayoutFromDims, clampGridDim,
+  gridLayoutFromDims, clampGridDim, computeUx,
   leaguePool, filterHiddenLeagues,
   FEED_RECENCY_OPTIONS, feedRecencyOption, filterFeedRecency,
   clampTickerSpeedPct, tickerScrollPxPerSec, crawlCycle, CRAWL_DWELL_MS,
@@ -541,6 +541,11 @@ let lastWallEditAt = 0;          // timestamp of the last LOCAL edit (the re-hyd
 // PUT — defense in depth, the helper being authoritative.
 let lastReloadEpoch = null;      // null until the first server read seeds it (seedReloadBaseline)
 let lastCellReloads = [];        // per-cell reload epochs, by index
+// The render resolution is owned by /control/ (the renderer reads it) — /app/ only
+// MIRRORS the last-seen server value so buildWallConfig can echo it. Without this,
+// an /app/-side edit (pick/preset/grid/audio) would PUT a payload with no `render`,
+// and the helper would default it back to 1080p — silently reverting a 4K wall.
+let lastRenderResolution = "1080p";
 
 /** Whether captions/subtitles are ON for a given cell. Per-cell when a config
  *  is stored (native per-slot model); else the wall-wide settings toggle. */
@@ -566,6 +571,7 @@ function buildWallConfig() {
     preset: prefs.activePreset || null,
     audible_cell: audible,
     reload_epoch: lastReloadEpoch || 0,   // echo (don't rewind) the whole-wall epoch
+    render: { resolution: lastRenderResolution || "1080p" },   // echo (don't revert) the resolution
     cells,
   };
 }
@@ -659,6 +665,11 @@ async function pollWall() {
   try {
     const wall = await api.wall();
     wallStored = wall.stored === true;
+    // Mirror the server's render resolution on EVERY read (it's owned by /control/,
+    // not monotonic — just track the latest) so buildWallConfig echoes it back and
+    // an /app/ edit can't revert it. Runs before the early returns below.
+    const res = wall && wall.render && wall.render.resolution;
+    if (res === "1080p" || res === "2160p") lastRenderResolution = res;
     // Seed the force-reload baseline from the FIRST server read we ever see —
     // even a non-stored default, or a poll inside the post-edit grace window —
     // BEFORE the early returns below. Otherwise lastReloadEpoch stays null until
@@ -1543,8 +1554,22 @@ function applyRenderMode() {
   } catch { /* no URLSearchParams (ancient engine) — skip; chrome just shows */ }
 }
 
+/** Set the responsive-scale variable `--ux` (device-px per 1080p design-px) from
+ *  the live viewport, so the whole wall (every calc(N*var(--u)) dimension in
+ *  styles.css) scales with the render canvas — 1 at 1080p, 2 at 4K. The renderer's
+ *  Chromium viewport IS its Xvfb screen, so this auto-tracks the chosen render
+ *  resolution with NO knowledge of the resolution itself (it reads the real
+ *  canvas) — the CSS can never desync from the framebuffer. Re-applied on resize
+ *  (a dev window, or — harmless — the kiosk). Set BEFORE first paint in main(). */
+function applyScale() {
+  const ux = computeUx(window.innerWidth, window.innerHeight);
+  document.documentElement.style.setProperty("--ux", String(ux));
+}
+
 function main() {
   applyRenderMode();
+  applyScale();
+  window.addEventListener("resize", applyScale);
   applyPrefs();
   wireSettings();
   wireDivider();

@@ -59,6 +59,13 @@ def get_router(db_path: Path, data_dir: str) -> APIRouter:
         # the authoritative guard; the clients also avoid sending a stale value.
         existing, _ = store.load_wall_config(data_dir, slugs)
         config = store.clamp_reload_monotonic(config, existing)
+        # CARRY-FORWARD the render resolution when the client OMITS it: /app/'s
+        # hand-built PUT writes only channels/grid/audio and has no `render` key, so
+        # without this the validator's default (1080p) would silently revert a
+        # /control/-set 4K wall on any /app/ edit. /control/ always sends render
+        # explicitly (so it can still change it); only an OMISSION is preserved.
+        if payload.get("render") is None:
+            config["render"] = existing["render"]
         store.save_wall_config(data_dir, config)
         return _payload(config, True)
 

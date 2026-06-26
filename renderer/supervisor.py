@@ -23,6 +23,46 @@ DEFAULT_MAX_SEGMENT_AGE_S = 20.0
 PLAYLIST_NAME = "playlist.m3u8"
 SEGMENT_SUFFIX = ".ts"
 
+# ---- render resolution (mirrors helper wall/store.py RENDER_RESOLUTIONS) ----
+# The wall config stores a resolution NAME; the renderer maps it to the Xvfb/
+# ffmpeg canvas + the encode bitrate. Both targets are 16:9. 4K is ~4x the pixels
+# and a much heavier software x264 encode (the renderer is CPU-only, cpus-capped)
+# — so it gets a higher bitrate/bufsize but the SAME preset (a slower preset would
+# blow the real-time frame budget and wedge the stream). 1080p is the default.
+DEFAULT_RESOLUTION = "1080p"
+RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2160p": (3840, 2160)}
+# resolution → (video bitrate, vbv bufsize). bufsize ~= 2x bitrate so a 4K keyframe
+# isn't VBV-clipped. 1080p keeps today's 6M/12M exactly.
+RENDER_BITRATES = {"1080p": ("6M", "12M"), "2160p": ("16M", "32M")}
+
+
+def normalize_resolution(res: object) -> str:
+    """Coerce a resolution name to a known key (unknown/None → the 1080p default).
+    Pure — the renderer reads the config value through this so a typo/old field
+    never picks an invalid canvas."""
+    return res if res in RENDER_RESOLUTIONS else DEFAULT_RESOLUTION
+
+
+def resolution_to_dimensions(res: object) -> tuple[int, int]:
+    """(width, height) for a resolution name; unknown → 1080p. Pure."""
+    return RENDER_RESOLUTIONS[normalize_resolution(res)]
+
+
+def resolution_to_bitrate(res: object) -> tuple[str, str]:
+    """(video_bitrate, bufsize) for a resolution name; unknown → 1080p. Pure."""
+    return RENDER_BITRATES[normalize_resolution(res)]
+
+
+def grab_queue_size(width: int) -> int:
+    """The x11grab INPUT queue depth (frames). A raw 4K frame is ~33MB, so the
+    1080p default of 1024 would let the queue balloon to many GB if the software
+    encoder falls behind (4K on a CPU-only encoder is heavy) — which OOM-kills
+    ffmpeg under the container mem_limit. Bound it hard at 4K so a slow encoder
+    DROPS frames (bounded memory, the stream still advances) instead of crashing.
+    At 1080p the encoder keeps up easily, so the deep queue (drop-proof under load
+    spikes) is kept. Pure — unit-tested."""
+    return 32 if width >= 3840 else 1024
+
 
 def newest_segment_mtime(stream_dir: str | os.PathLike[str]) -> float | None:
     """The mtime of the newest HLS segment in [stream_dir], or None if there is

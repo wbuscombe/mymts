@@ -63,6 +63,7 @@ import {
   videoBackoffMs,
   VIDEO_BACKOFF_BASE_MS,
   VIDEO_BACKOFF_CAP_MS,
+  computeUx,
   clampFeedPct,
   feedPctFromPointer,
   FEED_PANE_MIN_PCT,
@@ -875,6 +876,25 @@ test("videoRetryDecision: transient drop reconnects INDEFINITELY on the capped b
     assert.equal(d.retry, true, `attempt ${a} still reconnects (indefinite)`);
     assert.equal(d.delayMs, VIDEO_BACKOFF_CAP_MS, `attempt ${a} at the settle cap`);
   }
+});
+
+// ----- responsive scale (computeUx → the --ux CSS variable) -----
+
+test("computeUx: exact integer at the production 16:9 resolutions", () => {
+  assert.equal(computeUx(1920, 1080), 1);   // 1080p → 1 design-px == 1 device-px
+  assert.equal(computeUx(3840, 2160), 2);   // 4K → everything doubles, crisp
+});
+
+test("computeUx: off-aspect window takes the limiting axis (letterbox-fit, no overflow)", () => {
+  assert.equal(computeUx(1920, 2160), 1);   // wide-short → width-limited
+  assert.equal(computeUx(3840, 1080), 1);   // tall-narrow → height-limited
+  assert.equal(computeUx(960, 540), 0.5);   // half-size dev window → 0.5
+});
+
+test("computeUx: non-finite / zero dimensions fall back to the 1080p identity (1)", () => {
+  assert.equal(computeUx(0, 0), 1);
+  assert.equal(computeUx(NaN, 1080), 1);
+  assert.equal(computeUx(undefined, undefined), 1);
 });
 
 // ----- draggable feed/video divider (A) — resize/clamp math -----

@@ -438,6 +438,29 @@ export function gridLayoutFromDims(rows, cols) {
   return { count: r * c, cols: c, rows: r };
 }
 
+// ----- responsive scale (the wall sizes against the render canvas) -----
+
+/** The design baseline the wall's fixed dimensions are authored against (1080p).
+ *  Both render targets (1080p, 4K) are 16:9, so the scale is a single ratio. */
+export const DESIGN_WIDTH = 1920;
+export const DESIGN_HEIGHT = 1080;
+
+/**
+ * The device-px-per-design-px ratio for a viewport `w`×`h` — the value app.mjs
+ * writes to the `--ux` CSS variable so `--u` (one design pixel) scales the whole
+ * wall to the render canvas. `min(w/1920, h/1080)` letterbox-fits any window
+ * (a dev laptop) without overflow; at the two production resolutions (exactly
+ * 16:9, height a multiple of 1080) it is an exact integer — 1 at 1080p, 2 at 4K —
+ * so nothing renders below its 1080p size (no sub-pixel drift, no tiny text).
+ * Pure; a non-finite/zero dimension falls back to 1 (the 1080p identity scale).
+ */
+export function computeUx(w, h, designW = DESIGN_WIDTH, designH = DESIGN_HEIGHT) {
+  const wx = Number(w) / designW;
+  const hx = Number(h) / designH;
+  const ux = Math.min(wx, hx);
+  return Number.isFinite(ux) && ux > 0 ? ux : 1;
+}
+
 // ----- ticker scroll speed (native parity: tickerScrollPct slider) -----
 
 /** Ticker-speed slider bounds + step, mirroring the native

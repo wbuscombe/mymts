@@ -47,9 +47,10 @@ def test_validate_accepts_and_normalises_a_good_config():
     assert out["layout"] == {"rows": 2, "cols": 2}
     assert out["audible_cell"] == 0
     assert out["cells"][1] == {"channel": "cnn", "subtitles": True, "reload": 0}
-    # extra keys are stripped; subtitles + reload defaults present
+    # extra keys are stripped; subtitles + reload + render defaults present
     assert set(out.keys()) == {
-        "schema_version", "layout", "preset", "audible_cell", "reload_epoch", "cells"
+        "schema_version", "layout", "preset", "audible_cell",
+        "reload_epoch", "render", "cells",
     }
 
 
@@ -275,6 +276,88 @@ def test_put_persists_a_force_reload_bump(tmp_path: Path):
     got = client.get("/api/wall").json()
     assert got["reload_epoch"] == 1
     assert got["cells"][0]["reload"] == 2
+
+
+# --- render resolution (additive to schema v1: default 1080p, validated enum) ---
+
+
+def test_validate_defaults_render_to_1080p():
+    out = store.validate_wall_config(_good_config(), set(VALID))
+    assert out["render"] == {"resolution": "1080p"}
+
+
+def test_validate_accepts_a_known_resolution():
+    out = store.validate_wall_config(_good_config(render={"resolution": "2160p"}), set(VALID))
+    assert out["render"] == {"resolution": "2160p"}
+
+
+@pytest.mark.parametrize("bad", [{"resolution": "720p"}, {"resolution": 1080}, {"resolution": None}])
+def test_validate_rejects_unknown_resolution(bad):
+    with pytest.raises(store.WallConfigError, match="render.resolution"):
+        store.validate_wall_config(_good_config(render=bad), set(VALID))
+
+
+@pytest.mark.parametrize("bad", ["1080p", 42, []])
+def test_validate_rejects_non_object_render(bad):
+    with pytest.raises(store.WallConfigError, match="render must be an object"):
+        store.validate_wall_config(_good_config(render=bad), set(VALID))
+
+
+def test_old_stored_file_without_render_loads_and_defaults(tmp_path: Path):
+    # an additive-field discipline check: a config written before `render` existed
+    cfg = _good_config()
+    cfg.pop("render", None)
+    store.wall_config_path(tmp_path).write_text(json.dumps(cfg))
+    loaded, stored = store.load_wall_config(tmp_path, VALID)
+    assert stored is True
+    assert loaded["render"] == {"resolution": "1080p"}
+
+
+def test_default_config_includes_1080p_render():
+    cfg = store.default_wall_config(VALID)
+    assert cfg["render"] == {"resolution": "1080p"}
+
+
+def test_clamp_reload_monotonic_passes_render_through():
+    old = store.validate_wall_config(_good_config(render={"resolution": "2160p"}), set(VALID))
+    new = store.validate_wall_config(_good_config(render={"resolution": "2160p"}), set(VALID))
+    clamped = store.clamp_reload_monotonic(new, old)
+    assert clamped["render"] == {"resolution": "2160p"}
+
+
+def test_put_round_trips_the_resolution(tmp_path: Path):
+    client = _client(tmp_path)
+    payload = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 1}, "preset": "news", "audible_cell": None,
+        "render": {"resolution": "2160p"},
+        "cells": [{"channel": "bbc-news", "subtitles": False}],
+    }
+    put = client.put("/api/wall", json=payload)
+    assert put.status_code == 200, put.text
+    assert put.json()["render"] == {"resolution": "2160p"}
+    assert client.get("/api/wall").json()["render"] == {"resolution": "2160p"}
+
+
+def test_put_omitting_render_preserves_the_stored_resolution(tmp_path: Path):
+    # REGRESSION: /app/'s hand-built PUT writes only channels/grid/audio (no render);
+    # the helper must CARRY FORWARD the stored resolution, not default it to 1080p
+    # — otherwise any /app/ edit silently reverts a /control/-set 4K wall.
+    client = _client(tmp_path)
+    base = {
+        "schema_version": store.WALL_SCHEMA_VERSION,
+        "layout": {"rows": 1, "cols": 1}, "preset": "news", "audible_cell": None,
+        "cells": [{"channel": "bbc-news", "subtitles": False}],
+    }
+    # /control/ sets 4K
+    client.put("/api/wall", json={**base, "render": {"resolution": "2160p"}})
+    # an /app/-style edit omits render entirely — must NOT downgrade to 1080p
+    got = client.put("/api/wall", json=base).json()
+    assert got["render"] == {"resolution": "2160p"}
+    assert client.get("/api/wall").json()["render"] == {"resolution": "2160p"}
+    # but /control/ can still explicitly downgrade
+    back = client.put("/api/wall", json={**base, "render": {"resolution": "1080p"}}).json()
+    assert back["render"] == {"resolution": "1080p"}
 
 
 def test_default_config_fills_from_news_preset_and_is_valid():

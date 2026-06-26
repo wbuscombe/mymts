@@ -11,6 +11,18 @@ import { clampGridDim } from "./render.mjs";
 
 export const WALL_SCHEMA_VERSION = 1;
 
+/** The render-resolution choices the wall config understands (mirror of the
+ *  helper's RENDER_RESOLUTIONS). The renderer maps the name → canvas + bitrate. */
+export const RENDER_RESOLUTIONS = ["1080p", "2160p"];
+export const DEFAULT_RESOLUTION = "1080p";
+
+/** Coerce a render block to {resolution} with a valid known choice (else 1080p).
+ *  Defensive on read so a bad/absent value never breaks the picker. Pure. */
+function normalizeRender(render) {
+  const res = render && typeof render === "object" ? render.resolution : null;
+  return { resolution: RENDER_RESOLUTIONS.includes(res) ? res : DEFAULT_RESOLUTION };
+}
+
 /** A non-negative integer reload counter (else 0). Force-reload epochs are
  *  monotonic counters: a surface bumps one to signal "reload"; the rendered wall
  *  reattaches when it sees the value INCREASE. Defensive read for the wire. */
@@ -65,8 +77,20 @@ export function normalizeConfig(raw, validSlugs = null) {
     preset: typeof cfg.preset === "string" ? cfg.preset : null,
     audible_cell: audible,
     reload_epoch: reloadInt(cfg.reload_epoch),
+    // CRITICAL: carry `render` through normalize, else every commit() round-trip
+    // (which runs the config through normalizeConfig) would STRIP it and silently
+    // revert a 4K choice back to 1080p on the next save.
+    render: normalizeRender(cfg.render),
     cells,
   };
+}
+
+/** Set the render resolution ("1080p" | "2160p"); unknown → 1080p. The renderer
+ *  re-reads this and restarts its Xvfb/ffmpeg stack at the new canvas. Pure. */
+export function withResolution(config, resolution) {
+  const cfg = normalizeConfig(config);
+  const res = RENDER_RESOLUTIONS.includes(resolution) ? resolution : DEFAULT_RESOLUTION;
+  return { ...cfg, render: { resolution: res } };
 }
 
 /** Bump the WHOLE-WALL force-reload epoch (+1): the rendered wall reattaches
@@ -154,6 +178,9 @@ export function withPreset(config, preset, validSlugs) {
     // the WHOLE-WALL reload epoch is monotonic, so carry it forward (resetting it
     // would make a later "reload all" look like it went backwards → missed).
     reload_epoch: reloadInt(cfg.reload_epoch),
+    // Resolution is a renderer/canvas choice, orthogonal to the channel preset —
+    // carry it forward so applying a preset never reverts a 4K wall to 1080p.
+    render: normalizeRender(cfg.render),
     cells,
   };
 }
