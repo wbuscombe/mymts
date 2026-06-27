@@ -99,17 +99,29 @@ the channel *list*, the renderer serves the composed *wall*. The profile questio
 resolved-by-necessity for the headless context (server-side state), without prejudging the
 native device-local model.
 
-**GPU passthrough for the renderer — now the NAMED lever for >1080p smoothness (2026-06-26).**
+**GPU passthrough for the renderer — the NAMED lever for >1080p smoothness; BLOCKED on a host/hardware step (hardware-checked 2026-06-27).**
 v1 is **CPU-only** software compositing + x264 + N tile decoders. The smoothness pass measured the
 ceiling precisely (`ARCHITECTURE.md §31`): the wall is **render-bound** — the browser's software
 compositor sustains ~30fps at 1080p but only **~10fps at 4K** (the encoder is NOT the limit), so
 **1080p is the smooth ceiling and no encode setting can lift a higher resolution into smoothness.**
-The real fix for smooth high-res is **GPU passthrough** (VA-API hardware compositing + decode into
-the renderer container) — it offloads the per-pixel composite the CPU can't hold at high res.
-Deferred: needs device passthrough config on the NAS (and must still never disturb the helper /
-other containers / PIA). **Reconsider when** the operator wants genuinely-smooth >1080p output —
-that's the trigger, and it's a prerequisite for offering high resolutions as *smooth* (not just
-*available*) in the resolution-freedom pass.
+The real fix for smooth high-res is **GPU passthrough** (VA-API hardware decode/encode into the
+renderer container) — it offloads the per-pixel work the CPU can't hold at high res.
+
+**Hardware check (2026-06-27) — BLOCKED at the VM boundary, not the container.** A pass attempted
+the container-level VA-API wiring and first verified the prerequisite: a usable GPU exposed to the
+renderer's VM. It is **not present.** The renderer runs in a **KVM virtual machine** whose only
+graphics device is the **QXL paravirtual VGA** (`[1b36:0100]`) — an emulated console adapter with
+**no DRM render node** (`/dev/dri` has only `card0`; `renderD128` is absent) and therefore **no
+VA-API capability**; the renderer container sees no `/dev/dri` at all. The host NAS CPU is a
+Threadripper 1920X with **no iGPU**, and no discrete card is passed through to the VM. So VA-API
+**cannot be wired at the container/image level** — there is no render node to pass in. **No
+host/VM/hypervisor change was made** (out of scope, and a deliberate operator/hardware step).
+**Unblock requires one of:** (a) the operator PCIe-passes-through a discrete GPU to the Ubuntu VM
+at the **TrueNAS host** level (then this pass re-runs: pass `/dev/dri` into the renderer compose,
+add the VA-API runtime to the image, enable Chromium `VaapiVideoDecoder` + ffmpeg `h264_vaapi`,
+re-measure), or (b) a GPU is added to the NAS. Until then the **software envelope (§31) stands** and
+the resolution ladder's per-rung sustainable-fps annotations remain correct. **Reconsider when** the
+operator completes the host-level passthrough (the trigger), wanting genuinely-smooth >1080p output.
 
 **~~Resolution-freedom pass~~ — DONE (2026-06-26, `ARCHITECTURE.md §32`).** Shipped: an 8-rung
 16:9 resolution ladder (each annotated with its sustainable fps + smoothness zone from §31) +

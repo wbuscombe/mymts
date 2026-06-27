@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## docs(renderer): GPU/VA-API lever hardware-checked — blocked at the VM boundary, no change (2026-06-27)
+
+Investigated wiring hardware video decode/encode (VA-API) into the renderer to lift the >1080p
+software-render ceiling (§31), gating on a **real hardware check first**. **Result: no usable GPU is
+exposed to the renderer's VM**, so nothing was wired — the working software pipeline is unchanged.
+
+- The renderer runs in a **KVM VM** whose only graphics device is the **QXL paravirtual VGA**
+  (`[1b36:0100]`): no DRM render node (`/dev/dri` has only `card0`, `renderD128` absent → no VA-API),
+  and the renderer container sees no `/dev/dri`. The host CPU (Threadripper 1920X) has no iGPU and no
+  discrete card is passed through.
+- Per the gate, **STOP** — VA-API can't be wired at the container/image level (no render node to pass
+  in). **No host / VM / hypervisor / compose / image change was made** (the check was read-only); the
+  unblock is an explicit **operator hardware step** (PCIe-pass-through a discrete GPU to the VM at the
+  TrueNAS host, or add a GPU). Recorded in BACKLOG (with the re-run recipe) + ARCHITECTURE §31.
+- The software resolution envelope + the ladder's per-rung sustainable-fps annotations **stand
+  unchanged**. Renderer healthy; PIA / other containers untouched.
+
 ## feat(web,helper): weather radar widget — a selectable per-cell source (free public NWS) (2026-06-27)
 
 A wall cell can now be set to **Weather Radar** instead of a video feed: it renders an
