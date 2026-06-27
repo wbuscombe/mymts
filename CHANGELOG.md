@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web,helper,renderer): finely-tunable wall — resolution ladder + feed width/font + ticker height (2026-06-26)
+
+Every adjustment is a fine-grained, gradual slider in `/control/`, persisted in the wall config
+(the new partial-merge makes adding these fields safe by construction).
+
+- **Resolution freedom.** The 2-option (1080p/4K) dropdown becomes an 8-rung 16:9 **ladder**
+  (720p / 900p / 1080p / 1260p / 1440p / 1620p / 1800p / 2160p) on a stepped slider, each rung
+  **annotated with its sustainable fps + smoothness zone** from the measured envelope (§31) so the
+  choice is honest: ≤1080p is the **smooth** zone (30fps), 1260p/1440p **marginal** (24/20fps),
+  ≥1620p **heavy** (16→10fps, GPU-territory). The renderer maps each rung → canvas + a
+  **per-resolution sustainable CFR** (a high-res wall runs at a steady lower fps rather than a
+  juddery 30 the GPU-less browser can't render) + bitrate. **1080p stays the default.** The web
+  wall scales to any rung via its existing `--ux` unit.
+- **Feed width** (`feed_pct`, 18–58%), **feed font** (`feed_font`, 0.7–1.6×), **ticker height**
+  (`ticker_scale`, 0.6–2.0×) — new config fields, each a small-step `/control/` slider. Ticker
+  height scales **proportionally**: a new `--tu = --u × --ticker-scale` unit drives every ticker
+  dimension (bar height + gaps + the card text), so a taller ticker has bigger content, not a tall
+  empty bar. All apply within `--ux` (no hardcoded px). The rendered wall applies them; the laptop
+  `/app/` keeps its own local feed sliders (a personal view), so `/control/` tunes the TV without
+  fighting a laptop drag.
+- All bounds are sensible (nothing collapses or overflows); the helper **clamps** the continuous
+  knobs on read (a boundary slider value lands sane, not rejected) while keeping the resolution a
+  strict enum. The partial-merge's generalized invariant test automatically covers the new fields.
+
+Web + helper + renderer; no native change → no APK; renderer hard caps unchanged. PIA / other
+containers untouched.
+
 ## fix(renderer): real-time encode tuning for smooth motion + characterize the sustainable-resolution envelope (2026-06-26)
 
 The streamed wall (video AND the markets ticker) was choppy. **Diagnosed on the live NAS, stage

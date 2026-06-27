@@ -30,12 +30,41 @@ SEGMENT_SUFFIX = ".ts"
 # — so it gets a higher bitrate/bufsize but the SAME preset (a slower preset would
 # blow the real-time frame budget and wedge the stream). 1080p is the default.
 DEFAULT_RESOLUTION = "1080p"
-RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2160p": (3840, 2160)}
-# resolution → (video bitrate, vbv bufsize). bufsize ~= 2x bitrate so a keyframe
-# isn't VBV-clipped. Sized for the wall's MOTION (a continuous full-width ticker
-# crawl + N video tiles) and to offset -tune zerolatency's lower compression
-# efficiency (no B-frames/lookahead), so motion isn't crushed into blocky judder.
-RENDER_BITRATES = {"1080p": ("8M", "16M"), "2160p": ("20M", "40M")}
+# resolution name → (width, height). A fine 16:9 ladder; all dims even (yuv420p).
+# The web wall scales to any of these via its --ux unit (min(w/1920, h/1080)).
+RENDER_RESOLUTIONS = {
+    "720p": (1280, 720),
+    "900p": (1600, 900),
+    "1080p": (1920, 1080),
+    "1260p": (2240, 1260),
+    "1440p": (2560, 1440),
+    "1620p": (2880, 1620),
+    "1800p": (3200, 1800),
+    "2160p": (3840, 2160),
+}
+# resolution name → the SUSTAINABLE constant frame rate on this CPU-only renderer.
+# From the smoothness envelope (ARCHITECTURE §31): software render time per frame
+# grows ~linearly with canvas pixels + a fixed floor, so fps falls SUBLINEARLY
+# above the ~1080p/30 ceiling. Targeting a resolution's sustainable CFR (e.g. 1440p
+# at a steady 20fps) keeps a high-res wall CONSISTENT rather than juddery-at-30
+# (which would drop frames the browser can't render). ≤1080p is capped at 30.
+RENDER_FPS = {
+    "720p": 30, "900p": 30, "1080p": 30, "1260p": 24,
+    "1440p": 20, "1620p": 16, "1800p": 14, "2160p": 10,
+}
+# resolution name → (video bitrate, vbv bufsize ~= 2x). Scales with the canvas to
+# carry the wall's MOTION (a full-width ticker crawl + N tiles) and offset -tune
+# zerolatency's lower compression, so motion isn't crushed into blocky judder.
+RENDER_BITRATES = {
+    "720p": ("4M", "8M"),
+    "900p": ("6M", "12M"),
+    "1080p": ("8M", "16M"),
+    "1260p": ("10M", "20M"),
+    "1440p": ("12M", "24M"),
+    "1620p": ("14M", "28M"),
+    "1800p": ("16M", "32M"),
+    "2160p": ("20M", "40M"),
+}
 
 
 def normalize_resolution(res: object) -> str:
@@ -50,20 +79,37 @@ def resolution_to_dimensions(res: object) -> tuple[int, int]:
     return RENDER_RESOLUTIONS[normalize_resolution(res)]
 
 
+def resolution_to_fps(res: object) -> int:
+    """The sustainable constant frame rate for a resolution; unknown → 1080p (30).
+    Pure."""
+    return RENDER_FPS[normalize_resolution(res)]
+
+
 def resolution_to_bitrate(res: object) -> tuple[str, str]:
     """(video_bitrate, bufsize) for a resolution name; unknown → 1080p. Pure."""
     return RENDER_BITRATES[normalize_resolution(res)]
 
 
-def grab_queue_size(width: int) -> int:
-    """The x11grab INPUT queue depth (frames). A raw 4K frame is ~33MB, so the
-    1080p default of 1024 would let the queue balloon to many GB if the software
-    encoder falls behind (4K on a CPU-only encoder is heavy) — which OOM-kills
-    ffmpeg under the container mem_limit. Bound it hard at 4K so a slow encoder
-    DROPS frames (bounded memory, the stream still advances) instead of crashing.
-    At 1080p the encoder keeps up easily, so the deep queue (drop-proof under load
-    spikes) is kept. Pure — unit-tested."""
-    return 32 if width >= 3840 else 1024
+# Cap the x11grab raw-frame buffer to this many BYTES regardless of resolution, so
+# a transient encoder stall drops frames within the container mem_limit instead of
+# OOM-ballooning the queue. ~1 GiB leaves ample headroom under mem_limit:4g for
+# Chromium + the encoder. (A raw frame is W·H·4 bytes — 8 MB at 1080p, 33 MB at 4K.)
+GRAB_QUEUE_MEM_BUDGET = 1 << 30
+
+
+def grab_queue_size(width: int, height: int | None = None) -> int:
+    """The x11grab INPUT queue depth (frames), bounded by the raw-frame MEMORY at
+    THIS resolution (not a single 4K threshold). A deep queue would let a slow
+    software encoder balloon the raw-frame buffer to many GB and OOM-kill ffmpeg
+    (rc=-9) into a crash-loop — observed live at 4K (ARCHITECTURE §31). Scaling the
+    depth with frame size keeps the worst-case buffer ≤ GRAB_QUEUE_MEM_BUDGET at
+    EVERY ladder rung (so a transient stall DROPS frames, stream still advancing,
+    no OOM), while keeping a generous depth at low res (a multi-second spike
+    buffer). Clamped to [32, 1024]. height defaults to 16:9 from width. Pure."""
+    if height is None:
+        height = width * 9 // 16
+    frame_bytes = max(1, width * height * 4)
+    return max(32, min(1024, GRAB_QUEUE_MEM_BUDGET // frame_bytes))
 
 
 def newest_segment_mtime(stream_dir: str | os.PathLike[str]) -> float | None:

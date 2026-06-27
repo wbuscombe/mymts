@@ -9,7 +9,10 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "preset": "news",                       # informational: last-applied preset
       "audible_cell": 0 | null,               # single-audible-cell model
       "reload_epoch": 0,                      # whole-wall force-reload counter
-      "render": {"resolution": "1080p"},      # renderer canvas: "1080p" | "2160p"
+      "render": {"resolution": "1080p"},      # renderer canvas: a 16:9 ladder rung
+      "feed_pct": 32.0,                       # feed-column width (% of the wall)
+      "feed_font": 1.0,                       # feed text scale (proportional)
+      "ticker_scale": 1.0,                    # ticker height + content scale
       "cells": [                              # length == rows*cols (by index)
         {"channel": "bbc-news" | null, "subtitles": false, "reload": 0},
         ...
@@ -55,14 +58,25 @@ GRID_DIM_MAX = 3
 DEFAULT_ROWS = 2
 DEFAULT_COLS = 2
 
-# Render resolution presets (the renderer's Xvfb/ffmpeg canvas). Both are 16:9 so
-# the web wall scales between them with one ratio. 1080p is the default; 2160p
-# (4K) is opt-in and CPU-heavy (software x264 on the CPU-only renderer). A closed
-# enum (heights are exact multiples of 1080) keeps the web scale factor an exact
-# integer — no sub-pixel drift. The renderer maps the chosen name → (w, h) + the
-# encode bitrate; the helper only stores/validates the CHOICE.
-RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2160p": (3840, 2160)}
+# Render resolution presets (the renderer's Xvfb/ffmpeg canvas) — a fine 16:9
+# ladder. The helper only stores/validates the CHOSEN NAME; the renderer maps each
+# name → (w, h) + a SUSTAINABLE per-resolution fps + bitrate (supervisor.py), and
+# the web wall scales to any of them via its --ux unit. 1080p is the default + the
+# smooth ceiling on the CPU-only renderer; ≥1440p is heavier (lower sustainable
+# fps — see ARCHITECTURE §31). Keep in lockstep with supervisor.RENDER_RESOLUTIONS
+# (renderer) and RENDER_RESOLUTIONS (wallConfig.mjs).
+RENDER_RESOLUTIONS = (
+    "720p", "900p", "1080p", "1260p", "1440p", "1620p", "1800p", "2160p",
+)
 DEFAULT_RESOLUTION = "1080p"
+
+# Fine-grained, proportional view tunables (bounds chosen so nothing collapses or
+# overflows). All are CLAMPED on read (a slider stays in range; a malformed PUT is
+# pulled to a sane value rather than rejected — these are continuous knobs, not the
+# strict enums/counters elsewhere).
+FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT = 18.0, 58.0, 32.0
+FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT = 0.7, 1.6, 1.0
+TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT = 0.6, 2.0, 1.0
 
 
 class WallConfigError(ValueError):
@@ -102,8 +116,23 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
         "audible_cell": None,
         "reload_epoch": 0,
         "render": {"resolution": DEFAULT_RESOLUTION},
+        "feed_pct": FEED_PCT_DEFAULT,
+        "feed_font": FEED_FONT_DEFAULT,
+        "ticker_scale": TICKER_SCALE_DEFAULT,
         "cells": cells,
     }
+
+
+def _validate_scale(value: Any, name: str, lo: float, hi: float, default: float) -> float:
+    """A fine-grained, proportional view tunable: a number CLAMPED to [lo, hi]
+    (absent → default). Additive to schema v1. Clamped (not rejected) on read so a
+    boundary slider value or a slightly-off PUT lands at a sane value — these are
+    continuous knobs. A non-number is still a type error (rejected)."""
+    if value is None:
+        return default
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise WallConfigError(f"{name} must be a number")
+    return float(min(hi, max(lo, value)))
 
 
 def _validate_render(value: Any) -> dict[str, Any]:
@@ -222,6 +251,16 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
 
     reload_epoch = _validate_reload(raw.get("reload_epoch"), "reload_epoch")
     render = _validate_render(raw.get("render"))
+    feed_pct = _validate_scale(
+        raw.get("feed_pct"), "feed_pct", FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT
+    )
+    feed_font = _validate_scale(
+        raw.get("feed_font"), "feed_font", FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT
+    )
+    ticker_scale = _validate_scale(
+        raw.get("ticker_scale"), "ticker_scale",
+        TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT,
+    )
 
     return {
         "schema_version": WALL_SCHEMA_VERSION,
@@ -230,6 +269,9 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         "audible_cell": audible,
         "reload_epoch": reload_epoch,
         "render": render,
+        "feed_pct": feed_pct,
+        "feed_font": feed_font,
+        "ticker_scale": ticker_scale,
         "cells": cells,
     }
 

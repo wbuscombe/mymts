@@ -11,6 +11,8 @@ import {
   resizeCells, cellCount, normalizeConfig,
   withCellChannel, withCellSubtitles, withAudibleCell, withLayout, withPreset,
   withCellReload, withWallReload, withResolution,
+  withFeedPct, withFeedFont, withTickerScale,
+  RENDER_RESOLUTIONS, RESOLUTION_INFO, FEED_PCT, FEED_FONT, TICKER_SCALE,
 } from "../js/wallConfig.mjs";
 
 const VALID = ["bbc-news", "cnn", "cbs-sports-hq", "bloomberg-tv"];
@@ -244,14 +246,62 @@ test("normalizeConfig preserves a valid render and coerces a bad one", () => {
   );
   // bad/unknown resolution → 1080p (defensive — a commit() must never persist junk)
   assert.deepEqual(
-    normalizeConfig({ layout: { rows: 1, cols: 1 }, render: { resolution: "720p" }, cells: [{ channel: "bbc-news" }] }, VALID).render,
+    normalizeConfig({ layout: { rows: 1, cols: 1 }, render: { resolution: "480p" }, cells: [{ channel: "bbc-news" }] }, VALID).render,
     { resolution: "1080p" },
   );
 });
 
 test("withResolution sets the resolution; unknown coerces to 1080p", () => {
   assert.deepEqual(withResolution(cfg2x2(), "2160p").render, { resolution: "2160p" });
+  assert.deepEqual(withResolution(cfg2x2(), "1440p").render, { resolution: "1440p" });  // a ladder rung
   assert.deepEqual(withResolution(cfg2x2(), "8k").render, { resolution: "1080p" });
+});
+
+test("the resolution ladder has 8 rungs, each with display info", () => {
+  assert.equal(RENDER_RESOLUTIONS.length, 8);
+  for (const name of RENDER_RESOLUTIONS) {
+    const i = RESOLUTION_INFO[name];
+    assert.ok(i && i.w && i.h && i.fps && i.zone, `${name} info`);
+    assert.ok(Math.abs(i.w / i.h - 16 / 9) < 1e-6, `${name} 16:9`);
+  }
+  // sustainable fps falls above the 1080p ceiling
+  assert.equal(RESOLUTION_INFO["1080p"].fps, 30);
+  assert.ok(RESOLUTION_INFO["2160p"].fps < RESOLUTION_INFO["1080p"].fps);
+});
+
+// ---- fine-grained view tunables (feed_pct / feed_font / ticker_scale) ----
+
+test("normalizeConfig defaults + carries the view tunables", () => {
+  const out = normalizeConfig({ layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }] });
+  assert.equal(out.feed_pct, FEED_PCT.default);
+  assert.equal(out.feed_font, FEED_FONT.default);
+  assert.equal(out.ticker_scale, TICKER_SCALE.default);
+});
+
+test("with* view-tunable transforms set + clamp (fine-grained)", () => {
+  assert.equal(withFeedPct(cfg2x2(), 41).feed_pct, 41);
+  assert.equal(withFeedPct(cfg2x2(), 999).feed_pct, FEED_PCT.max);     // clamp, not reject
+  assert.equal(withFeedFont(cfg2x2(), 1.25).feed_font, 1.25);
+  assert.equal(withFeedFont(cfg2x2(), 9).feed_font, FEED_FONT.max);
+  assert.equal(withTickerScale(cfg2x2(), 1.5).ticker_scale, 1.5);
+  assert.equal(withTickerScale(cfg2x2(), 0).ticker_scale, TICKER_SCALE.min);
+});
+
+test("REGRESSION: a commit() normalize round-trip never strips the view tunables", () => {
+  const c = withTickerScale(withFeedFont(withFeedPct(cfg2x2(), 45), 1.2), 1.6);
+  const round = normalizeConfig(c, VALID);
+  assert.equal(round.feed_pct, 45);
+  assert.equal(round.feed_font, 1.2);
+  assert.equal(round.ticker_scale, 1.6);
+});
+
+test("view tunables survive other transforms + a preset (orthogonal)", () => {
+  const base = withTickerScale(withFeedPct(cfg2x2(), 50), 1.4);
+  assert.equal(withCellChannel(base, 2, "bloomberg-tv").feed_pct, 50);
+  assert.equal(withLayout(base, 1, 2).ticker_scale, 1.4);
+  const out = withPreset(base, { id: "x", grid: { rows: 1, cols: 1 }, slugs: ["cnn"] }, VALID);
+  assert.equal(out.feed_pct, 50);
+  assert.equal(out.ticker_scale, 1.4);
 });
 
 test("REGRESSION: a commit()-style normalize round-trip never strips render", () => {

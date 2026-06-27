@@ -43,17 +43,35 @@
           <option>1</option><option>2</option><option>3</option>
         </select>
       </label>
-      <label class="ctl">
-        <span>Resolution</span>
-        <select id="resolution" aria-label="Render resolution"
-                title="4K is CPU-heavy and briefly restarts the renderer (the stream blips). 1080p is the default.">
-          <option value="1080p">1080p</option>
-          <option value="2160p">4K (2160p)</option>
-        </select>
-      </label>
       <span id="grid-note" class="grid-note"></span>
       <button id="reload-all" type="button" class="reload-all"
               title="Force every video tile on the wall to re-attach its player (re-resolving a fresh stream URL)">↻ Reload all tiles</button>
+    </section>
+
+    <!-- Fine-grained DISPLAY tuning — every control is a small-step slider (gradual,
+         never radical). Resolution steps through a 16:9 ladder annotated with the
+         sustainable fps + smoothness zone on this GPU-less NAS (≤1080p smooth, above
+         is heavier — see the renderer envelope). Feed width / font + ticker height
+         scale the wall proportionally. All persist in the wall config + drive the
+         rendered TV; a resolution change briefly restarts the renderer (stream blips). -->
+    <section class="display-row" aria-label="Display tuning">
+      <label class="slab">
+        <span class="slab-head">Resolution <em id="resolution-note"></em></span>
+        <input type="range" id="resolution" min="0" max="7" step="1"
+               aria-label="Render resolution (ladder rung)" />
+      </label>
+      <label class="slab">
+        <span class="slab-head">Feed width <em id="feed-width-val"></em></span>
+        <input type="range" id="feed-width" min="18" max="58" step="1" aria-label="News-feed column width" />
+      </label>
+      <label class="slab">
+        <span class="slab-head">Feed font <em id="feed-font-val"></em></span>
+        <input type="range" id="feed-font" min="0.7" max="1.6" step="0.05" aria-label="Feed text size" />
+      </label>
+      <label class="slab">
+        <span class="slab-head">Ticker height <em id="ticker-height-val"></em></span>
+        <input type="range" id="ticker-height" min="0.6" max="2" step="0.05" aria-label="Markets ticker height" />
+      </label>
     </section>
 
     <section id="cells" class="cells" aria-label="Wall cells"></section>

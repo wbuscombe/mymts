@@ -14,6 +14,12 @@
   --ux: 1;
   --u: calc(1px * var(--ux));
   --gap: calc(8 * var(--u));   /* one shared gutter rhythm: tiles, grid inset, overlays */
+  /* Ticker scale (operator-tunable via /control/, default 1): --tu is the ticker's
+     OWN design-px unit = --u × --ticker-scale, so EVERY ticker dimension (bar height,
+     gaps, paddings AND the card text) is calc(N * var(--tu)) — the whole strip scales
+     proportionally with its height (taller bar ⇒ bigger text, not a tall empty bar). */
+  --ticker-scale: 1;
+  --tu: calc(var(--u) * var(--ticker-scale));
 
   --bg: #000; --panel: #0a0a0a; --panel-2: #080808; --line: #ffffff22;
   --label: #ccc; --muted: #ffffff99; --ghost: #ffffff66;
@@ -32,17 +38,17 @@ body { display: flex; flex-direction: column; }
 .hidden { display: none !important; }
 
 /* ---- ticker bar (scrolling marquee, ESPN-BottomLine league markers) ---- */
-.ticker-bar { display: flex; align-items: center; gap: calc(10 * var(--u)); height: calc(40 * var(--u));
-  background: #050505; border-bottom: 1px solid var(--line); padding: 0 calc(10 * var(--u)); flex: 0 0 auto; }
-.ticker-mode-tag { color: var(--ghost); font-size: calc(10 * var(--u)); letter-spacing: calc(2 * var(--u)); min-width: calc(62 * var(--u)); }
-.ticker-note { color: var(--recover); font-size: calc(11 * var(--u)); flex: 0 0 auto; white-space: nowrap; }
+.ticker-bar { display: flex; align-items: center; gap: calc(10 * var(--tu)); height: calc(40 * var(--tu));
+  background: #050505; border-bottom: 1px solid var(--line); padding: 0 calc(10 * var(--tu)); flex: 0 0 auto; }
+.ticker-mode-tag { color: var(--ghost); font-size: calc(10 * var(--tu)); letter-spacing: calc(2 * var(--tu)); min-width: calc(62 * var(--tu)); }
+.ticker-note { color: var(--recover); font-size: calc(11 * var(--tu)); flex: 0 0 auto; white-space: nowrap; }
 .ticker-note:empty { display: none; }
 .ticker-viewport { flex: 1; overflow: hidden; position: relative; height: 100%; }
 /* CRAWL marquee — driven by the Web Animations API in app.mjs (startCrawl):
    scroll one seamless period (copyWidth + gap) at distance/speed, then DWELL,
    matching the native TickerStrip. Compositor-timed (constant velocity under
    load) + sub-pixel. Hover-to-read pauses it via JS (wireTickerHoverPause). */
-.ticker-track { display: inline-flex; gap: calc(22 * var(--u)); align-items: center; height: 100%;
+.ticker-track { display: inline-flex; gap: calc(22 * var(--tu)); align-items: center; height: 100%;
   white-space: nowrap; will-change: transform; }
 /* FLIP motion (native-parity, opt-in via the Ticker motion setting): the crawl
    is OFF; one card-group shows at a time and vertically flips to the next. */
@@ -54,66 +60,66 @@ body { display: flex; flex-direction: column; }
 /* A league/market run: the marker shows ONCE, then its cards follow. Each
    card is a discrete bordered cell — the native model where the card IS the
    divider unit (rounded bordered cell + gap, no separate divider element). */
-.t-group { display: inline-flex; gap: calc(8 * var(--u)); align-items: center; }
-.t-league { font-size: calc(10 * var(--u)); font-weight: 700; letter-spacing: calc(1.2 * var(--u)); color: #000;
-  background: var(--accent); border-radius: calc(3 * var(--u)); padding: calc(3 * var(--u)) calc(8 * var(--u)); flex: 0 0 auto; }
+.t-group { display: inline-flex; gap: calc(8 * var(--tu)); align-items: center; }
+.t-league { font-size: calc(10 * var(--tu)); font-weight: 700; letter-spacing: calc(1.2 * var(--tu)); color: #000;
+  background: var(--accent); border-radius: calc(3 * var(--tu)); padding: calc(3 * var(--tu)) calc(8 * var(--tu)); flex: 0 0 auto; }
 
 /* shared card cell — native cardRow register (CardBg #15171A, 1px border,
    5px radius, 8px h / 3px v padding, children centered with a small gap). */
-.t-card { display: inline-flex; align-items: center; gap: calc(6 * var(--u));
-  background: #15171a; border: 1px solid rgba(255,255,255,0.18); border-radius: calc(5 * var(--u));
-  padding: calc(3 * var(--u)) calc(8 * var(--u)); white-space: nowrap; }
+.t-card { display: inline-flex; align-items: center; gap: calc(6 * var(--tu));
+  background: #15171a; border: 1px solid rgba(255,255,255,0.18); border-radius: calc(5 * var(--tu));
+  padding: calc(3 * var(--tu)) calc(8 * var(--tu)); white-space: nowrap; }
 
 /* market/news fallback cell (direction arrow + value) */
-.t-card--cell .t-val { font-family: ui-monospace, Menlo, monospace; font-size: calc(12 * var(--u)); color: var(--muted); }
+.t-card--cell .t-val { font-family: ui-monospace, Menlo, monospace; font-size: calc(12 * var(--tu)); color: var(--muted); }
 .t-card--cell.t-card--sample .t-val { color: var(--ghost); }     /* dimmed when sample */
-.t-arrow { font-size: calc(11 * var(--u)); }
+.t-arrow { font-size: calc(11 * var(--tu)); }
 .dir-up { color: var(--live); } .dir-down { color: var(--down); } .dir-flat { color: var(--muted); }
 .t-card--sample .t-arrow { opacity: 0.5; }                        /* arrow alpha halved when sample */
-.t-sample-inline { font-size: calc(8 * var(--u)); font-style: italic; letter-spacing: calc(0.5 * var(--u)); color: var(--ghost); }
+.t-sample-inline { font-size: calc(8 * var(--tu)); font-style: italic; letter-spacing: calc(0.5 * var(--tu)); color: var(--ghost); }
 
 /* team game card — abbrs + scores (or "@"), status chip */
-.t-matchup { display: inline-flex; align-items: center; gap: calc(8 * var(--u));
+.t-matchup { display: inline-flex; align-items: center; gap: calc(8 * var(--tu));
   font-family: ui-monospace, Menlo, monospace; }
-.t-side { display: inline-flex; align-items: baseline; gap: calc(4 * var(--u)); }
-.t-team { font-size: calc(13 * var(--u)); font-weight: 600; color: var(--label); }
+.t-side { display: inline-flex; align-items: baseline; gap: calc(4 * var(--tu)); }
+.t-team { font-size: calc(13 * var(--tu)); font-weight: 600; color: var(--label); }
 .t-side--final .t-team { color: var(--muted); }                   /* FINAL → muted teams */
-.t-at { font-size: calc(12 * var(--u)); color: var(--ghost); }
-.t-score { font-size: calc(14 * var(--u)); font-weight: 700; color: var(--muted); }
+.t-at { font-size: calc(12 * var(--tu)); color: var(--ghost); }
+.t-score { font-size: calc(14 * var(--tu)); font-weight: 700; color: var(--muted); }
 .t-score--lead { color: #fff; }                                   /* leader (LIVE only) → primary */
 
 /* individual sport cards — title + lines */
 .t-card--sport { flex-direction: row; }
-.t-title { font-size: calc(12 * var(--u)); font-weight: 600; color: var(--label); }
-.t-card--fight .t-title { font-size: calc(13 * var(--u)); }
-.t-line { font-size: calc(12 * var(--u)); color: var(--muted); }
-.t-card--fight .t-line { font-size: calc(10 * var(--u)); }
+.t-title { font-size: calc(12 * var(--tu)); font-weight: 600; color: var(--label); }
+.t-card--fight .t-title { font-size: calc(13 * var(--tu)); }
+.t-line { font-size: calc(12 * var(--tu)); color: var(--muted); }
+.t-card--fight .t-line { font-size: calc(10 * var(--tu)); }
 .t-line--mono { font-family: ui-monospace, Menlo, monospace; }    /* leaderboard / match alignment */
 
 /* news card — SOURCE label (green) + headline, inert plain text */
-.t-card--news .t-news-source { font-size: calc(9 * var(--u)); font-weight: 700; letter-spacing: calc(1 * var(--u)); color: var(--accent); }
-.t-card--news .t-news-headline { font-size: calc(12 * var(--u)); color: var(--muted); }
+.t-card--news .t-news-source { font-size: calc(9 * var(--tu)); font-weight: 700; letter-spacing: calc(1 * var(--tu)); color: var(--accent); }
+.t-card--news .t-news-headline { font-size: calc(12 * var(--tu)); color: var(--muted); }
 
 /* status chip (shared color-rule engine — native StatusBlock) */
-.t-status { font-size: calc(10 * var(--u)); font-weight: 700; letter-spacing: calc(0.8 * var(--u)); border-radius: calc(3 * var(--u)); padding: calc(2 * var(--u)) calc(6 * var(--u)); }
+.t-status { font-size: calc(10 * var(--tu)); font-weight: 700; letter-spacing: calc(0.8 * var(--tu)); border-radius: calc(3 * var(--tu)); padding: calc(2 * var(--tu)) calc(6 * var(--tu)); }
 .t-status--live { color: var(--live); background: rgba(0,229,160,0.13); }
 .t-status--final { color: var(--muted); background: rgba(255,255,255,0.10); }
 .t-status--upcoming { color: #bfc6cc; background: rgba(255,255,255,0.08); }
 
 /* per-card SAMPLE chip (boxed) — honest degradation, never faked live */
-.t-sample { font-size: calc(8 * var(--u)); letter-spacing: calc(1 * var(--u)); color: var(--ghost);
-  background: rgba(255,255,255,0.20); border-radius: calc(2 * var(--u)); padding: calc(1 * var(--u)) calc(4 * var(--u)); }
+.t-sample { font-size: calc(8 * var(--tu)); letter-spacing: calc(1 * var(--tu)); color: var(--ghost);
+  background: rgba(255,255,255,0.20); border-radius: calc(2 * var(--tu)); padding: calc(1 * var(--tu)) calc(4 * var(--tu)); }
 
 /* schema-guard / unavailability fallbacks inside the track */
-.t-stale { color: var(--recover); font-size: calc(11 * var(--u)); }
-.t-schema-warn { color: var(--stale); font-size: calc(12 * var(--u)); font-weight: 600; }
+.t-stale { color: var(--recover); font-size: calc(11 * var(--tu)); }
+.t-schema-warn { color: var(--stale); font-size: calc(12 * var(--tu)); font-weight: 600; }
 
 /* envelope-level STALE chip pinned to the strip's RIGHT edge (native StaleChip) */
-.t-stale-chip { flex: 0 0 auto; font-size: calc(9 * var(--u)); font-weight: 600; letter-spacing: calc(1.4 * var(--u));
-  color: var(--stale); background: rgba(5,5,5,0.9); border-radius: calc(2 * var(--u)); padding: calc(2 * var(--u)) calc(6 * var(--u)); }
+.t-stale-chip { flex: 0 0 auto; font-size: calc(9 * var(--tu)); font-weight: 600; letter-spacing: calc(1.4 * var(--tu));
+  color: var(--stale); background: rgba(5,5,5,0.9); border-radius: calc(2 * var(--tu)); padding: calc(2 * var(--tu)) calc(6 * var(--tu)); }
 
 .gear { flex: 0 0 auto; background: transparent; border: 1px solid var(--line); color: var(--label);
-  font-size: calc(16 * var(--u)); width: calc(30 * var(--u)); height: calc(28 * var(--u)); border-radius: calc(4 * var(--u)); cursor: pointer; }
+  font-size: calc(16 * var(--tu)); width: calc(30 * var(--tu)); height: calc(28 * var(--tu)); border-radius: calc(4 * var(--tu)); cursor: pointer; }
 .gear:hover { background: #ffffff14; }
 
 /* ---- wall body: feed pane | video grid ---- */

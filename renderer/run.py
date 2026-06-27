@@ -147,21 +147,24 @@ def get_json(url: str, timeout_s: float = 5.0) -> dict | None:
         return None
 
 
-def resolve_render_dimensions() -> tuple[int, int, str, str]:
-    """(width, height, video_bitrate, bufsize) for the CURRENTLY-configured render
-    resolution. Reads the wall config's `render.resolution` and maps it via the
-    pure supervisor table; on an unreachable helper / absent field it falls back to
-    the current module globals (the env defaults at startup, the running values
-    later) so a helper blip never changes the canvas. Config > env > default."""
+def resolve_render_dimensions() -> tuple[int, int, int, str, str]:
+    """(width, height, fps, video_bitrate, bufsize) for the CURRENTLY-configured
+    render resolution. Reads the wall config's `render.resolution` and maps it via
+    the pure supervisor table — including the per-resolution SUSTAINABLE fps (a
+    high-res wall runs at a steady lower fps, not a juddery 30). On an unreachable
+    helper / absent field it falls back to the current module globals (the env
+    defaults at startup, the running values later) so a helper blip never changes
+    the canvas. Config > env > default."""
     cfg = get_json(API_WALL_URL)
     res = None
     if isinstance(cfg, dict) and isinstance(cfg.get("render"), dict):
         res = cfg["render"].get("resolution")
     if res in supervisor.RENDER_RESOLUTIONS:
         w, h = supervisor.resolution_to_dimensions(res)
+        fps = supervisor.resolution_to_fps(res)
         bitrate, bufsize = supervisor.resolution_to_bitrate(res)
-        return w, h, bitrate, bufsize
-    return WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE
+        return w, h, fps, bitrate, bufsize
+    return WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE
 
 
 def start_xvfb() -> subprocess.Popen:
@@ -213,10 +216,11 @@ def ffmpeg_cmd() -> list[str]:
         # dropping frames or blocking the grab — robustness under the exact load
         # the cell count drives.
         # video: the X framebuffer, cursor suppressed (belt-and-suspenders with
-        # the page's render-mode cursor:none). The grab queue is RESOLUTION-bound
-        # (deep at 1080p, shallow at 4K) so a behind-the-encoder 4K stream drops
+        # the page's render-mode cursor:none). The grab queue depth is bounded by
+        # the raw-frame MEMORY at THIS resolution (deep at low res, shallow as the
+        # canvas grows) so a behind-the-encoder stream at ANY ladder rung drops
         # frames within the mem_limit instead of OOM-ballooning the raw-frame queue.
-        "-thread_queue_size", str(supervisor.grab_queue_size(WIDTH)),
+        "-thread_queue_size", str(supervisor.grab_queue_size(WIDTH, HEIGHT)),
         "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(FPS),
         "-video_size", f"{WIDTH}x{HEIGHT}", "-i", DISPLAY,
         # audio: the null sink's monitor (the audible cell's audio).
@@ -294,9 +298,9 @@ def main() -> int:
     # live — a resolution change restarts the whole stack). Pulse/Xvfb/helper are
     # otherwise independent, so this reorder is safe.
     wait_for_helper(HELPER_URL)
-    global WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE
-    WIDTH, HEIGHT, VIDEO_BITRATE, BUFSIZE = resolve_render_dimensions()
-    log(f"render canvas {WIDTH}x{HEIGHT} @ {VIDEO_BITRATE} (bufsize {BUFSIZE})")
+    global WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE
+    WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE = resolve_render_dimensions()
+    log(f"render canvas {WIDTH}x{HEIGHT} @ {FPS}fps {VIDEO_BITRATE} (bufsize {BUFSIZE})")
     xvfb = start_xvfb()
 
     env = dict(os.environ, DISPLAY=DISPLAY, PULSE_SINK=SINK)
@@ -325,7 +329,7 @@ def main() -> int:
         # falls back to the running dims → no spurious restart.
         if time.monotonic() >= next_res_check:
             next_res_check = time.monotonic() + RESOLUTION_POLL_S
-            want_w, want_h, _, _ = resolve_render_dimensions()
+            want_w, want_h, _, _, _ = resolve_render_dimensions()
             if (want_w, want_h) != (WIDTH, HEIGHT):
                 log(f"render resolution changed {WIDTH}x{HEIGHT} → {want_w}x{want_h} — restarting the container stack")
                 for c in children:

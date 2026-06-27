@@ -47,10 +47,10 @@ def test_validate_accepts_and_normalises_a_good_config():
     assert out["layout"] == {"rows": 2, "cols": 2}
     assert out["audible_cell"] == 0
     assert out["cells"][1] == {"channel": "cnn", "subtitles": True, "reload": 0}
-    # extra keys are stripped; subtitles + reload + render defaults present
+    # extra keys are stripped; all additive defaults present
     assert set(out.keys()) == {
-        "schema_version", "layout", "preset", "audible_cell",
-        "reload_epoch", "render", "cells",
+        "schema_version", "layout", "preset", "audible_cell", "reload_epoch",
+        "render", "feed_pct", "feed_font", "ticker_scale", "cells",
     }
 
 
@@ -291,7 +291,44 @@ def test_validate_accepts_a_known_resolution():
     assert out["render"] == {"resolution": "2160p"}
 
 
-@pytest.mark.parametrize("bad", [{"resolution": "720p"}, {"resolution": 1080}, {"resolution": None}])
+@pytest.mark.parametrize("res", ["720p", "900p", "1080p", "1260p", "1440p", "1620p", "1800p", "2160p"])
+def test_validate_accepts_every_ladder_rung(res):
+    # the full 8-rung resolution ladder is valid (was a 2-option enum before)
+    assert store.validate_wall_config(_good_config(render={"resolution": res}), set(VALID))["render"] == {"resolution": res}
+    assert len(store.RENDER_RESOLUTIONS) == 8
+
+
+# --- fine-grained view tunables (feed_pct / feed_font / ticker_scale) ---
+
+
+def test_validate_defaults_the_view_tunables():
+    out = store.validate_wall_config(_good_config(), set(VALID))
+    assert out["feed_pct"] == 32.0 and out["feed_font"] == 1.0 and out["ticker_scale"] == 1.0
+
+
+def test_view_tunables_clamp_into_range_not_reject():
+    out = store.validate_wall_config(
+        _good_config(feed_pct=999, feed_font=-5, ticker_scale=100), set(VALID)
+    )
+    assert out["feed_pct"] == store.FEED_PCT_MAX        # clamped, not rejected
+    assert out["feed_font"] == store.FEED_FONT_MIN
+    assert out["ticker_scale"] == store.TICKER_SCALE_MAX
+
+
+def test_view_tunables_preserve_an_in_range_value():
+    out = store.validate_wall_config(
+        _good_config(feed_pct=41, feed_font=1.25, ticker_scale=1.5), set(VALID)
+    )
+    assert out["feed_pct"] == 41.0 and out["feed_font"] == 1.25 and out["ticker_scale"] == 1.5
+
+
+@pytest.mark.parametrize("field", ["feed_pct", "feed_font", "ticker_scale"])
+def test_view_tunables_reject_a_non_number(field):
+    with pytest.raises(store.WallConfigError, match=field):
+        store.validate_wall_config(_good_config(**{field: "wide"}), set(VALID))
+
+
+@pytest.mark.parametrize("bad", [{"resolution": "480p"}, {"resolution": 1080}, {"resolution": None}])
 def test_validate_rejects_unknown_resolution(bad):
     with pytest.raises(store.WallConfigError, match="render.resolution"):
         store.validate_wall_config(_good_config(render=bad), set(VALID))
@@ -417,7 +454,10 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
         "preset": "news",
         "audible_cell": 0,
         "reload_epoch": 7,
-        "render": {"resolution": "2160p"},
+        "render": {"resolution": "1440p"},
+        "feed_pct": 41.0,
+        "feed_font": 1.3,
+        "ticker_scale": 1.5,
         "cells": [
             {"channel": "bbc-news", "subtitles": True, "reload": 3},
             {"channel": "cnn", "subtitles": False, "reload": 0},
@@ -426,8 +466,9 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
     client.put("/api/wall", json=full)
     stored = client.get("/api/wall").json()
     stored.pop("stored", None)
-    # sanity: every field round-tripped non-default so a revert WOULD be detectable
-    assert stored["render"] == {"resolution": "2160p"} and stored["reload_epoch"] == 7
+    # sanity: every field round-tripped NON-default so a revert WOULD be detectable
+    assert stored["render"] == {"resolution": "1440p"} and stored["reload_epoch"] == 7
+    assert stored["feed_pct"] == 41.0 and stored["feed_font"] == 1.3 and stored["ticker_scale"] == 1.5
 
     for field in list(stored.keys()):
         partial = {k: v for k, v in stored.items() if k != field}

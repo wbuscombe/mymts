@@ -111,10 +111,14 @@ other containers / PIA). **Reconsider when** the operator wants genuinely-smooth
 that's the trigger, and it's a prerequisite for offering high resolutions as *smooth* (not just
 *available*) in the resolution-freedom pass.
 
-**Resolution-freedom pass (next).** Finer resolution choice (a range and/or custom W×H) + tunable
-feed width / feed font / ticker height, all fine-grained. Informed by §31's envelope: ≤1080p is
-smooth; 1440p+ is marginal→heavy on this hardware (annotate honestly, don't present 4K as smooth)
-until GPU passthrough lands.
+**~~Resolution-freedom pass~~ — DONE (2026-06-26, `ARCHITECTURE.md §32`).** Shipped: an 8-rung
+16:9 resolution ladder (each annotated with its sustainable fps + smoothness zone from §31) +
+fine-grained feed-width / feed-font / ticker-height sliders, all in `/control/`, all gradual.
+**Follow-on (deferred): free-form custom W×H.** The ladder covers the useful 16:9 range; a custom
+width×height field would add arbitrary resolutions/aspects — its sustainable fps can be derived
+from the §31 affine render-time fit (fps ≈ 1000/(10.7·Mpx + 11.1), capped at 30). Deferred because
+the closed ladder keeps `--ux` an exact ratio + every rung's fps measured/modelled; revisit if an
+operator needs a non-ladder resolution (e.g. a 16:10 panel or an exact native size).
 
 **Renderer hardening follow-ups (minor, from the pre-push review).** The symlink-escape
 blocker was fixed + live-verified; these remain as optional v1.1 hardening: (a) a

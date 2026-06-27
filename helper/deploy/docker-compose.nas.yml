@@ -172,17 +172,22 @@ services:
       # over HTTPS (self-signed; Chromium runs with --ignore-certificate-errors).
       HELPER_URL: ${RENDER_HELPER_URL:-https://mymts-helper:8443/app/?render=1}
       STREAM_DIR: /stream
-      # Render canvas. The wall config's `render.resolution` (1080p | 2160p), set
-      # in /control/, is AUTHORITATIVE and drives WIDTH/HEIGHT/bitrate/bufsize at
-      # startup; these env values are only the FALLBACK when the helper is
-      # unreachable at boot (config > env > default). A resolution change restarts
-      # the renderer stack (a brief stream blip) to re-size Xvfb/ffmpeg.
-      #   4K (2160p) is opt-in + CPU-heavy: software x264 at ~4x the pixels, hard-
-      #   capped at cpus:6.0 below so it can NEVER starve the NAS — but a weak NAS
-      #   may not sustain 30fps; set RENDER_FPS=24 if frames drop. Watch
-      #   `docker stats mymts-renderer`. Default stays 1080p. (shm_size + tmpfs /tmp
-      #   are already sized for 4K below — 512m / 1g; raise further only if 4K still
-      #   logs shm/compositor allocation failures.)
+      # Render canvas. The wall config's `render.resolution` — one of an 8-rung
+      # 16:9 ladder (720p…2160p), set in /control/ — is AUTHORITATIVE and drives
+      # WIDTH/HEIGHT/fps/bitrate/bufsize at startup; these env values are only the
+      # FALLBACK when the helper is unreachable at boot (config > env > default). A
+      # resolution change restarts the renderer stack (a brief stream blip) to
+      # re-size Xvfb/ffmpeg. Per-rung fps/bitrate live in supervisor.RENDER_FPS /
+      # RENDER_BITRATES and are AUTHORITATIVE — above the ~1080p/30 ceiling each rung
+      # targets its SUSTAINABLE CFR (e.g. 1440p@20, 2160p@10) so the wall is
+      # consistent rather than juddery (the browser is render-bound on a CPU-only
+      # renderer — ARCHITECTURE §31; RENDER_FPS env only matters on the boot
+      # fallback path). The grab queue is memory-bounded per rung (supervisor.
+      # grab_queue_size) so a high-res stream drops frames within mem_limit, never
+      # OOMs. Higher rungs are opt-in + CPU-heavy: hard-capped at cpus:6.0 below so
+      # they can NEVER starve the NAS. Default stays 1080p@30. (shm_size + tmpfs /tmp
+      # below — 512m / 1g — are sized for the 4K canvas; raise only if a high rung
+      # logs shm/compositor allocation failures.)
       RENDER_WIDTH: ${RENDER_WIDTH:-1920}
       RENDER_HEIGHT: ${RENDER_HEIGHT:-1080}
       RENDER_FPS: ${RENDER_FPS:-30}

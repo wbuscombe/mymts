@@ -11,16 +11,44 @@ import { clampGridDim } from "./render.mjs";
 
 export const WALL_SCHEMA_VERSION = 1;
 
-/** The render-resolution choices the wall config understands (mirror of the
- *  helper's RENDER_RESOLUTIONS). The renderer maps the name → canvas + bitrate. */
-export const RENDER_RESOLUTIONS = ["1080p", "2160p"];
+/** The render-resolution ladder the wall config understands (mirror of the helper's
+ *  RENDER_RESOLUTIONS + the renderer's). The renderer maps each name → canvas + a
+ *  SUSTAINABLE fps + bitrate; the web wall scales to any of them via --ux. */
+export const RENDER_RESOLUTIONS = [
+  "720p", "900p", "1080p", "1260p", "1440p", "1620p", "1800p", "2160p",
+];
 export const DEFAULT_RESOLUTION = "1080p";
 
-/** Coerce a render block to {resolution} with a valid known choice (else 1080p).
+/** Per-resolution display metadata for the /control/ chooser: the canvas, the
+ *  sustainable fps on this CPU-only renderer, and the honest smoothness zone (from
+ *  the smoothness envelope, ARCHITECTURE §31) so the operator's choice is informed —
+ *  ≤1080p is the smooth zone; above it is marginal→heavy (GPU-territory). */
+export const RESOLUTION_INFO = {
+  "720p":  { w: 1280, h: 720,  fps: 30, zone: "smooth" },
+  "900p":  { w: 1600, h: 900,  fps: 30, zone: "smooth" },
+  "1080p": { w: 1920, h: 1080, fps: 30, zone: "smooth" },
+  "1260p": { w: 2240, h: 1260, fps: 24, zone: "marginal" },
+  "1440p": { w: 2560, h: 1440, fps: 20, zone: "marginal" },
+  "1620p": { w: 2880, h: 1620, fps: 16, zone: "heavy" },
+  "1800p": { w: 3200, h: 1800, fps: 14, zone: "heavy" },
+  "2160p": { w: 3840, h: 2160, fps: 10, zone: "heavy" },
+};
+
+/** Coerce a render block to {resolution} with a valid ladder choice (else 1080p).
  *  Defensive on read so a bad/absent value never breaks the picker. Pure. */
 function normalizeRender(render) {
   const res = render && typeof render === "object" ? render.resolution : null;
   return { resolution: RENDER_RESOLUTIONS.includes(res) ? res : DEFAULT_RESOLUTION };
+}
+
+/** Fine-grained, proportional view tunables — bounds mirror the helper (nothing
+ *  collapses/overflows). Clamped on read; absent → default. Pure. */
+export const FEED_PCT = { min: 18, max: 58, step: 1, default: 32 };
+export const FEED_FONT = { min: 0.7, max: 1.6, step: 0.05, default: 1 };
+export const TICKER_SCALE = { min: 0.6, max: 2.0, step: 0.05, default: 1 };
+function clampScale(v, b) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(b.max, Math.max(b.min, n)) : b.default;
 }
 
 /** A non-negative integer reload counter (else 0). Force-reload epochs are
@@ -77,20 +105,38 @@ export function normalizeConfig(raw, validSlugs = null) {
     preset: typeof cfg.preset === "string" ? cfg.preset : null,
     audible_cell: audible,
     reload_epoch: reloadInt(cfg.reload_epoch),
-    // CRITICAL: carry `render` through normalize, else every commit() round-trip
-    // (which runs the config through normalizeConfig) would STRIP it and silently
-    // revert a 4K choice back to 1080p on the next save.
+    // CRITICAL: carry these through normalize, else every commit() round-trip
+    // (which runs the config through normalizeConfig) would STRIP them and silently
+    // revert the choice on the next save.
     render: normalizeRender(cfg.render),
+    feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
+    feed_font: clampScale(cfg.feed_font, FEED_FONT),
+    ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
     cells,
   };
 }
 
-/** Set the render resolution ("1080p" | "2160p"); unknown → 1080p. The renderer
- *  re-reads this and restarts its Xvfb/ffmpeg stack at the new canvas. Pure. */
+/** Set the render resolution (a ladder rung; unknown → 1080p). The renderer
+ *  re-reads this and restarts its Xvfb/ffmpeg stack at the new canvas + fps. Pure. */
 export function withResolution(config, resolution) {
   const cfg = normalizeConfig(config);
   const res = RENDER_RESOLUTIONS.includes(resolution) ? resolution : DEFAULT_RESOLUTION;
   return { ...cfg, render: { resolution: res } };
+}
+
+/** Set the feed-column width (% of the wall), clamped fine-grained. Pure. */
+export function withFeedPct(config, pct) {
+  return { ...normalizeConfig(config), feed_pct: clampScale(pct, FEED_PCT) };
+}
+
+/** Set the feed text scale (proportional, within --ux), clamped. Pure. */
+export function withFeedFont(config, scale) {
+  return { ...normalizeConfig(config), feed_font: clampScale(scale, FEED_FONT) };
+}
+
+/** Set the ticker height+content scale (proportional), clamped. Pure. */
+export function withTickerScale(config, scale) {
+  return { ...normalizeConfig(config), ticker_scale: clampScale(scale, TICKER_SCALE) };
 }
 
 /** Bump the WHOLE-WALL force-reload epoch (+1): the rendered wall reattaches
@@ -178,9 +224,12 @@ export function withPreset(config, preset, validSlugs) {
     // the WHOLE-WALL reload epoch is monotonic, so carry it forward (resetting it
     // would make a later "reload all" look like it went backwards → missed).
     reload_epoch: reloadInt(cfg.reload_epoch),
-    // Resolution is a renderer/canvas choice, orthogonal to the channel preset —
-    // carry it forward so applying a preset never reverts a 4K wall to 1080p.
+    // Resolution + the view tunables are orthogonal to the channel preset — carry
+    // them forward so applying a preset never resets the canvas / feed / ticker.
     render: normalizeRender(cfg.render),
+    feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
+    feed_font: clampScale(cfg.feed_font, FEED_FONT),
+    ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
     cells,
   };
 }

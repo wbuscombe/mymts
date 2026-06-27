@@ -617,6 +617,26 @@ function hydrateFromWall(config) {
   if (dimsChanged) { audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1; audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null; }
   applyWallAudioCaptions();
   applyReloadSignal(config, dimsChanged);   // honor a /control/ force-reload
+  applyWallViewTunables(config);            // feed width / font / ticker height (rendered wall)
+}
+
+/** Apply the config's fine-grained view tunables (feed_pct / feed_font /
+ *  ticker_scale, set in /control/) to the CSS vars — ONLY on the rendered wall
+ *  (?render=1). The laptop /app/ keeps its OWN local feed-width/font sliders (a
+ *  personal view), so the config never overwrites them mid-drag; /control/ tunes
+ *  the TV output. ticker_scale has no laptop control, so it's render-mode-only too
+ *  (the laptop ticker stays the default height). All are proportional within --ux:
+ *  --feed-pct is a %, --feed-font scales the feed text, --ticker-scale drives --tu
+ *  so the whole ticker (height + content) scales together. */
+function applyWallViewTunables(config) {
+  if (!document.body.classList.contains("render-mode")) return;
+  const root = document.documentElement.style;
+  const pct = Number(config.feed_pct);
+  if (Number.isFinite(pct)) root.setProperty("--feed-pct", pct + "%");
+  const font = Number(config.feed_font);
+  if (Number.isFinite(font)) root.setProperty("--feed-font", String(font));
+  const ticker = Number(config.ticker_scale);
+  if (Number.isFinite(ticker)) root.setProperty("--ticker-scale", String(ticker));
 }
 
 /** Honor the force-reload epochs in a freshly-hydrated config (the /control/

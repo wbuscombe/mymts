@@ -18,6 +18,8 @@ import {
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withAudibleCell,
   withLayout, withPreset, cellCount, withCellReload, withWallReload, withResolution,
+  withFeedPct, withFeedFont, withTickerScale,
+  RENDER_RESOLUTIONS, RESOLUTION_INFO, FEED_PCT, FEED_FONT, TICKER_SCALE,
 } from "/app/js/wallConfig.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
@@ -116,13 +118,31 @@ function populatePresets() {
   sel.value = "";
 }
 
+/** Annotation for a resolution rung: canvas + sustainable fps + smoothness zone. */
+function resolutionNote(name) {
+  const i = RESOLUTION_INFO[name] || RESOLUTION_INFO["1080p"];
+  return `${name} · ${i.w}×${i.h} · ~${i.fps}fps · ${i.zone}`;
+}
+
 function syncLayoutControls() {
   el("rows").value = String(clampGridDim(config.layout.rows));
   el("cols").value = String(clampGridDim(config.layout.cols));
-  const res = el("resolution");
-  if (res) res.value = config.render?.resolution === "2160p" ? "2160p" : "1080p";
   const count = cellCount(config);
   el("grid-note").textContent = `${config.layout.rows} × ${config.layout.cols} = ${count} cell${count === 1 ? "" : "s"}`;
+  // Display sliders reflect the stored config (a slider's position IS the value).
+  const resName = RENDER_RESOLUTIONS.includes(config.render?.resolution) ? config.render.resolution : "1080p";
+  setSlider("resolution", RENDER_RESOLUTIONS.indexOf(resName), "resolution-note", resolutionNote(resName));
+  setSlider("feed-width", config.feed_pct, "feed-width-val", `${Math.round(config.feed_pct)}%`);
+  setSlider("feed-font", config.feed_font, "feed-font-val", `${Number(config.feed_font).toFixed(2)}×`);
+  setSlider("ticker-height", config.ticker_scale, "ticker-height-val", `${Number(config.ticker_scale).toFixed(2)}×`);
+}
+
+/** Set a slider's value + its live label (no-op if the element is absent). */
+function setSlider(id, value, labelId, labelText) {
+  const s = el(id);
+  if (s) s.value = String(value);
+  const lab = el(labelId);
+  if (lab) lab.textContent = labelText;
 }
 
 // ----- the picker cells (the heart of the surface) -----
@@ -242,11 +262,35 @@ function wire() {
     commit(withLayout(config, Number(e.target.value), config.layout.cols), "layout"));
   el("cols").addEventListener("change", (e) =>
     commit(withLayout(config, config.layout.rows, Number(e.target.value)), "layout"));
-  // Render resolution (1080p / 4K). Writing it restarts the renderer's Xvfb+ffmpeg
-  // stack at the new canvas (a brief stream blip); the web wall auto-scales to fit.
-  const resSel = el("resolution");
-  if (resSel) resSel.addEventListener("change", (e) =>
-    commit(withResolution(config, e.target.value), `resolution ${e.target.value}`));
+  // ---- fine-grained DISPLAY sliders (all small-step, gradual) ----
+  // Each: 'input' updates the live label only (no commit-per-step); 'change'
+  // (on release) commits ONE config write. Resolution especially must commit only
+  // on release — each commit restarts the renderer, so we never restart per step.
+  const resSlider = el("resolution");
+  if (resSlider) {
+    resSlider.addEventListener("input", (e) => {
+      const name = RENDER_RESOLUTIONS[Number(e.target.value)] || "1080p";
+      const lab = el("resolution-note"); if (lab) lab.textContent = resolutionNote(name);
+    });
+    resSlider.addEventListener("change", (e) => {
+      const name = RENDER_RESOLUTIONS[Number(e.target.value)] || "1080p";
+      commit(withResolution(config, name), `resolution ${name}`);
+    });
+  }
+  const liveLabel = (sliderId, labelId, fmt) => {
+    const s = el(sliderId), lab = el(labelId);
+    if (s && lab) s.addEventListener("input", () => { lab.textContent = fmt(Number(s.value)); });
+  };
+  liveLabel("feed-width", "feed-width-val", (v) => `${Math.round(v)}%`);
+  liveLabel("feed-font", "feed-font-val", (v) => `${v.toFixed(2)}×`);
+  liveLabel("ticker-height", "ticker-height-val", (v) => `${v.toFixed(2)}×`);
+  const onRelease = (sliderId, transform, what) => {
+    const s = el(sliderId);
+    if (s) s.addEventListener("change", () => commit(transform(config, Number(s.value)), what));
+  };
+  onRelease("feed-width", withFeedPct, "feed width");
+  onRelease("feed-font", withFeedFont, "feed font");
+  onRelease("ticker-height", withTickerScale, "ticker height");
   el("preset").addEventListener("change", (e) => {
     const p = presets.find((x) => x.id === e.target.value);
     if (!p) return;

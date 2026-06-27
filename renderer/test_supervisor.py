@@ -117,9 +117,11 @@ class RenderResolution(unittest.TestCase):
     def test_known_resolutions_map_to_dimensions(self):
         self.assertEqual(sup.resolution_to_dimensions("1080p"), (1920, 1080))
         self.assertEqual(sup.resolution_to_dimensions("2160p"), (3840, 2160))
+        self.assertEqual(sup.resolution_to_dimensions("1440p"), (2560, 1440))
+        self.assertEqual(sup.resolution_to_dimensions("720p"), (1280, 720))
 
     def test_unknown_resolution_falls_back_to_1080p(self):
-        self.assertEqual(sup.normalize_resolution("720p"), "1080p")
+        self.assertEqual(sup.normalize_resolution("999p"), "1080p")
         self.assertEqual(sup.normalize_resolution(None), "1080p")
         self.assertEqual(sup.resolution_to_dimensions("nonsense"), (1920, 1080))
 
@@ -128,17 +130,42 @@ class RenderResolution(unittest.TestCase):
         self.assertEqual(sup.resolution_to_bitrate("2160p"), ("20M", "40M"))  # heavier 4K encode
         self.assertEqual(sup.resolution_to_bitrate("bogus"), ("8M", "16M"))   # fallback → 1080p
 
-    def test_resolutions_are_16_9(self):
-        for w, h in sup.RENDER_RESOLUTIONS.values():
-            self.assertAlmostEqual(w / h, 16 / 9, places=6)
+    def test_fps_is_sustainable_per_resolution(self):
+        # ≤1080p capped at 30; above the ceiling, the sustainable CFR falls
+        self.assertEqual(sup.resolution_to_fps("720p"), 30)
+        self.assertEqual(sup.resolution_to_fps("1080p"), 30)
+        self.assertEqual(sup.resolution_to_fps("1440p"), 20)
+        self.assertEqual(sup.resolution_to_fps("2160p"), 10)
+        self.assertEqual(sup.resolution_to_fps("bogus"), 30)   # fallback → 1080p/30
 
-    def test_grab_queue_is_bounded_at_4k(self):
-        # 1080p keeps the deep drop-proof queue; 4K bounds it hard (a 4K raw frame
-        # is ~33MB, so a deep queue behind a slow encoder would OOM the container).
-        self.assertEqual(sup.grab_queue_size(1920), 1024)
-        self.assertEqual(sup.grab_queue_size(3840), 32)
-        # the bound holds for anything >= 4K width
-        self.assertEqual(sup.grab_queue_size(4096), 32)
+    def test_every_resolution_has_a_complete_profile(self):
+        # the 8-rung ladder: every name maps to dims + fps + bitrate, all 16:9, even dims
+        for name, (w, h) in sup.RENDER_RESOLUTIONS.items():
+            self.assertAlmostEqual(w / h, 16 / 9, places=6, msg=name)
+            self.assertEqual(w % 2, 0, name)
+            self.assertEqual(h % 2, 0, name)
+            self.assertIn(name, sup.RENDER_FPS, name)
+            self.assertIn(name, sup.RENDER_BITRATES, name)
+        self.assertEqual(len(sup.RENDER_RESOLUTIONS), 8)
+
+    def test_grab_queue_is_memory_bounded_at_every_rung(self):
+        # The queue depth is bounded by raw-frame MEMORY at every ladder rung, not a
+        # single 4K threshold: a deep queue behind a slow encoder would OOM the
+        # container (a 4K raw frame is ~33MB; even a mid rung balloons to many GB).
+        budget = sup.GRAB_QUEUE_MEM_BUDGET
+        for name, (w, h) in sup.RENDER_RESOLUTIONS.items():
+            depth = sup.grab_queue_size(w, h)
+            self.assertGreaterEqual(depth, 32, name)        # never below the floor
+            self.assertLessEqual(depth, 1024, name)         # never above the cap
+            self.assertLessEqual(depth * w * h * 4, budget, name)  # worst-case ≤ 1 GiB
+        # the intermediate rungs the ladder added (NOT just 4K) are bounded too —
+        # 1800p (3200x1800) would have kept the deep 1024 queue under a width-only gate
+        self.assertLessEqual(sup.grab_queue_size(3200, 1800), 64)
+        self.assertEqual(sup.grab_queue_size(3840, 2160), 32)   # 4K floors out
+        # low res keeps a generous multi-second spike buffer
+        self.assertGreaterEqual(sup.grab_queue_size(1920, 1080), 128)
+        # height defaults to 16:9 from width when omitted (back-compat)
+        self.assertEqual(sup.grab_queue_size(1920), sup.grab_queue_size(1920, 1080))
 
 
 class EncodePipeline(unittest.TestCase):
@@ -167,7 +194,9 @@ class EncodePipeline(unittest.TestCase):
     def test_grab_queue_matches_resolution(self):
         import run
         cmd = self._cmd()
-        self.assertTrue(self._adjacent(cmd, "-thread_queue_size", str(sup.grab_queue_size(run.WIDTH))))
+        self.assertTrue(
+            self._adjacent(cmd, "-thread_queue_size", str(sup.grab_queue_size(run.WIDTH, run.HEIGHT)))
+        )
 
 
 if __name__ == "__main__":
