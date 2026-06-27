@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Milestone marker — the headless-wall arc (server / web / renderer).** The entries below land the
+> complete headless-container wall: the control plane, the render→HLS engine, playback reliability,
+> responsive layout, the smoothness/encode envelope, finely-tunable resolution/feed/ticker, the
+> wall-config partial-merge, the weather-radar widget, and the GPU hardware-check. **The native
+> Android app is unchanged across the whole arc**, so this is intentionally kept in `[Unreleased]`
+> rather than cut as a version tag: a `v*` tag triggers `release.yml`, which rebuilds + republishes
+> the native APK (and the desktop executable) — tagging now would publish a **redundant APK** for an
+> arc that didn't touch native. These changes fold into the next versioned release when a deliberate
+> desktop/native release boundary warrants it. (Server/web/renderer reach the wall via the helper
+> deploy, not a tag.)
+
 ## docs(renderer): GPU/VA-API lever hardware-checked — blocked at the VM boundary, no change (2026-06-27)
 
 Investigated wiring hardware video decode/encode (VA-API) into the renderer to lift the >1080p
