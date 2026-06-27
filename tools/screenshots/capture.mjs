@@ -217,15 +217,17 @@ async function main() {
   }
 
   // 10. Picker control surface (/control/) — the headless-container version's
-  // wall editor: each cell is a feed-PICKER + per-cell audio + subtitle controls
-  // (no video decode). Drives the server-side wall config that /app/ renders.
+  // wall editor: each cell is a feed-PICKER + per-cell audio + subtitle controls,
+  // PLUS a display-tuning panel (resolution ladder / feed width / feed font /
+  // ticker height) — no video decode. Drives the server-side wall config that
+  // /app/ renders. Captured fullPage so the tuning panel below the fold is in-frame.
   // A SEPARATE page so /app/'s localStorage init script doesn't apply here.
   try {
     const control = await ctx.newPage();
     await control.goto(`${HELPER_URL}/control/`, { waitUntil: "domcontentloaded" });
     await control.waitForSelector(".cell .cell-picker", { timeout: 15000 });
     await control.waitForTimeout(500);
-    await control.screenshot({ path: path.join(OUT_DIR, "control.png") });
+    await control.screenshot({ path: path.join(OUT_DIR, "control.png"), fullPage: true });
     console.log("captured control.png");
     await control.close();
   } catch (e) {
