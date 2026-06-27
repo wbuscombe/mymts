@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from .. import db
+from ..weather import regions as weather_regions
 from . import registry
 from .category import category_of
 
@@ -24,15 +25,17 @@ def get_router(db_path: Path) -> APIRouter:
     # db.connection_scope's docstring.
 
     @router.get("")
-    def list_channels() -> dict[str, Any]:
+    def list_channels(widgets: bool = False) -> dict[str, Any]:
+        # widgets: opt-in (web-only). The LAN web picker requests `?widgets=1` to
+        # also list non-video WIDGET sources (the NWS weather-radar pseudo-channels);
+        # the native TV picker fetches WITHOUT the param and is unchanged — radar is
+        # a web-wall feature and must not surface a non-playable entry on the TV.
         with db.connection_scope(db_path) as conn:
             # enabled_only: a lineup-override `disable` (enabled=0) removes the
             # channel from the picker entirely (not just unprobed). With the
             # shipped lineup every channel is enabled, so this is a no-op there.
             rows = registry.list_channels(conn, enabled_only=True)
-        return {
-            "schema_version": API_SCHEMA_VERSION,
-            "channels": [
+        channels: list[dict[str, Any]] = [
                 {
                     "slug": c.slug,
                     "label": c.label,
@@ -64,7 +67,9 @@ def get_router(db_path: Path) -> APIRouter:
                     "error_count": c.error_count,
                 }
                 for c in rows
-            ],
-        }
+        ]
+        if widgets:
+            channels.extend(weather_regions.channel_entries())
+        return {"schema_version": API_SCHEMA_VERSION, "channels": channels}
 
     return router

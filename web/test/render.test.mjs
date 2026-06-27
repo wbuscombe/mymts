@@ -56,6 +56,7 @@ import {
   serializeViewPrefs,
   presetLineup,
   newsLineup,
+  isRadarSlug,
   safeHttpLink,
   feedDetailModel,
   classifyVideoFailure,
@@ -260,6 +261,29 @@ test("browserPlayability: yes/no/maybe tri-state hint (mixed-content reality)", 
   assert.equal(browserPlayability({ status: "live", current_url: url }), "maybe");
   // not playable at all → no
   assert.equal(browserPlayability({ status: "unavailable", current_url: null, browser_playable: null }), "no");
+});
+
+// ----- weather radar widget sources (a selectable pseudo-channel) -----
+
+test("CHANNEL_CATEGORY_ORDER places Weather Radar right after Weather (helper parity)", () => {
+  const w = CHANNEL_CATEGORY_ORDER.indexOf("Weather");
+  const wr = CHANNEL_CATEGORY_ORDER.indexOf("Weather Radar");
+  assert.ok(w >= 0 && wr === w + 1, "Weather Radar must sit immediately after Weather");
+});
+
+test("sectionChannels groups a weather-radar pseudo-channel under its own section", () => {
+  const radar = { slug: "weather-radar-kilx", label: "Central Illinois (Lincoln)",
+    kind: "weather-radar", category: "Weather Radar",
+    current_url: "/api/weather/radar/kilx", status: "live", browser_playable: true };
+  const video = { slug: "bbc-news", label: "BBC News", category: "Global News",
+    current_url: "https://x/y.m3u8", status: "live", browser_playable: true };
+  const sections = sectionChannels([video, radar]);
+  const wr = sections.find((s) => s.category === "Weather Radar");
+  assert.ok(wr, "a Weather Radar section is present");
+  assert.deepEqual(wr.channels.map((c) => c.slug), ["weather-radar-kilx"]);
+  // the radar pseudo-channel reads as live + browser-playable (so it sorts/renders as available)
+  assert.equal(channelStatus(radar).playable, true);
+  assert.equal(browserPlayability(radar), "yes");
 });
 
 // ----- schema_version guard (ARCH-1) -----
@@ -1086,6 +1110,30 @@ test("presetLineup: topup fill = preset slugs then remaining playable (the News 
 test("presetLineup: empty/invalid preset → []", () => {
   assert.deepEqual(presetLineup(null, _chans, _play), []);
   assert.deepEqual(presetLineup({ id: "x" }, _chans, _play), []);
+});
+
+test("isRadarSlug: only the weather-radar-* widget prefix (not a normal channel slug)", () => {
+  assert.equal(isRadarSlug("weather-radar-kilx"), true);
+  assert.equal(isRadarSlug("weather-radar-conus"), true);
+  assert.equal(isRadarSlug("bbc-news"), false);
+  assert.equal(isRadarSlug("weathernation"), false);   // a real weather VIDEO channel, not a radar widget
+  assert.equal(isRadarSlug(null), false);
+});
+
+test("autofill NEVER sweeps a radar widget into a default lineup (explicit-pick-only)", () => {
+  // radar pseudo-channels are browser-playable, so without the guard they'd be
+  // auto-filled onto a fresh wall / topped-up — they must be EXCLUDED (native parity).
+  const chans = [
+    { slug: "bbc-news", browser_playable: true },
+    { slug: "weather-radar-kilx", browser_playable: true },   // a widget — selectable, never auto-filled
+    { slug: "weather-radar-conus", browser_playable: true },
+    { slug: "cnn", browser_playable: true },
+  ];
+  const news = newsLineup(chans, _play);
+  assert.ok(!news.some(isRadarSlug), "newsLineup excludes radar widgets");
+  assert.ok(news.includes("bbc-news") && news.includes("cnn"), "real channels still autofill");
+  const topup = presetLineup({ id: "news", fill: "topup", slugs: ["bbc-news"] }, chans, _play);
+  assert.ok(!topup.some(isRadarSlug), "presetLineup top-up excludes radar widgets");
 });
 
 test("view prefs: activePreset defaults to 'news' and round-trips", () => {

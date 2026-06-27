@@ -176,6 +176,10 @@ body { display: flex; flex-direction: column; }
    (== the tile background) keeps the whole frame; uniform contain + uniform
    --gap gutters + 1fr cells read as one clean mosaic without ever hiding content. */
 .tile video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+/* A weather-radar tile is an animated NWS loop <img>, fit with the SAME uniform
+   object-fit:contain policy as video so the radar frame is never cropped/stretched
+   and the tile reads as part of the same mosaic. */
+.tile-radar { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .tile-label { position: absolute; left: var(--gap); bottom: var(--gap); font-size: calc(11 * var(--u)); color: var(--label);
   background: #000000bb; padding: calc(1 * var(--u)) calc(6 * var(--u)); border-radius: calc(3 * var(--u)); max-width: 70%; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }

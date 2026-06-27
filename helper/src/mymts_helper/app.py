@@ -37,8 +37,10 @@ from .playlist.api import get_router as playlist_router
 from .playlist.profiles import load_profiles
 from .stream.api import get_router as stream_router
 from .ticker.api import get_router as ticker_router
-from .wall.api import get_router as wall_router
 from .ticker.pollers import MarketsPoller, SportsPoller
+from .wall.api import get_router as wall_router
+from .weather.api import get_router as weather_router
+from .weather.cache import RadarFrameCache
 
 log = logging.getLogger("mymts_helper")
 
@@ -197,6 +199,13 @@ def create_app(
     # it. Helper-hosted by necessity — a headless wall has no device to hold
     # its lineup. Persisted in the data dir (seedless, gitignored).
     app.include_router(wall_router(db_path, cfg.data_dir))
+    # Weather radar widget (free public NWS RIDGE loop GIF): proxy + cache the
+    # animated radar so a cell set to a `weather-radar-*` source renders a CORS-
+    # clean, rate-respectful, honest-fallback loop. Always mounted (inert until a
+    # cell selects it); fetches through the SAME resolver as the pollers, so phantom
+    # mode / the SSRF posture is respected (no egress in phantom → honest-offline).
+    app.include_router(weather_router(RadarFrameCache(), resolver=active_resolver))
+    log.info("weather_radar_route_mounted")
     # Renderer HLS stream (headless-container version, second half): serve the
     # playlist + segments the renderer writes to the shared volume, so VLC /
     # Apple TV opens one URL. Opt-in via STREAM_DIR; absent → no route added.

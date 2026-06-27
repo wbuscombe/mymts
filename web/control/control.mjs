@@ -149,6 +149,9 @@ function setSlider(id, value, labelId, labelText) {
 
 function statusHint(ch) {
   if (!ch) return { dot: "dot-empty", text: "empty" };
+  // A radar WIDGET is an available source, not a probed-live video — describe it
+  // honestly (the real freshness is the rendered tile's runtime state).
+  if (ch.kind === "weather-radar") return { dot: "dot-live", text: "radar loop" };
   const { label, playable } = channelStatus(ch);
   const bp = browserPlayability(ch);
   if (bp === "yes") return { dot: "dot-live", text: "live" };

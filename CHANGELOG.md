@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web,helper): weather radar widget — a selectable per-cell source (free public NWS) (2026-06-27)
+
+A wall cell can now be set to **Weather Radar** instead of a video feed: it renders an
+**animated NWS radar loop** for a chosen region. It's a real selectable per-cell source — it
+slots into the existing picker + wall-config model exactly like a channel, with **no decode
+load** (a non-video widget, so it doesn't tax the render bottleneck the smoothness pass found).
+
+- **Source.** The free public **NWS RIDGE "standard" animated loop** GIF
+  (`radar.weather.gov/ridge/standard/{SITE}_loop.gif` — a 10-frame GIF89a NWS assembles + refreshes
+  ~every 5 min). No key, no DRM, no ToS gate (verified live before shipping). Regions: **US National
+  (CONUS)** + **central Illinois (Lincoln / KILX, the local radar)** + ~10 major-metro WSR-88D sites.
+- **Helper proxy + cache.** A new `/api/weather/radar/{region}` endpoint fetches the loop through
+  the SSRF-safe `fetcher` and **caches it per region (5-min TTL)**, so the wall's `<img>` is
+  same-origin / CORS-clean and **NWS is hit at most once per region per TTL** (rate-respectful) no
+  matter how many tiles or refreshes request it. **Honest fallback:** on an upstream failure it
+  serves the **last good frame** (marked stale) if it has one, else an honest 5xx and the tile shows
+  an offline state — never a blank or a faked radar.
+- **A pseudo-channel.** Radar regions are synthetic channels surfaced **only to the web picker**
+  (`GET /api/channels?widgets=1`; the native TV picker fetches without the param and is unchanged),
+  grouped under a new **"Weather Radar"** picker section. A cell stores a `weather-radar-<region>`
+  slug in the **existing** per-cell `channel` field (the region is encoded in the slug → no new
+  wall-config field; the §30 partial-merge already keeps it safe). Radar is an **explicit pick** —
+  never swept into a default / auto-filled lineup (parity with native).
+- **Render.** The web wall renders a radar cell as an animated `<img>` loop, captioned
+  `Weather Radar — <region>`, fit with the same `object-fit: contain` policy as video; it refreshes
+  on a ~5-min timer (cache-busting the browser, not the warm helper cache). No audio / captions.
+
+Web + helper only; no native change → no APK. PIA / other containers untouched.
+
 ## feat(web,helper,renderer): finely-tunable wall — resolution ladder + feed width/font + ticker height (2026-06-26)
 
 Every adjustment is a fine-grained, gradual slider in `/control/`, persisted in the wall config

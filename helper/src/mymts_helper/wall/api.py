@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, HTTPException
 
 from .. import db
 from ..channels import registry
+from ..weather import regions as weather_regions
 from . import store
 
 WALL_SCHEMA_VERSION = store.WALL_SCHEMA_VERSION
@@ -32,7 +33,18 @@ def get_router(db_path: Path, data_dir: str) -> APIRouter:
         # enabled_only: a disabled (lineup-override) channel is not a legal wall
         # assignment, exactly as it's excluded from the picker.
         with db.connection_scope(db_path) as conn:
-            return [c.slug for c in registry.list_channels(conn, enabled_only=True)]
+            slugs = [c.slug for c in registry.list_channels(conn, enabled_only=True)]
+        # Radar pseudo-sources are legal cell assignments too — a cell may hold a
+        # `weather-radar-*` slug exactly like a channel slug (the region is encoded
+        # in the slug; weather/regions.py is the source of truth). This is wall-
+        # config validation only; it's independent of the web-only picker `?widgets`.
+        # SCOPE (intentional): weather radar is a WEB-WALL widget. A native TV client
+        # (which fetches /api/channels without ?widgets and so never lists radar)
+        # that reads a stored radar cell simply won't resolve the slug and GRACEFULLY
+        # falls back to its default cycler for that cell — the same honest degradation
+        # it already does for any unknown slug, not a crash. Radar renders on the web
+        # wall (the headless renderer captures /app/); the native app is unchanged.
+        return slugs + weather_regions.radar_slugs()
 
     def _payload(config: dict[str, Any], stored: bool) -> dict[str, Any]:
         # `stored` lets a standalone /app/ know whether to render the server

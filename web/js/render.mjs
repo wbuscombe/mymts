@@ -575,6 +575,16 @@ export const WEB_FALLBACK = ["c-span", "iss-feed", "white-house-tv", "newsmax", 
  *  (honest-offline), exactly like native. */
 export const WEB_DENY = new Set(["nasa-tv"]);
 
+/** The slug prefix the helper assigns weather-radar WIDGET sources (mirrors helper
+ *  weather/regions.py RADAR_SLUG_PREFIX). Radar is an EXPLICIT per-cell pick — a
+ *  non-video widget that must NEVER be swept into a DEFAULT / auto-filled lineup
+ *  (parity with native, which never auto-fills radar; it's a web-only widget). The
+ *  autofill + top-up paths exclude it; an operator still picks it from the picker. */
+export const RADAR_SLUG_PREFIX = "weather-radar-";
+export function isRadarSlug(slug) {
+  return typeof slug === "string" && slug.startsWith(RADAR_SLUG_PREFIX);
+}
+
 /** The presets envelope schema this client understands (helper PRESETS_SCHEMA_VERSION). */
 export const PRESETS_SCHEMA_VERSION = 1;
 
@@ -606,7 +616,8 @@ export function presetLineup(preset, channelList, isPlayable) {
   const chosen = preset.slugs.filter((s) => bySlug.has(s));
   if (preset.fill !== "topup") return chosen;
   const rest = (channelList || [])
-    .filter((c) => isPlayable(c) && !preset.slugs.includes(c.slug) && !WEB_DENY.has(c.slug))
+    .filter((c) => isPlayable(c) && !preset.slugs.includes(c.slug)
+      && !WEB_DENY.has(c.slug) && !isRadarSlug(c.slug))
     .map((c) => c.slug);
   return [...chosen, ...rest];
 }
@@ -620,7 +631,7 @@ export function newsLineup(channelList, isPlayable) {
   const out = [];
   const seen = new Set();
   const tryAdd = (slug) => {
-    if (seen.has(slug) || WEB_DENY.has(slug)) return;
+    if (seen.has(slug) || WEB_DENY.has(slug) || isRadarSlug(slug)) return;
     const c = bySlug.get(slug);
     if (c && isPlayable(c)) { out.push(slug); seen.add(slug); }
   };
@@ -763,6 +774,10 @@ export function browserPlayability(channel) {
  *  "General" so it's never dropped from the picker. */
 export const CHANNEL_CATEGORY_ORDER = [
   "Sports", "US News", "Global News", "Business", "Weather",
+  // Weather Radar: the free public NWS radar-loop WIDGET sources (web-only, served
+  // via /api/channels?widgets=1). Placed right after Weather, mirroring the helper
+  // CATEGORY_ORDER (channels/category.py) so both clients section it identically.
+  "Weather Radar",
   // Government / Cameras / Nature / Space are the server-first sections native appends
   // ALPHABETICALLY before General, so they sit in that same order here for parity.
   "Cameras", "Government", "Nature", "Space", "General",

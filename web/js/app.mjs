@@ -892,6 +892,14 @@ function renderCell(cell, slug, ch, bp) {
     return;
   }
 
+  // Weather-radar WIDGET source: an animated NWS radar loop (a helper-proxied
+  // image), NOT a video — no decode load, no audio. Branch BEFORE the bp/video
+  // path; the renderer captures the looping <img> exactly like a video tile.
+  if (ch.kind === "weather-radar") {
+    renderRadarCell(cell, ch);
+    return;
+  }
+
   const label = ch.label || ch.slug;
   if (bp === "no") {
     clearAudioIfOwner(cell);   // TV-only / offline → not a browser audio source
@@ -999,6 +1007,90 @@ function renderCell(cell, slug, ch, bp) {
   cell.streamHandle = handle;   // exposes setAudible/audible() to the slot controls + audio badge
 }
 
+// A radar tile re-pulls a fresh NWS scan on this cadence (the loop GIF refreshes
+// ~every 5 min). Between pulls the browser keeps animating the cached GIF; this
+// swap fetches the NEXT scan. The helper cache (region-keyed) means the ?t= cache-
+// bust hits a WARM cache — NWS isn't re-fetched per tile/refresh.
+const RADAR_REFRESH_MS = 5 * 60 * 1000;
+// Until the FIRST frame loads, retry sooner so a tile that opens during an NWS
+// blip heals quickly (an unattended wall — no one is here to press ↻).
+const RADAR_FIRST_FRAME_RETRY_MS = 20 * 1000;
+
+/** Render a cell as an animated NWS radar loop (a helper-proxied <img>), captioned
+ *  like the video tiles + fitting the cell with the same object-fit:contain policy.
+ *  Honest fallback: a frame that NEVER loads shows an honest "unavailable" state
+ *  (never a fake radar); once a frame has loaded, a later refresh failure KEEPS the
+ *  last good frame on screen (honest last-good) rather than blanking. Non-video →
+ *  no decode load, no audio (streamHandle stays null so audio paths skip it). */
+function renderRadarCell(cell, ch) {
+  const tile = cell.el;
+  const label = `Weather Radar — ${ch.label || ch.slug}`;
+  const base = ch.current_url;   // "/api/weather/radar/<region>" (same-origin proxy)
+  cell.gen = (cell.gen || 0) + 1;
+  const myGen = cell.gen;
+
+  const img = document.createElement("img");
+  img.className = "tile-radar";
+  img.alt = label;
+  img.decoding = "async";
+  const dot = node("span", "tile-dot dot-unknown");
+  const lab = node("span", "tile-label", label);
+  tile.append(img, dot, lab);
+  tile.onclick = () => openSlotControls(cell.index);
+
+  let everLoaded = false;
+  let refreshTimer = null;
+  let retryTimer = null;
+  const clearTimers = () => {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  };
+  const removeOverlay = () => { const s = tile.querySelector(".tile-state"); if (s) s.remove(); };
+  // Cache-bust the BROWSER each pull (the helper cache is region-keyed, so this
+  // still hits the helper's warm cache — it doesn't re-hit NWS per refresh).
+  const load = () => { img.src = `${base}?t=${Date.now()}`; };
+
+  img.addEventListener("load", () => {
+    if (myGen !== cell.gen) return;   // stale handler from a torn-down/replaced tile
+    everLoaded = true;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    dot.className = "tile-dot dot-live";
+    img.style.visibility = "";
+    removeOverlay();
+  });
+  img.addEventListener("error", () => {
+    if (myGen !== cell.gen) return;
+    dot.className = "tile-dot dot-offline";
+    if (everLoaded) return;   // keep the last good frame on screen — honest last-good
+    // Never got a frame → honest "unavailable" (no fake radar); retry soon.
+    img.style.visibility = "hidden";
+    if (!tile.querySelector(".tile-state")) {
+      const s = node("div", "tile-state");
+      s.appendChild(node("div", "big", "○"));
+      s.appendChild(node("div", "head", label));
+      s.appendChild(node("div", "sub", "Weather radar unavailable — retrying…"));
+      tile.appendChild(s);
+    }
+    if (!retryTimer) {
+      retryTimer = setTimeout(() => { retryTimer = null; load(); }, RADAR_FIRST_FRAME_RETRY_MS);
+    }
+  });
+
+  load();
+  refreshTimer = setInterval(load, RADAR_REFRESH_MS);
+
+  // A live media tile (with a teardown) so per-cell + whole-wall reload re-pull it;
+  // streamHandle stays null so every audio/caption path safely skips it. teardown
+  // stops the timers, neutralizes late img events (gen bump), and releases the src.
+  cell.isVideo = true;
+  cell.streamHandle = null;
+  cell.teardown = () => {
+    clearTimers();
+    cell.gen++;
+    try { img.removeAttribute("src"); } catch { /* ignore */ }
+  };
+}
+
 /** Honest "Reconnecting…" state while a transient failure backs off. Never
  *  shown as live; the dot stays the neutral "checking" colour. The retry count is
  *  deliberately NOT shown: reconnect is now indefinite (the unattended-wall
@@ -1093,6 +1185,10 @@ let pickerCell = null;
 function pickerMeta(ch) {
   const { label, playable } = channelStatus(ch);
   const bp = browserPlayability(ch);
+  // A radar WIDGET is an available source, not a probed-live video — describe it
+  // honestly (the real freshness is the tile's runtime <img> state) rather than
+  // borrowing the video "live · plays in browser" claim.
+  if (ch && ch.kind === "weather-radar") return { dot: "dot-live", text: "radar loop" };
   if (bp === "yes") return { dot: "dot-live", text: "live · plays in browser" };
   // "maybe" = helper-live but unclassified → yellow, distinct from confirmed "yes".
   if (bp === "maybe") return { dot: "dot-unknown", text: "live · will try in browser" };

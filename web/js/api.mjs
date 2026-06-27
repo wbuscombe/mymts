@@ -59,7 +59,11 @@ async function getTicker(path) {
 
 export const api = {
   feed: (limit = 100) => getJson(`/api/feed?limit=${encodeURIComponent(limit)}`),
-  channels: () => getJson(`/api/channels`),
+  // widgets=1: also list the web-only WIDGET sources (the NWS weather-radar
+  // pseudo-channels) alongside the video channels, so they appear in the picker
+  // + are resolvable by the wall. The native TV client uses its own client and
+  // never sends this, so its channel list is unchanged.
+  channels: () => getJson(`/api/channels?widgets=1`),
   presets: () => getJson(`/api/presets`),
   tickerMarkets: () => getTicker(`/api/ticker/markets`),
   tickerSports: () => getTicker(`/api/ticker/sports`),

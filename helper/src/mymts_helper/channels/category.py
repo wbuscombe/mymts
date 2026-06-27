@@ -28,6 +28,12 @@ US_NEWS = "US News"
 GLOBAL_NEWS = "Global News"
 BUSINESS = "Business"
 WEATHER = "Weather"
+# Weather RADAR widgets (the free public NWS radar-loop cell source) — a distinct
+# section from the WEATHER video channels so the animated-image radar sources group
+# together and read clearly as widgets. Web-first: surfaced only to the web picker
+# (GET /api/channels?widgets=1), so the native TV picker is unchanged. See
+# weather/regions.py (the source of truth) and the web CHANNEL_CATEGORY_ORDER.
+WEATHER_RADAR = "Weather Radar"
 # Session-gated official .gov feeds (chamber floors, committee hearings, agency
 # briefings) — honest-offline when not in session. Split out of US News so that
 # section reads live-dense and the gov feeds are honestly grouped (their dark-when-
@@ -47,7 +53,8 @@ CATEGORY_ORDER: list[str] = [
     # Government / Cameras / Nature / Space are server-first sections native appends
     # ALPHABETICALLY before General (it doesn't compile them), so they're placed in
     # that same alphabetical order here + in the web CHANNEL_CATEGORY_ORDER for parity.
-    SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, CAMERAS, GOVERNMENT, NATURE, SPACE, GENERAL,
+    SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, WEATHER_RADAR,
+    CAMERAS, GOVERNMENT, NATURE, SPACE, GENERAL,
 ]
 
 # slug -> category. The news slugs mirror native's BY_SLUG; the ambient slugs
