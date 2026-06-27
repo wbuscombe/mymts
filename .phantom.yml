@@ -23,7 +23,7 @@ components:
     serves: http://localhost:8091     # HTTP only in phantom (no cert needed)
     fixtures:
       - feed items preloaded into the sqlite db (phantom.preload) → /api/feed
-      - all seeded channels (53) marked status=live with synthetic current_urls → /api/channels
+      - all seeded channels (52) marked status=live with synthetic current_urls → /api/channels
       - ticker markets/sports return sample/honest entries → /api/ticker
     web_client: http://localhost:8091/app   # the static LAN web client, mounted
   app:
@@ -36,11 +36,16 @@ components:
       full mock wall.
 
 routes:
-  - GET /health          # liveness + build_sha + counts
-  - GET /api/channels    # phantom: all 52 seeded channels, marked live
-  - GET /api/feed        # phantom: preloaded mock feed items
-  - GET /api/ticker      # phantom: sample markets + sports
-  - GET /app             # static web client
+  - GET /health             # liveness + build_sha + counts
+  - GET /api/channels       # phantom: all 52 seeded channels, marked live (+ ?widgets=1 adds radar rows)
+  - GET /api/feed           # phantom: preloaded mock feed items
+  - GET /api/ticker         # phantom: sample markets + sports
+  - GET /api/presets        # server-authoritative wall presets
+  - GET /api/playlist.m3u   # M3U of live channels for VLC / an Apple TV
+  - "GET·PUT /api/wall"     # headless-container wall config (read / partial-merge write)
+  - GET /api/weather/radar/{region}  # weather-radar widget proxy (phantom: honest offline, zero egress)
+  - GET /app                # static web client (the playback wall)
+  - GET /control            # static picker control surface (the headless wall editor)
 
 verify:
   # asserted by CI on every push/PR (.github/workflows/ci.yml); also run locally:

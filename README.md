@@ -66,7 +66,7 @@ picker, all live in your browser against fixture data. Want it on a real TV emul
 adb shell am start -n com.mymts/.MainActivity --es helper "http://10.0.2.2:8091"
 ```
 
-Tests: `cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest`.
+Tests: `cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest` · `node --test web/test/*.test.mjs` · `cd renderer && python3 -m unittest discover -s .` — all four run in CI and are required to pass.
 Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBOARDING.md`](ONBOARDING.md).
 
 ---
@@ -117,7 +117,7 @@ up on the real wall (see the device gallery below).</sub>
 ### ⚙️ Settings — and they're TV↔web peers
 The gear opens a **native-style side menu** (a CHANNELS list + WALL actions) mirroring the TV
 app; Settings and the per-slot controls (Channel · Audio · Reconnect) hang off it. A **wall
-preset** selector (News Wall · Nature · Space · Chill / Mixed) — server-authoritative, so the helper
+preset** selector (News Wall · Nature · Space · Chill / Mixed · Ocean · Eagles) — server-authoritative, so the helper
 defines the sets and a new one needs no client rebuild; `news` is the default and identical to today —
 switches the whole grid at once. Grid size
 (**2×2** native default, **2×3** web default), feed width/text-size/recency, per-source toggles **grouped by category**,
@@ -133,12 +133,16 @@ correct a physical panel and are honestly absent from the web.
 
 ![The settings modal — 2×3 grid default, category-grouped feed sources, captions off by default](docs/screenshots/web/settings.png)
 
-**Headless-container version (in progress) — a picker control surface.** A second web
+**Headless-container version — a picker control surface + a rendered HLS stream.** A second web
 surface at `/control/` is the wall's layout in a browser, but **each cell is a feed-picker**
-(channel dropdown) + per-cell audio + subtitle toggles — **no video decode**, so it runs on a
-phone. It writes a **server-side wall config** the rendered wall (`/app/`) reads from, so a pick
-drives playback. This is the control plane for the headless wall the renderer will stream to
-VLC / an Apple TV (next phase).
+(channel dropdown) + per-cell audio + subtitle toggles, **plus a display-tuning panel** —
+resolution (an 8-rung 720p–2160p ladder, each annotated with its sustainable fps), feed width,
+feed font, and ticker height, all fine-grained sliders. A cell can also be set to **Weather Radar**
+(free public NWS radar loops, region-selectable) instead of a video feed. **No video decode**, so
+`/control/` runs on a phone. It writes a **server-side wall config** the rendered wall (`/app/?render=1`)
+reads from, so a pick (or a tuning change) drives playback. A headless renderer container
+(Xvfb → Chromium → ffmpeg → HLS) captures that wall and streams it, so **VLC or an Apple TV opens one
+URL** — the helper serves the HLS over both HTTPS and a plain-HTTP port for strict tvOS clients.
 
 ![The picker control surface — each cell a feed/audio/subtitle picker, driving the server-side wall config](docs/screenshots/web/control.png)
 
@@ -170,7 +174,7 @@ flowchart LR
   CDN["public HLS CDNs"]
   SRC -->|"aggregate + resolve · SSRF-safe, egress-bounded"| HELPER
   HELPER -->|"/api/feed · /api/ticker/{markets,sports} · /api/channels · /api/presets · /api/playlist.m3u"| TV
-  HELPER --> WEB
+  HELPER -->|"+ /api/wall · /api/weather/radar · /api/stream (the headless control plane + HLS)"| WEB
   CDN -.->|"streams play directly — no proxy"| TV
   CDN -.-> WEB
 ```
