@@ -39,6 +39,7 @@ from .stream.api import get_router as stream_router
 from .ticker.api import get_router as ticker_router
 from .ticker.pollers import MarketsPoller, SportsPoller
 from .wall.api import get_router as wall_router
+from .wall.outputs_api import get_router as outputs_router
 from .weather.api import get_router as weather_router
 from .weather.cache import RadarFrameCache
 
@@ -199,6 +200,11 @@ def create_app(
     # it. Helper-hosted by necessity — a headless wall has no device to hold
     # its lineup. Persisted in the data dir (seedless, gitignored).
     app.include_router(wall_router(db_path, cfg.data_dir))
+    # Unified Outputs panel (the multi-output fan-out): runtime per-output status
+    # (read from the renderer's status file in the shared stream volume, path-safe)
+    # + start/stop/restart controls that edit the wall config through the SAME
+    # validated partial-merge path as PUT /api/wall (no out-of-band state).
+    app.include_router(outputs_router(db_path, cfg.data_dir, cfg.stream_dir))
     # Weather radar widget (free public NWS RIDGE loop GIF): proxy + cache the
     # animated radar so a cell set to a `weather-radar-*` source renders a CORS-
     # clean, rate-respectful, honest-fallback loop. Always mounted (inert until a

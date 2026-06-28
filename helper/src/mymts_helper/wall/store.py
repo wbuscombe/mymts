@@ -118,6 +118,22 @@ RES_BITRATE_KBPS = {
 }
 
 
+def derive_render_resolution(outputs: dict | None) -> str:
+    """The render canvas the renderer composites at = the LARGEST enabled output
+    resolution (every output downscales from the single capture). 1080p if none
+    enabled. Mirrors renderer supervisor.derive_render_resolution — the helper uses
+    it only for the read-only "compositing at X" display (the renderer is the
+    authority that actually sizes the canvas)."""
+    enabled = [
+        o.get("resolution")
+        for o in (outputs or {}).values()
+        if isinstance(o, dict) and o.get("enabled") and o.get("resolution") in RENDER_RESOLUTIONS
+    ]
+    if not enabled:
+        return DEFAULT_RESOLUTION
+    return max(enabled, key=lambda r: RENDER_RESOLUTIONS.index(r))
+
+
 def default_outputs() -> dict[str, Any]:
     """The default outputs block: HLS on (the shipping VLC stream), Mercury off
     (the inert shell pending credentials). Built fresh each call (never shared)."""
