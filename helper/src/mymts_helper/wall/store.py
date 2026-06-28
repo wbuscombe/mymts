@@ -16,7 +16,10 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
                     "audio": true, "restart_epoch": 0},
         "mercury": {"enabled": false, "resolution": "720p",  "bitrate_kbps": 3000,
                     "audio": true, "restart_epoch": 0,
-                    "channel_guid": "", "display_name": "MyMTS News Wall"}
+                    "channel_guid": "", "display_name": "MyMTS News Wall"},
+        "discord": {"enabled": false, "transport": "activity", "guild_id": ""}
+                    # NO resolution/bitrate/audio: the Discord Activity is a VIEWER
+                    # of the HLS render (it inherits HLS quality, adds no encode).
       },
       "cells": [                              # length == rows*cols (by index)
         {"channel": "bbc-news" | null, "audio": false, "subtitles": false, "reload": 0},
@@ -98,14 +101,22 @@ FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT = 0.7, 1.6, 1.0
 TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT = 0.6, 2.0, 1.0
 
 # ---- outputs (the multi-output fan-out) ----
-# The two outputs the wall fans out to. The block is a MAP so more can be added
-# later with no schema_version bump (add a validator + defaults entry — no migration).
-OUTPUT_NAMES = ("hls", "mercury")
+# The outputs the wall fans out to. The block is a MAP so more can be added later
+# with no schema_version bump (add a validator branch + a defaults entry — no
+# migration). Three today: hls (the live VLC stream), mercury (the LiveKit stub),
+# discord (the Activity viewer — a special-shape output, see below).
+OUTPUT_NAMES = ("hls", "mercury", "discord")
 # Mercury publishes a 720p-ish screen-share into a voice channel; cap it at 1080p
 # (no point pushing a 4K wall down a chat pipe). The ladder is ascending, so the cap
 # is an index comparison.
 MERCURY_MAX_RESOLUTION = "1080p"
 DEFAULT_DISPLAY_NAME = "MyMTS News Wall"
+# Discord is a SPECIAL-SHAPE output: it has NO resolution/bitrate/audio/restart_epoch
+# (the Activity is a viewer of the HLS render — it inherits HLS quality and adds no
+# encode). It carries only an enabled flag, a transport (only "activity" today; a
+# bot/self-bot is forbidden by Discord ToS), and an optional guild_id hint.
+DISCORD_TRANSPORTS = ("activity",)
+DEFAULT_DISCORD_TRANSPORT = "activity"
 # bitrate_kbps is a fine-grained per-output knob, clamped to a sane band per
 # resolution: a floor that always carries motion, and a ceiling of ~3x the rung's
 # RECOMMENDED bitrate (mirrors renderer RENDER_BITRATES, in kbps) so a slider can't
@@ -146,6 +157,9 @@ def default_outputs() -> dict[str, Any]:
             "enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
             "audio": True, "restart_epoch": 0,
             "channel_guid": "", "display_name": DEFAULT_DISPLAY_NAME,
+        },
+        "discord": {
+            "enabled": False, "transport": DEFAULT_DISCORD_TRANSPORT, "guild_id": "",
         },
     }
 
@@ -228,6 +242,13 @@ def _clamp_resolution(value: Any, default: str) -> str:
     return value if value in RENDER_RESOLUTIONS else default
 
 
+def _clamp_discord_transport(value: Any) -> str:
+    """Clamp the Discord transport to a supported value. Only ``activity`` exists
+    (a bot/self-bot broadcasting video is forbidden by Discord ToS), so any unknown
+    value snaps to ``activity`` (operator-friendly: clamp, don't reject)."""
+    return value if value in DISCORD_TRANSPORTS else DEFAULT_DISCORD_TRANSPORT
+
+
 def _cap_mercury_resolution(res: str) -> str:
     """Cap a resolution at :data:`MERCURY_MAX_RESOLUTION` (the ladder is ascending,
     so the cap is an index comparison)."""
@@ -253,8 +274,18 @@ def _validate_output(name: str, raw: Any, defaults: dict[str, Any]) -> dict[str,
     """Validate ONE output entry against its defaults: resolution clamped to the
     ladder (Mercury additionally ≤1080p), bitrate clamped per-resolution, the flags
     coerced to bool, ``restart_epoch`` a non-negative monotonic counter. The Mercury
-    non-secret fields (channel_guid / display_name) are plain strings."""
+    non-secret fields (channel_guid / display_name) are plain strings.
+
+    Discord is a SPECIAL SHAPE: only ``enabled`` (bool), ``transport`` (clamped to a
+    supported value), and ``guild_id`` (a plain string hint) — NO resolution / bitrate
+    / audio / restart_epoch, because the Activity is a viewer of the HLS render."""
     src = raw if isinstance(raw, dict) else {}
+    if name == "discord":
+        return {
+            "enabled": _coerce_bool(src.get("enabled"), defaults["enabled"]),
+            "transport": _clamp_discord_transport(src.get("transport", defaults["transport"])),
+            "guild_id": _coerce_str(src.get("guild_id"), defaults["guild_id"]),
+        }
     res = _clamp_resolution(src.get("resolution", defaults["resolution"]), defaults["resolution"])
     if name == "mercury":
         res = _cap_mercury_resolution(res)
@@ -326,8 +357,10 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
       - ``cells`` is a list of length ``rows*cols``; each cell's ``channel`` is
         null or a slug in ``valid_slugs``; ``audio`` + ``subtitles`` are bools
         (default false; any combination of audio cells allowed);
-      - ``outputs`` is the fan-out map (hls + mercury), each clamped to the ladder
-        + sane bitrate (Mercury ≤1080p); absent → seeded (migrating ``render``);
+      - ``outputs`` is the fan-out map (hls + mercury + discord); the encode outputs
+        are clamped to the ladder + sane bitrate (Mercury ≤1080p); discord is the
+        special viewer shape (enabled/transport/guild_id); absent → seeded (migrating
+        ``render``);
       - ``preset`` is null or a string (informational).
     """
     if not isinstance(raw, dict):
@@ -515,7 +548,10 @@ def clamp_reload_monotonic(
     old_outputs = old_config.get("outputs") or {}
     outputs: dict[str, Any] = {}
     for name, out in (new_config.get("outputs") or {}).items():
-        if not isinstance(out, dict):
+        # A special-shape output without a restart_epoch (Discord — a launch-to-start
+        # viewer, no encoder to cycle) passes through untouched: the monotonic clamp
+        # only applies to outputs that actually carry the counter.
+        if not isinstance(out, dict) or "restart_epoch" not in out:
             outputs[name] = out
             continue
         old_epoch = (old_outputs.get(name) or {}).get("restart_epoch", 0)

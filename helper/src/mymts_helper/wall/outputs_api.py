@@ -22,6 +22,7 @@ the hardened stream router.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ from fastapi import APIRouter, HTTPException
 
 from .. import db
 from ..channels import registry
+from ..discord import status as discord_status_mod
 from ..weather import regions as weather_regions
 from . import store
 
@@ -57,8 +59,23 @@ def _read_status(stream_dir: str | None) -> dict | None:
         return None
 
 
-def get_router(db_path: Path, data_dir: str, stream_dir: str | None = None) -> APIRouter:
+def get_router(
+    db_path: Path,
+    data_dir: str,
+    stream_dir: str | None = None,
+    *,
+    discord_client_id: str | None = None,
+    discord_client_secret: str | None = None,
+    discord_public_origin: str | None = None,
+    phantom: bool = False,
+    discord_probe: Callable[[str], bool | None] | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/outputs", tags=["outputs"])
+
+    # The Discord card's reachability check (helper-computed). Cached so the
+    # `/control/` status poll doesn't round-trip the tunnel every tick. In phantom
+    # mode it is never invoked (discord_status short-circuits before any egress).
+    _probe = discord_probe or discord_status_mod.make_cached_origin_probe()
 
     def _valid_slugs() -> list[str]:
         with db.connection_scope(db_path) as conn:
@@ -73,8 +90,30 @@ def get_router(db_path: Path, data_dir: str, stream_dir: str | None = None) -> A
         reporting = file is not None
         runtime = (file or {}).get("outputs", {})
 
+        hls_enabled = bool((outputs.get("hls") or {}).get("enabled"))
+
         result: dict[str, Any] = {}
         for name, o in outputs.items():
+            if name == "discord":
+                # Discord is HELPER-computed (the helper holds DISCORD_* + owns the
+                # public origin; the renderer is not involved). A special viewer shape:
+                # NO resolution/bitrate/audio. The state machine NEVER posts to Discord
+                # and NEVER claims a live session (launch-to-start is a platform rule).
+                ds = discord_status_mod.discord_status(
+                    output=o,
+                    client_id=discord_client_id,
+                    client_secret=discord_client_secret,
+                    public_origin=discord_public_origin,
+                    hls_enabled=hls_enabled,
+                    phantom=phantom,
+                    probe=_probe,
+                )
+                result[name] = {
+                    "enabled": o.get("enabled"),
+                    **ds,
+                    "public_origin": discord_public_origin or "",
+                }
+                continue
             entry: dict[str, Any] = {
                 "enabled": o.get("enabled"),
                 "resolution": o.get("resolution"),
@@ -127,6 +166,14 @@ def get_router(db_path: Path, data_dir: str, stream_dir: str | None = None) -> A
             patch = {"outputs": {name: {"enabled": True}}}
         elif action == "stop":
             patch = {"outputs": {name: {"enabled": False}}}
+        elif name == "discord":
+            # Discord is launch-to-start: there is no helper-owned session/encoder to
+            # restart (a user launches the Activity in Discord). Reject honestly
+            # rather than pretend a restart did something.
+            raise HTTPException(
+                status_code=400,
+                detail="discord is launch-to-start; there is no session to restart",
+            )
         else:  # restart — bump the per-output cycle counter (monotonic)
             patch = {"outputs": {name: {"restart_epoch": cur.get("restart_epoch", 0) + 1}}}
         merged = store.merge_wall_config(existing, patch)

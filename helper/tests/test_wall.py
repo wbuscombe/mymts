@@ -294,16 +294,20 @@ def test_bumped_reload_epochs_survive_save_load_round_trip(tmp_path: Path):
     assert loaded["cells"][1]["reload"] == 3
 
 
-# --- outputs: the multi-output fan-out (hls + mercury) ---
+# --- outputs: the multi-output fan-out (hls + mercury + discord) ---
 
 
 def test_default_outputs_shape():
     o = store.default_wall_config(VALID)["outputs"]
-    assert set(o) == {"hls", "mercury"}
+    assert set(o) == {"hls", "mercury", "discord"}
     assert o["hls"]["enabled"] is True and o["hls"]["resolution"] == "1080p"
     assert o["mercury"]["enabled"] is False and o["mercury"]["resolution"] == "720p"
     assert o["mercury"]["channel_guid"] == "" and o["mercury"]["display_name"] == "MyMTS News Wall"
-    assert all("restart_epoch" in e for e in o.values())
+    # The two ENCODE outputs carry restart_epoch; Discord (a launch-to-start viewer)
+    # is a special shape with none.
+    assert "restart_epoch" in o["hls"] and "restart_epoch" in o["mercury"]
+    assert o["discord"] == {"enabled": False, "transport": "activity", "guild_id": ""}
+    assert "restart_epoch" not in o["discord"] and "resolution" not in o["discord"]
 
 
 def test_validate_defaults_outputs_when_absent():
@@ -332,6 +336,47 @@ def test_mercury_resolution_capped_at_1080p():
     # a ≤1080p mercury resolution passes unchanged
     cfg = _good_config(outputs={"mercury": {"resolution": "900p"}})
     assert store.validate_wall_config(cfg, set(VALID))["outputs"]["mercury"]["resolution"] == "900p"
+
+
+# --- discord output: the special viewer shape (no res/bitrate/audio/restart) ---
+
+
+def test_discord_validates_to_viewer_shape_dropping_encode_knobs():
+    cfg = _good_config(outputs={"discord": {
+        "enabled": True, "transport": "activity", "guild_id": "g-1",
+        # junk an encode output would have — must be DROPPED for discord
+        "resolution": "1080p", "bitrate_kbps": 9000, "audio": True, "restart_epoch": 5,
+    }})
+    d = store.validate_wall_config(cfg, set(VALID))["outputs"]["discord"]
+    assert d == {"enabled": True, "transport": "activity", "guild_id": "g-1"}
+
+
+def test_discord_unknown_transport_clamps_to_activity():
+    # A bot/self-bot transport is forbidden by Discord ToS → clamp, don't reject.
+    cfg = _good_config(outputs={"discord": {"transport": "bot"}})
+    d = store.validate_wall_config(cfg, set(VALID))["outputs"]["discord"]
+    assert d["transport"] == "activity"
+
+
+def test_discord_partial_merge_does_not_clobber_other_outputs():
+    stored = store.default_wall_config(VALID)
+    # enable discord ALONE — hls/mercury must be preserved field-for-field
+    merged = store.merge_wall_config(stored, {"outputs": {"discord": {"enabled": True}}})
+    out = store.validate_wall_config(merged, set(VALID))["outputs"]
+    assert out["discord"]["enabled"] is True
+    assert out["hls"]["enabled"] is True and out["hls"]["resolution"] == "1080p"
+    assert out["mercury"]["enabled"] is False and "restart_epoch" in out["mercury"]
+
+
+def test_clamp_monotonic_leaves_discord_without_restart_epoch():
+    stored = store.default_wall_config(VALID)
+    new = store.validate_wall_config(
+        store.merge_wall_config(stored, {"outputs": {"discord": {"enabled": True}}}), set(VALID)
+    )
+    clamped = store.clamp_reload_monotonic(new, stored)
+    # discord stays a pure viewer shape — the monotonic clamp adds NO restart_epoch
+    assert "restart_epoch" not in clamped["outputs"]["discord"]
+    assert clamped["outputs"]["hls"]["restart_epoch"] == 0
 
 
 def test_bitrate_clamped_to_per_resolution_band():

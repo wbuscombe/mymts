@@ -27,6 +27,7 @@ from .channels.override import seed_lineup
 from .channels.presets import get_router as presets_router
 from .channels.prober import ChannelProber
 from .config import Config
+from .discord.token_api import get_router as discord_router
 from .feeds.api import get_router as feed_router
 from .feeds.poller import FeedPoller
 from .feeds.seeder import seed_from_file as seed_feeds_from_file
@@ -204,7 +205,17 @@ def create_app(
     # (read from the renderer's status file in the shared stream volume, path-safe)
     # + start/stop/restart controls that edit the wall config through the SAME
     # validated partial-merge path as PUT /api/wall (no out-of-band state).
-    app.include_router(outputs_router(db_path, cfg.data_dir, cfg.stream_dir))
+    app.include_router(
+        outputs_router(
+            db_path,
+            cfg.data_dir,
+            cfg.stream_dir,
+            discord_client_id=cfg.discord_client_id,
+            discord_client_secret=cfg.discord_client_secret,
+            discord_public_origin=cfg.discord_activity_public_origin,
+            phantom=cfg.phantom_mode,
+        )
+    )
     # Weather radar widget (free public NWS RIDGE loop GIF): proxy + cache the
     # animated radar so a cell set to a `weather-radar-*` source renders a CORS-
     # clean, rate-respectful, honest-fallback loop. Always mounted (inert until a
@@ -289,4 +300,77 @@ def create_stream_app(stream_dir: str) -> FastAPI:
     def health() -> dict[str, object]:
         return {"status": "ok", "stream": True}
 
+    return app
+
+
+class _StripProxyPrefix:
+    """ASGI middleware that strips a leading ``/.proxy`` from the request path.
+
+    Discord's Activity proxy serves our app at ``…/.proxy/`` and normally strips the
+    prefix before forwarding to our origin — but configurations vary, and some
+    forward the full ``/.proxy/...`` path. This makes the public origin tolerant of
+    BOTH: ``/.proxy/api/stream/playlist.m3u8`` and ``/api/stream/playlist.m3u8``
+    resolve identically. Belt-and-suspenders for the documented `/.proxy/` gotcha;
+    a no-op for every non-proxied request (the LAN/acceptance paths)."""
+
+    def __init__(self, app: object) -> None:
+        self._app = app
+
+    async def __call__(self, scope: dict, receive: object, send: object) -> None:
+        if scope.get("type") in ("http", "websocket"):
+            path = scope.get("path", "")
+            if path == "/.proxy" or path.startswith("/.proxy/"):
+                stripped = path[len("/.proxy"):] or "/"
+                scope = {**scope, "path": stripped, "raw_path": stripped.encode("latin-1")}
+        await self._app(scope, receive, send)  # type: ignore[operator]
+
+
+def create_public_app(
+    *,
+    stream_dir: str,
+    activity_dir: str,
+    discord_client_id: str | None,
+    discord_client_secret: str | None,
+) -> FastAPI:
+    """A DEDICATED, MINIMAL public app for the Discord Activity — the only MyMTS
+    surface ever exposed to the public internet (behind the operator's Cloudflare
+    tunnel). It serves EXACTLY three things, nothing else:
+
+      1. the Activity static app (``discord-activity/``) at ``/`` (the iframe),
+      2. ``/api/discord/config`` + ``/api/discord/token`` (the OAuth exchange),
+      3. the hardened ``/api/stream`` passthrough (the SAME symlink-safe router the
+         LAN serves — the HLS the Activity plays, relayed through the public origin).
+
+    The full API, ``PUT /api/wall``, ``/control/`` and ``/app/`` are DELIBERATELY
+    NOT here — they stay LAN-only. The raw LAN stream is never exposed; only this
+    relay. No DB, no pollers, no lifespan. Mirrors ``create_stream_app``'s
+    minimal-surface discipline so there is no second, divergent serving path to
+    drift. ``/.proxy/`` tolerance via :class:`_StripProxyPrefix`."""
+    from fastapi.staticfiles import StaticFiles
+
+    app = FastAPI(
+        title="MyMTS Discord Activity (public)",
+        version="public",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    # Routers FIRST so they win over the catch-all static mount registered last.
+    app.include_router(
+        discord_router(client_id=discord_client_id, client_secret=discord_client_secret)
+    )
+    app.include_router(stream_router(stream_dir))  # the HLS passthrough (path-safe)
+
+    @app.get("/health")
+    def health() -> dict[str, object]:
+        return {"status": "ok", "activity": True}
+
+    # The Activity iframe + its assets (vendored SDK/hls.js, css). html=True serves
+    # index.html at "/". Mounted LAST so it can never shadow an /api/* route.
+    app.mount("/", StaticFiles(directory=activity_dir, html=True), name="discord-activity")
+
+    # Wrap so a forwarded /.proxy/ prefix resolves to the same routes.
+    app.add_middleware(_StripProxyPrefix)
+    log.info("public_activity_app_built", extra={"activity_dir": activity_dir})
     return app

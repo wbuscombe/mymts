@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 import uvicorn
 
-from .app import create_app, create_stream_app
+from .app import create_app, create_public_app, create_stream_app
 from .config import Config
 
 log = logging.getLogger("mymts_helper.entry")
@@ -90,6 +91,34 @@ async def _serve(cfg: Config) -> None:
         )
         servers.append(uvicorn.Server(stream_cfg))
         log.info("listener_stream_http_configured", extra={"port": cfg.stream_http_port})
+
+    # Dedicated PUBLIC listener for the Discord Activity (2026-06-28). A SEPARATE
+    # minimal app (Activity static + /api/discord/* + the /api/stream passthrough)
+    # — the full API / /control/ / /app/ are NOT on it. Plain HTTP; the operator's
+    # Cloudflare tunnel terminates TLS and maps the public hostname to this port.
+    # Opt-in via DISCORD_PUBLIC_PORT + DISCORD_ACTIVITY_DIR + STREAM_DIR (see
+    # Config.has_discord_public); unset → no public surface. No lifespan (no pollers).
+    if cfg.has_discord_public() and Path(cfg.discord_activity_dir).is_dir():
+        public_app = create_public_app(
+            stream_dir=cfg.stream_dir,
+            activity_dir=cfg.discord_activity_dir,
+            discord_client_id=cfg.discord_client_id,
+            discord_client_secret=cfg.discord_client_secret,
+        )
+        public_cfg = uvicorn.Config(
+            app=public_app,
+            host="0.0.0.0",  # noqa: S104 — the CF tunnel fronts this; the host port is not LAN-trusted
+            port=cfg.discord_public_port,
+            log_config=None,
+            access_log=False,
+            lifespan="off",
+        )
+        servers.append(uvicorn.Server(public_cfg))
+        log.info("listener_discord_public_configured", extra={"port": cfg.discord_public_port})
+    elif cfg.has_discord_public():
+        # Configured to start but the Activity static dir is missing (bad mount) —
+        # warn + skip rather than crash the whole helper.
+        log.warning("discord_public_skipped_missing_dir", extra={"dir": cfg.discord_activity_dir})
 
     if not servers:
         raise RuntimeError(
