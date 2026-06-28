@@ -1,0 +1,68 @@
+/* MyMTS Discord Activity — minimal, robust, no chrome. Black background,
+   contain-fit video, a centered status overlay, a one-time unmute affordance.
+   The Activity fills whatever the Discord iframe gives it. */
+
+:root { color-scheme: dark; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+/* Full-bleed but never cropped: contain-fit on a black field (a wider/narrower
+   iframe gets letterbox/pillarbox rather than a stretched or clipped wall). */
+#wall {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
+/* Status overlay — only visible while connecting / on error (cleared on play). */
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  color: #e8e8ea;
+  font-size: clamp(0.95rem, 2.6vw, 1.25rem);
+  letter-spacing: 0.01em;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.85));
+  pointer-events: none;
+}
+#overlay[data-kind="muted"] { color: #b6b8bf; }
+
+/* One-time tap-to-unmute button (hidden until playback starts muted). */
+#unmute {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  display: none;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.72);
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+#unmute:hover { background: rgba(40, 40, 48, 0.85); }

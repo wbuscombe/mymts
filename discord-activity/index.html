@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MyMTS — News Wall</title>
+  <!-- Own-origin CSP, same posture as /app/ + /control/ (no CDN, no inline JS):
+         script-src 'self'   — vendored hls.js (UMD) + the SDK module + activity.mjs
+         connect-src 'self'   — the config/token endpoints + HLS, all reached through
+                                Discord's same-origin /.proxy/ path (no external host)
+         media-src  'self' blob: — MSE source buffers + the .ts segments
+         frame-ancestors      — only the Discord client may frame this Activity -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors https://discord.com https://*.discord.com https://*.discordsays.com" />
+  <link rel="stylesheet" href="activity.css" />
+  <!-- hls.js is the SAME pinned UMD bundle the LAN web client ships (window.Hls),
+       loaded as a classic script before the module entry. -->
+  <script src="vendor/hls.min.js"></script>
+</head>
+<body>
+  <div id="stage">
+    <!-- Full-bleed, contain-fit, muted autoplay so the wall always starts; a
+         one-time "tap for sound" arms the mixed audio with a user gesture. -->
+    <video id="wall" playsinline autoplay muted></video>
+    <button id="unmute" type="button" aria-label="Enable sound">🔊 Tap for sound</button>
+    <div id="overlay" role="status" aria-live="polite">Connecting to Discord…</div>
+  </div>
+  <script type="module" src="activity.mjs"></script>
+</body>
+</html>
