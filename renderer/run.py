@@ -249,6 +249,11 @@ def write_status_file(
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(status, f)
+        # mkstemp creates 0600; the helper (a DIFFERENT uid, ro on this volume) must
+        # read it — make it world-readable like ffmpeg's .ts segments (0644). The
+        # file is non-secret runtime status (no LiveKit values; the Mercury fields
+        # are the non-secret channel_guid/display_name only).
+        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except OSError:
         try:

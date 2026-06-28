@@ -337,5 +337,39 @@ class MercuryStub(unittest.TestCase):
         self.assertTrue(any("NOT wired" in m for m in logs))
 
 
+class StatusFile(unittest.TestCase):
+    """The renderer's status file must be readable by the HELPER (a different uid,
+    read-only on the shared volume) — mkstemp's 0600 default would block it."""
+
+    def test_status_file_is_world_readable_with_expected_shape(self):
+        import json
+        import os
+        import stat
+        import tempfile
+
+        import mercury
+        import run
+
+        d = tempfile.mkdtemp()
+        run.STREAM_DIR = d
+        run.WIDTH, run.HEIGHT, run.FPS = 1920, 1080, 30
+        pub = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=lambda u: None)
+        pub.configure({"enabled": False})
+        outputs = {
+            "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000, "audio": True},
+            "mercury": {"enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
+                        "audio": True, "channel_guid": "", "display_name": "X"},
+        }
+        run.write_status_file(outputs, "1080p", True, pub)
+        path = os.path.join(d, run.STATUS_FILE)
+        self.assertTrue(os.path.isfile(path))
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        self.assertTrue(mode & 0o004, f"status file {oct(mode)} not readable by other (the helper uid)")
+        data = json.load(open(path))
+        self.assertEqual(data["outputs"]["hls"]["state"], "running")
+        self.assertEqual(data["outputs"]["mercury"]["state"], "disabled")
+        self.assertEqual(data["render"]["resolution"], "1080p")
+
+
 if __name__ == "__main__":
     unittest.main()
