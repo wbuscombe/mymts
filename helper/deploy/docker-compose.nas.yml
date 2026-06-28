@@ -194,6 +194,15 @@ services:
       RENDER_VIDEO_BITRATE: ${RENDER_VIDEO_BITRATE:-8M}
       RENDER_BUFSIZE: ${RENDER_BUFSIZE:-16M}
       RENDER_X264_PRESET: ${RENDER_X264_PRESET:-veryfast}
+      # Mercury output (the renderer's future LiveKit publisher). SECRETS — empty by
+      # default; real values come from the deploy .env (gitignored, never committed/
+      # logged). The publisher is STUBBED in this build: with these unset it stays
+      # needs-setup and opens NO connection (the stub short-circuits its probe when the
+      # key is absent → zero egress). The wire-up consumes them (docs/mercury-wireup-notes.md).
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_HOST: ${LIVEKIT_HOST:-}
+      LIVEKIT_BOT_IDENTITY: ${LIVEKIT_BOT_IDENTITY:-mymts-wall-bot}
       BUILD_SHA: ${BUILD_SHA:-dev}
       BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
     volumes:
