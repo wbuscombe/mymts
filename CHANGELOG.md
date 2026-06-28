@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(helper,web,discord-activity): Discord as a unified output — an Activity that plays the wall (2026-06-28)
+
+Discord becomes the **third output destination** (alongside HLS/VLC live + Mercury stubbed), with the
+same configure-once → wall-appears UX. Discord's only ToS-legitimate surface for shared in-call video
+is an **Activity** (Embedded App SDK) a user launches in a voice channel — a bot cannot broadcast video
+unattended, and a user-token self-bot is forbidden — so this is **launch-to-start by platform rule**.
+Server / web + a new static `discord-activity/` app only — native unchanged; the existing VLC HLS + the
+Mercury stub are byte-for-byte unchanged.
+
+- **feat: Discord Activity web app (`discord-activity/`).** A minimal, robust viewer using
+  `@discord/embedded-app-sdk`: `new DiscordSDK()` → `ready()` → OAuth (`authorize` → exchange `code` at
+  our token endpoint → `authenticate`) → a full-bleed `<video>` + hls.js playing the SAME HLS render
+  the renderer already produces, through Discord's `/.proxy/` path. **Reuses the single NAS render — no
+  new encode.** Third-party JS is vendored same-origin (the SDK esbuild-bundled to a self-contained
+  ESM; hls.js the same pinned bundle the wall uses), `script-src 'self'`, no CDN.
+- **feat: a dedicated minimal PUBLIC origin (never the LAN API).** A new `create_public_app` serves
+  ONLY the Activity static files + `/api/discord/*` + the hardened `/api/stream` passthrough, on its
+  own plain-HTTP port behind the operator's **existing Cloudflare tunnel** (TLS at the edge). The full
+  API, `PUT /api/wall`, `/control/` and `/app/` are **never** exposed; the raw LAN stream is never
+  exposed — only this relay. `POST /api/discord/token` exchanges the OAuth `code` server-side using
+  `DISCORD_CLIENT_SECRET` and returns **only** the `access_token`; `GET /api/discord/config` serves the
+  **public** client id so the static app needs no build-time templating. A `/.proxy/`-prefix-tolerant
+  middleware makes the origin robust either way.
+- **feat: `/control/` Discord card + helper-computed status.** `outputs.discord =
+  {enabled, transport: "activity", guild_id}` (a special **viewer shape** — no resolution/bitrate, it
+  inherits HLS quality). The card shows an enabled toggle, a launch-to-start explainer, a ✓/✗/?
+  setup checklist (client id / secret present, public origin reachable, HLS on), a copyable public
+  origin + how-to-launch steps — and **never claims a live session**. `/api/outputs/status` adds a
+  helper-computed `disabled | needs_setup | ready` Discord state (`ready` = creds present + origin
+  reachable, NOT "publishing"); the reachability check is real but **non-authenticating** (it pings our
+  own origin, never Discord), short-circuited until creds are present and skipped in phantom → **zero**
+  egress until configured. "Restart" is rejected for Discord (launch-to-start has no session to cycle).
+- **chore: env + deploy wiring.** `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` /
+  `DISCORD_ACTIVITY_PUBLIC_ORIGIN` / `DISCORD_ACTIVITY_DIR` / `DISCORD_PUBLIC_PORT` (`.env.example`
+  placeholders added; the SECRET lives only in the gitignored `.env`). The NAS compose passes them,
+  publishes the public port, and bind-mounts `discord-activity/` read-only; `deploy-helper.sh` rsyncs
+  it. One-time operator steps (register the Discord app + set URL Mappings; add the Cloudflare public
+  hostname) are documented in README "Discord" with a copy-paste mappings block.
+
+`outputs.discord` slots into the existing map-shaped schema with **no `schema_version` bump** (a
+defaults entry + a validator branch + a `clamp_reload_monotonic` that tolerates an output without a
+`restart_epoch`); partial-merge already protects the other outputs field-for-field. Native unchanged →
+**no version tag, no APK republish** (kept in `[Unreleased]`). See ARCHITECTURE §37 + `docs/decisions/0002`.
+
 ## feat(web,helper,renderer): unified wall-output system — per-tile audio + multi-output fan-out + Mercury shell (2026-06-27)
 
 One rendered wall now drives **multiple outputs**, with **per-tile audio**, and a pre-wired (but
