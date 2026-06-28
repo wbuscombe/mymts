@@ -127,6 +127,17 @@ rsync -az --delete \
     --exclude '__pycache__/' \
     renderer/ "$HOST:$REMOTE_PATH/_renderer/"
 
+# Discord Activity static app (repo-root discord-activity/, a sibling of helper/
+# so it isn't in the image build context). The helper compose bind-mounts
+# _activity/ read-only at /app/activity; the dedicated public app serves it (with
+# /api/discord/* + the /api/stream passthrough) behind the operator's CF tunnel.
+# Inert static files only (HTML/CSS/JS + vendored SDK/hls.js) — no secrets.
+echo "==> rsyncing discord activity static app"
+ssh "$HOST" "mkdir -p '$REMOTE_PATH/_activity'"
+rsync -az --delete \
+    --exclude '.DS_Store' \
+    discord-activity/ "$HOST:$REMOTE_PATH/_activity/"
+
 echo "==> rendering compose.yml on the helper host"
 ssh "$HOST" "cp '$REMOTE_PATH/_src/deploy/docker-compose.nas.yml' '$REMOTE_PATH/compose.yml'"
 
@@ -160,6 +171,17 @@ CHANNEL_PROBE_INTERVAL_SECONDS=1800
 WEB_CLIENT_DIR=/app/web
 STREAM_DIR=/stream
 STREAM_HTTP_PORT=8082
+# Discord Activity output (2026-06-28). The dedicated public app (Activity +
+# /api/discord/* + the /api/stream passthrough) starts on DISCORD_PUBLIC_PORT once
+# the _activity mount is present. CLIENT ID is public; the SECRET is a secret — set
+# both (and the public origin) as exports in the gitignored scripts/deploy.local.env
+# when the operator registers the Discord app; default EMPTY → the card sits in
+# needs-setup and posts NOTHING to Discord. Never hard-code the secret here.
+DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
+DISCORD_ACTIVITY_PUBLIC_ORIGIN=${DISCORD_ACTIVITY_PUBLIC_ORIGIN:-}
+DISCORD_ACTIVITY_DIR=${DISCORD_ACTIVITY_DIR:-/app/activity}
+DISCORD_PUBLIC_PORT=${DISCORD_PUBLIC_PORT:-8084}
 EOF
 
 echo "==> docker compose build --pull + up -d (the full cycle)"

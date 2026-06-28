@@ -76,6 +76,20 @@ services:
       # the self-signed HTTPS, so the HLS is ALSO served over plain HTTP on this
       # LAN port (the same hardened /api/stream route; API/control/app stay HTTPS).
       STREAM_HTTP_PORT: ${STREAM_HTTP_PORT:-8082}
+      # Discord Activity output (2026-06-28). A DEDICATED minimal public app serves
+      # ONLY the Activity static files + /api/discord/* + the /api/stream passthrough
+      # on DISCORD_PUBLIC_PORT — the full API + /control/ + /app/ are NOT on it. The
+      # operator's Cloudflare tunnel maps the public hostname to this port (TLS at the
+      # edge). The listener starts only when PORT + ACTIVITY_DIR + STREAM_DIR are all
+      # set (here ACTIVITY_DIR + STREAM_DIR are, so set DISCORD_PUBLIC_PORT=8084 in
+      # .env to bring it up). The Activity static files arrive via the read-only mount
+      # below. CLIENT ID is public; the SECRET is a secret — both come from .env
+      # (gitignored), default EMPTY → the card sits in needs-setup, posts NOTHING.
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_ACTIVITY_PUBLIC_ORIGIN: ${DISCORD_ACTIVITY_PUBLIC_ORIGIN:-}
+      DISCORD_ACTIVITY_DIR: ${DISCORD_ACTIVITY_DIR:-/app/activity}
+      DISCORD_PUBLIC_PORT: ${DISCORD_PUBLIC_PORT:-8084}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -97,6 +111,13 @@ services:
       # helper/, so it is NOT in the image build context — a bind mount is
       # how it reaches the container without an image rebuild for web edits.)
       - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_web:/app/web:ro
+      # Discord Activity static app (the repo-root `discord-activity/` tree, rsynced
+      # by deploy-helper.sh to `_activity/`). Mounted READ-ONLY: inert static files
+      # (HTML/CSS/JS + the vendored SDK/hls.js), credential-free; the container can
+      # never rewrite them. Served at /app/activity via DISCORD_ACTIVITY_DIR above by
+      # the dedicated public app. Like web/, it's outside the image build context, so
+      # a bind mount reaches the container without an image rebuild for Activity edits.
+      - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_activity:/app/activity:ro
       # Renderer HLS output — the shared volume the renderer writes (rw) and the
       # helper serves READ-ONLY. A compromised helper cannot write the stream;
       # a compromised renderer cannot reach the helper's data/cert volumes.
@@ -111,6 +132,12 @@ services:
       # Plain-HTTP HLS stream (stream-only app) for strict LAN players (Apple TV
       # VLC). LAN-bound; serves ONLY the hardened /api/stream route, no API/keys.
       - "8082:8082"
+      # Plain-HTTP Discord Activity public app (2026-06-28). The operator's Cloudflare
+      # tunnel maps the public hostname (e.g. wall.3slstudios.com) to this port and
+      # terminates TLS at the edge. Serves ONLY the Activity + /api/discord/* + the
+      # /api/stream passthrough — the full API + /control/ are NOT here. Until the
+      # tunnel hostname is added in the CF dashboard, this is just a LAN-local port.
+      - "8084:8084"
     logging:
       driver: json-file
       options:
