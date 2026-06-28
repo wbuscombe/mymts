@@ -191,5 +191,15 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .mercury-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* ---- Discord card (launch-to-start Activity; views the HLS) ---- */
+.output-card--discord { border-style: dashed; border-color: var(--accent-dim); }
+/* "ready" = an operator CAN launch — positive but NOT a running/live badge. */
+.output-state.state-ready { background: rgba(78,161,255,0.16); color: var(--accent); }
+.discord-checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.discord-explain { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 2px 0 4px; }
+.discord-note { font-size: 11.5px; color: var(--warn); line-height: 1.5; margin: 2px 0; }
+.discord-launch { font-size: 12px; color: var(--text); line-height: 1.55; margin: 4px 0 0; }
+.pill--copy { padding: 4px 10px; font-size: 12px; }
+
 .footnote { color: var(--muted); font-size: 12px; margin-top: 22px; line-height: 1.6; }
 .footnote strong { color: var(--text); }
