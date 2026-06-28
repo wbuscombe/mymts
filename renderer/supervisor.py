@@ -112,6 +112,157 @@ def grab_queue_size(width: int, height: int | None = None) -> int:
     return max(32, min(1024, GRAB_QUEUE_MEM_BUDGET // frame_bytes))
 
 
+# ---- multi-output fan-out (capture once, encode N) ----
+# The expensive stage on this CPU-only box is GPU-less COMPOSITING (Chromium),
+# established in the smoothness pass (§31) — NOT the encode. So the wall is
+# composited ONCE at the derived render resolution and fanned out to per-output
+# encodes, each downscaling from the single capture to its own resolution/bitrate.
+# `mercury` is NOT an ffmpeg encoder — it routes to the publisher abstraction
+# (mercury.py); every other output is an ffmpeg → HLS encoder.
+PUBLISHER_OUTPUTS = frozenset({"mercury"})
+
+
+def is_publisher_output(name: str) -> bool:
+    return name in PUBLISHER_OUTPUTS
+
+
+def is_encoder_output(name: str) -> bool:
+    return name not in PUBLISHER_OUTPUTS
+
+
+def _ladder_index(res: object) -> int:
+    ladder = list(RENDER_RESOLUTIONS)
+    return ladder.index(res) if res in RENDER_RESOLUTIONS else ladder.index(DEFAULT_RESOLUTION)
+
+
+def derive_render_resolution(outputs: dict | None) -> str:
+    """The render canvas = the LARGEST enabled output resolution (every output
+    downscales FROM the single capture, never up). 1080p when nothing is enabled.
+    Pure — Xvfb/Chromium are sized from this, and each encoder scales down to its
+    own resolution."""
+    enabled = [
+        o.get("resolution")
+        for o in (outputs or {}).values()
+        if isinstance(o, dict) and o.get("enabled") and o.get("resolution") in RENDER_RESOLUTIONS
+    ]
+    return max(enabled, key=_ladder_index) if enabled else DEFAULT_RESOLUTION
+
+
+def enabled_encoder_outputs(outputs: dict | None) -> dict[str, dict]:
+    """The enabled ffmpeg-ENCODER outputs (excludes the publisher), preserving the
+    config's order. Pure."""
+    return {
+        name: o
+        for name, o in (outputs or {}).items()
+        if isinstance(o, dict) and o.get("enabled") and is_encoder_output(name)
+    }
+
+
+def build_capture_fanout_cmd(
+    *,
+    render_w: int,
+    render_h: int,
+    fps: int,
+    display: str,
+    sink: str,
+    specs: list[dict],
+    grab_queue: int,
+    x264_preset: str = "veryfast",
+    hls_time: str = "4",
+    hls_list_size: str = "6",
+    audio_bitrate: str = "128k",
+) -> list[str]:
+    """ONE ffmpeg: a single x11grab capture of the composited wall, fanned out to
+    one HLS encode per spec. With a single spec at the render resolution this is the
+    original pipeline (no filter); with >1 it ``split``s the captured video and
+    ``scale``s each branch to its own size — capture/composite ONCE, encode N.
+
+    Each ``spec``: ``{w, h, bitrate_kbps, audio, playlist, segments}`` (its own
+    downscale target + bitrate + whether to mux the wall audio + its output paths).
+    The audio is the SAME PulseAudio sink monitor (the in-browser mix of every
+    ``audio:true`` cell); a spec with ``audio:false`` omits the audio track. Pure."""
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin",
+        "-thread_queue_size", str(grab_queue),
+        "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(fps),
+        "-video_size", f"{render_w}x{render_h}", "-i", display,
+        "-thread_queue_size", "1024", "-f", "pulse", "-i", f"{sink}.monitor",
+    ]
+    n = len(specs)
+    if n > 1:
+        labels = "".join(f"[s{i}]" for i in range(n))
+        parts = [f"[0:v]split={n}{labels}"]
+        for i, s in enumerate(specs):
+            parts.append(f"[s{i}]scale={s['w']}:{s['h']}[v{i}]")
+        cmd += ["-filter_complex", ";".join(parts)]
+        vmaps = [f"[v{i}]" for i in range(n)]
+    else:
+        vmaps = ["0:v"]
+    for i, s in enumerate(specs):
+        kbps = int(s["bitrate_kbps"])
+        cmd += ["-map", vmaps[i]]
+        if s["audio"]:
+            cmd += ["-map", "1:a"]
+        cmd += [
+            "-c:v", "libx264", "-preset", x264_preset, "-tune", "zerolatency",
+            "-pix_fmt", "yuv420p", "-g", str(fps * 2),
+            "-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{kbps * 2}k",
+            "-fps_mode", "cfr", "-r", str(fps),
+        ]
+        if s["audio"]:
+            cmd += ["-c:a", "aac", "-b:a", audio_bitrate, "-ar", "44100"]
+        cmd += [
+            "-f", "hls", "-hls_time", hls_time, "-hls_list_size", hls_list_size,
+            "-hls_flags", "delete_segments+append_list+independent_segments",
+            "-hls_segment_type", "mpegts", "-hls_segment_filename", s["segments"],
+            s["playlist"],
+        ]
+    return cmd
+
+
+def _encoder_signature(outputs: dict | None) -> dict:
+    return {
+        n: (o.get("enabled"), o.get("resolution"), o.get("bitrate_kbps"),
+            bool(o.get("audio")), o.get("restart_epoch", 0))
+        for n, o in (outputs or {}).items()
+        if isinstance(o, dict) and is_encoder_output(n)
+    }
+
+
+def _publisher_signature(outputs: dict | None) -> dict:
+    return {
+        n: (o.get("enabled"), o.get("resolution"), o.get("bitrate_kbps"),
+            bool(o.get("audio")), o.get("restart_epoch", 0),
+            o.get("channel_guid"), o.get("display_name"))
+        for n, o in (outputs or {}).items()
+        if isinstance(o, dict) and is_publisher_output(n)
+    }
+
+
+def plan_output_restart(old_outputs: dict | None, new_outputs: dict | None) -> dict[str, bool]:
+    """The restart-decision matrix when the outputs config changes (avoid thrashing
+    the render):
+      - ``render_restart``: the derived canvas (max enabled resolution) MOVED →
+        restart Xvfb/Chromium (the heavy path); the encoders respawn on the new
+        canvas too;
+      - ``encoder_restart``: an ffmpeg-encoder output's params changed (a resolution
+        change that does NOT move the max, bitrate, audio, enabled, restart_epoch) →
+        respawn the capture/encode WITHOUT touching the render;
+      - ``publisher_restart``: the Mercury (publisher) output's params/epoch changed
+        → cycle the publisher alone (no encoder/render touch).
+    Pure — the runtime acts on these flags."""
+    render_restart = derive_render_resolution(old_outputs) != derive_render_resolution(new_outputs)
+    encoder_restart = render_restart or (
+        _encoder_signature(old_outputs) != _encoder_signature(new_outputs)
+    )
+    publisher_restart = _publisher_signature(old_outputs) != _publisher_signature(new_outputs)
+    return {
+        "render_restart": render_restart,
+        "encoder_restart": encoder_restart,
+        "publisher_restart": publisher_restart,
+    }
+
+
 def newest_segment_mtime(stream_dir: str | os.PathLike[str]) -> float | None:
     """The mtime of the newest HLS segment in [stream_dir], or None if there is
     no segment yet. Pure read of the filesystem; never raises on a missing dir."""

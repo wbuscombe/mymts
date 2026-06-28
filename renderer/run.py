@@ -23,13 +23,16 @@ WAN path as the helper. No baked secrets; config via env.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
+import mercury
 import supervisor
 
 # ---- config (env, with sane defaults; no secrets) ----
@@ -56,6 +59,11 @@ HLS_TIME = os.environ.get("RENDER_HLS_TIME", "4")
 HLS_LIST_SIZE = os.environ.get("RENDER_HLS_LIST_SIZE", "6")
 X264_PRESET = os.environ.get("RENDER_X264_PRESET", "veryfast")
 SINK = "mymts"   # the PulseAudio null sink name
+# The per-output runtime status the renderer writes into the shared stream volume
+# (renderer rw, helper ro — the SAME trust direction as the HLS stream, no new
+# privileged channel). The helper reads it for /api/outputs/status.
+STATUS_FILE = "outputs-status.json"
+DEFAULT_BITRATE_KBPS = 8000
 
 CHROMIUM_BIN = shutil.which("chromium") or shutil.which("chromium-browser") or "chromium"
 
@@ -147,24 +155,106 @@ def get_json(url: str, timeout_s: float = 5.0) -> dict | None:
         return None
 
 
-def resolve_render_dimensions() -> tuple[int, int, int, str, str]:
-    """(width, height, fps, video_bitrate, bufsize) for the CURRENTLY-configured
-    render resolution. Reads the wall config's `render.resolution` and maps it via
-    the pure supervisor table — including the per-resolution SUSTAINABLE fps (a
-    high-res wall runs at a steady lower fps, not a juddery 30). On an unreachable
-    helper / absent field it falls back to the current module globals (the env
-    defaults at startup, the running values later) so a helper blip never changes
-    the canvas. Config > env > default."""
+def read_outputs() -> dict:
+    """The `outputs` block from the wall config. On an unreachable helper / absent
+    block, fall back to a single enabled HLS output at the current canvas — so a
+    helper blip never changes the running pipeline. Config > env > default."""
     cfg = get_json(API_WALL_URL)
-    res = None
-    if isinstance(cfg, dict) and isinstance(cfg.get("render"), dict):
-        res = cfg["render"].get("resolution")
-    if res in supervisor.RENDER_RESOLUTIONS:
-        w, h = supervisor.resolution_to_dimensions(res)
-        fps = supervisor.resolution_to_fps(res)
-        bitrate, bufsize = supervisor.resolution_to_bitrate(res)
-        return w, h, fps, bitrate, bufsize
-    return WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE
+    if isinstance(cfg, dict) and isinstance(cfg.get("outputs"), dict) and cfg["outputs"]:
+        return cfg["outputs"]
+    return {
+        "hls": {
+            "enabled": True, "resolution": supervisor.DEFAULT_RESOLUTION,
+            "bitrate_kbps": DEFAULT_BITRATE_KBPS, "audio": True, "restart_epoch": 0,
+        }
+    }
+
+
+def resolve_render_dimensions(outputs: dict | None = None) -> tuple[int, int, int]:
+    """(width, height, fps) for the DERIVED render canvas — the largest enabled
+    output resolution (every output downscales from the single capture). The fps is
+    that resolution's SUSTAINABLE rate (a high-res wall runs at a steady lower fps,
+    not a juddery 30 — §31). Reads `outputs` if not supplied."""
+    outputs = outputs if outputs is not None else read_outputs()
+    res = supervisor.derive_render_resolution(outputs)
+    w, h = supervisor.resolution_to_dimensions(res)
+    return w, h, supervisor.resolution_to_fps(res)
+
+
+def encoder_specs(outputs: dict) -> list[dict]:
+    """Per enabled ENCODER output (the publisher is excluded), the spec the fan-out
+    ffmpeg needs: its downscale dims (from its resolution), bitrate, whether to mux
+    the wall audio, and its HLS output paths. The `hls` output writes to the
+    STREAM_DIR ROOT (the existing VLC playlist + segments — regression-preserved);
+    any other encoder output writes to a per-output subdir."""
+    specs: list[dict] = []
+    for name, o in supervisor.enabled_encoder_outputs(outputs).items():
+        w, h = supervisor.resolution_to_dimensions(o.get("resolution"))
+        if name == "hls":
+            playlist = os.path.join(STREAM_DIR, supervisor.PLAYLIST_NAME)
+            segments = os.path.join(STREAM_DIR, "seg_%05d.ts")
+        else:
+            subdir = os.path.join(STREAM_DIR, name)
+            os.makedirs(subdir, exist_ok=True)
+            playlist = os.path.join(subdir, supervisor.PLAYLIST_NAME)
+            segments = os.path.join(subdir, "seg_%05d.ts")
+        specs.append({
+            "name": name, "w": w, "h": h,
+            "bitrate_kbps": int(o.get("bitrate_kbps", DEFAULT_BITRATE_KBPS)),
+            "audio": bool(o.get("audio", True)),
+            "playlist": playlist, "segments": segments,
+        })
+    return specs
+
+
+def fanout_cmd(outputs: dict) -> list[str]:
+    """The ONE capture-once → encode-N ffmpeg argv for the currently-enabled encoder
+    outputs (built off the current WIDTH/HEIGHT/FPS canvas)."""
+    return supervisor.build_capture_fanout_cmd(
+        render_w=WIDTH, render_h=HEIGHT, fps=FPS, display=DISPLAY, sink=SINK,
+        specs=encoder_specs(outputs), grab_queue=supervisor.grab_queue_size(WIDTH, HEIGHT),
+        x264_preset=X264_PRESET, hls_time=HLS_TIME, hls_list_size=HLS_LIST_SIZE,
+        audio_bitrate=AUDIO_BITRATE,
+    )
+
+
+def write_status_file(
+    outputs: dict, render_res: str, ffmpeg_running: bool, publisher: mercury.MercuryPublisher
+) -> None:
+    """Write the per-output runtime status into the shared stream volume (atomic
+    rename). HLS: running/stopped/disabled + effective res/bitrate + the playlist
+    path. Mercury: the publisher's honest state + setup checklist. The helper reads
+    this (read-only) for /api/outputs/status — no new privileged channel."""
+    status: dict = {
+        "render": {"resolution": render_res, "width": WIDTH, "height": HEIGHT, "fps": FPS},
+        "updated_at": time.time(),
+        "outputs": {},
+    }
+    for name, o in outputs.items():
+        if supervisor.is_publisher_output(name):
+            status["outputs"][name] = publisher.status()
+            continue
+        enabled = bool(o.get("enabled"))
+        entry = {
+            "state": "running" if (enabled and ffmpeg_running) else ("stopped" if enabled else "disabled"),
+            "resolution": o.get("resolution"),
+            "bitrate_kbps": o.get("bitrate_kbps"),
+            "audio": bool(o.get("audio")),
+        }
+        if name == "hls":
+            entry["playlist_path"] = "/api/stream/playlist.m3u8"
+        status["outputs"][name] = entry
+    path = os.path.join(STREAM_DIR, STATUS_FILE)
+    fd, tmp = tempfile.mkstemp(dir=STREAM_DIR, prefix=".status.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def start_xvfb() -> subprocess.Popen:
@@ -293,27 +383,42 @@ def main() -> int:
 
     ensure_runtime_dir()
     start_pulse()
-    # Reach the helper FIRST so we can read the configured render resolution
-    # BEFORE sizing Xvfb (Xvfb's screen size is fixed at start; it can't resize
-    # live — a resolution change restarts the whole stack). Pulse/Xvfb/helper are
-    # otherwise independent, so this reorder is safe.
+    # Reach the helper FIRST so we can read the configured outputs + derive the
+    # render resolution BEFORE sizing Xvfb (its screen size is fixed at start; a
+    # canvas change restarts the whole stack). Pulse/Xvfb/helper are otherwise
+    # independent, so this reorder is safe.
     wait_for_helper(HELPER_URL)
-    global WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE
-    WIDTH, HEIGHT, FPS, VIDEO_BITRATE, BUFSIZE = resolve_render_dimensions()
-    log(f"render canvas {WIDTH}x{HEIGHT} @ {FPS}fps {VIDEO_BITRATE} (bufsize {BUFSIZE})")
+    outputs = read_outputs()
+    global WIDTH, HEIGHT, FPS
+    WIDTH, HEIGHT, FPS = resolve_render_dimensions(outputs)
+    render_res = supervisor.derive_render_resolution(outputs)
+    log(f"render canvas {WIDTH}x{HEIGHT} @ {FPS}fps (derived from outputs: {render_res})")
     xvfb = start_xvfb()
 
     env = dict(os.environ, DISPLAY=DISPLAY, PULSE_SINK=SINK)
-    children = [
-        Child("chromium", chromium_cmd(), env),
-        Child("ffmpeg", ffmpeg_cmd(), env),
-    ]
-    for c in children:
-        c.start()
 
-    log(f"streaming {HELPER_URL} → {STREAM_DIR}/{supervisor.PLAYLIST_NAME}")
+    # Mercury output → the publisher abstraction (the STUB in this build: inert,
+    # never opens a connection). Configured + (inert-)started if enabled.
+    publisher = mercury.StubMercuryPublisher(log=log)
+    publisher.configure(outputs.get("mercury", {}))
+    if outputs.get("mercury", {}).get("enabled"):
+        publisher.start()
+
+    chromium = Child("chromium", chromium_cmd(), env)
+    chromium.start()
+    # ONE fan-out ffmpeg: capture the composited wall once, encode per enabled
+    # encoder output. (No encoder output enabled → no ffmpeg; the render still runs.)
+    specs = encoder_specs(outputs)
+    ffmpeg = Child("ffmpeg", fanout_cmd(outputs), env) if specs else None
+    if ffmpeg:
+        ffmpeg.start()
+    children = [chromium] + ([ffmpeg] if ffmpeg else [])
+
+    enc_names = [s["name"] for s in specs]
+    log(f"streaming {HELPER_URL} → outputs {enc_names or '(none)'}; mercury {publisher.status()['state']}")
+    write_status_file(outputs, render_res, ffmpeg is not None, publisher)
     last_fresh = None   # monotonic time the stream was last HEALTHY (advancing)
-    next_res_check = time.monotonic() + RESOLUTION_POLL_S
+    next_check = time.monotonic() + RESOLUTION_POLL_S
     while not _stop:
         # Xvfb is foundational — if it dies, the whole stack is broken; exit so
         # the container restarts cleanly (compose restart: unless-stopped).
@@ -322,40 +427,57 @@ def main() -> int:
             for c in children:
                 c.terminate()
             return 1
-        # RESOLUTION change (from /control/): the canvas size is a process-start
-        # param for Xvfb/Chromium/ffmpeg and can't change live, so when the config
-        # picks a new resolution we restart the stack (the SAME self-heal path as
-        # Xvfb-death) and it comes back at the new canvas. An unreachable helper
-        # falls back to the running dims → no spurious restart.
-        if time.monotonic() >= next_res_check:
-            next_res_check = time.monotonic() + RESOLUTION_POLL_S
-            want_w, want_h, _, _, _ = resolve_render_dimensions()
-            if (want_w, want_h) != (WIDTH, HEIGHT):
-                log(f"render resolution changed {WIDTH}x{HEIGHT} → {want_w}x{want_h} — restarting the container stack")
+        # OUTPUTS change (from /control/): apply the restart MATRIX. A change that
+        # moves the derived canvas restarts the whole stack (the heavy path); a
+        # change to only an encoder's bitrate/audio/resolution-not-moving-max
+        # respawns just the fan-out ffmpeg (render untouched); a Mercury change
+        # cycles only the publisher. An unreachable helper → no change → no restart.
+        if time.monotonic() >= next_check:
+            next_check = time.monotonic() + RESOLUTION_POLL_S
+            new_outputs = read_outputs()
+            plan = supervisor.plan_output_restart(outputs, new_outputs)
+            if plan["render_restart"]:
+                new_res = supervisor.derive_render_resolution(new_outputs)
+                log(f"render canvas changed {render_res} → {new_res} — restarting the container stack")
                 for c in children:
                     c.terminate()
                 if xvfb.poll() is None:
                     xvfb.terminate()
                 return 1
+            if plan["encoder_restart"]:
+                log("encoder outputs changed — respawning the capture/encode (render untouched)")
+                if ffmpeg:
+                    ffmpeg.terminate()
+                specs = encoder_specs(new_outputs)
+                ffmpeg = Child("ffmpeg", fanout_cmd(new_outputs), env) if specs else None
+                if ffmpeg:
+                    ffmpeg.start()
+                children = [chromium] + ([ffmpeg] if ffmpeg else [])
+            if plan["publisher_restart"]:
+                publisher.configure(new_outputs.get("mercury", {}))
+                if new_outputs.get("mercury", {}).get("enabled"):
+                    publisher.restart()   # inert
+                else:
+                    publisher.stop()      # inert
+            outputs = new_outputs
+            write_status_file(outputs, render_res, ffmpeg is not None, publisher)
         # WEDGE detection: ffmpeg/Chromium can hang (alive but the stream stops
-        # advancing — "frames duplicated" / blocked pulse queue), which poll()
-        # never catches and which leaves a player at "please wait". Once the
-        # stream has been healthy, if it goes stale past the threshold, restart
-        # the stack so it self-heals instead of streaming a frozen frame forever.
-        healthy = supervisor.is_stream_healthy(STREAM_DIR, time.time())
-        if healthy:
-            last_fresh = time.monotonic()
-        elif supervisor.stale_stack_restart(last_fresh, time.monotonic(), healthy):
-            log("stream wedged (stale while processes alive) — restarting the container stack")
-            for c in children:
-                c.terminate()
-            return 1
+        # advancing). Only meaningful when an HLS encoder is running (it writes the
+        # playlist this checks). Once healthy, a stale-past-threshold stack restarts.
+        if ffmpeg:
+            healthy = supervisor.is_stream_healthy(STREAM_DIR, time.time())
+            if healthy:
+                last_fresh = time.monotonic()
+            elif supervisor.stale_stack_restart(last_fresh, time.monotonic(), healthy):
+                log("stream wedged (stale while processes alive) — restarting the container stack")
+                for c in children:
+                    c.terminate()
+                return 1
         for c in children:
             rc = c.poll()
             if rc is not None:
                 # monotonic: crash-loop windowing is an INTERVAL measure, immune
-                # to wall-clock/NTP jumps (segment freshness, by contrast, must
-                # use wall-clock time.time() to compare against file mtimes).
+                # to wall-clock/NTP jumps (segment freshness uses wall-clock).
                 c.tracker.record(time.monotonic())
                 if c.tracker.is_crash_looping(time.monotonic()):
                     log(f"{c.name} is crash-looping — restarting the container stack")

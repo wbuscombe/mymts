@@ -168,35 +168,173 @@ class RenderResolution(unittest.TestCase):
         self.assertEqual(sup.grab_queue_size(1920), sup.grab_queue_size(1920, 1080))
 
 
+def _adjacent(cmd, flag, value):
+    """assert `flag value` appear consecutively in the argv"""
+    for i, tok in enumerate(cmd[:-1]):
+        if tok == flag and cmd[i + 1] == value:
+            return True
+    return False
+
+
+# the two ladder outputs used in the fan-out tests (paths are dummies)
+def _spec(name, w, h, kbps, audio):
+    return {
+        "name": name, "w": w, "h": h, "bitrate_kbps": kbps, "audio": audio,
+        "playlist": f"/stream/{name}/playlist.m3u8", "segments": f"/stream/{name}/seg_%05d.ts",
+    }
+
+
 class EncodePipeline(unittest.TestCase):
-    """Guard the real-time encode flags (the smoothness contract) in run.ffmpeg_cmd."""
+    """Guard the real-time encode flags (the smoothness contract) in the fan-out."""
 
     def _cmd(self):
-        import run  # safe to import: module-level is config only, no side effects
-        return run.ffmpeg_cmd()
-
-    def _adjacent(self, cmd, flag, value):
-        # assert `flag value` appear consecutively in the argv
-        for i, tok in enumerate(cmd[:-1]):
-            if tok == flag and cmd[i + 1] == value:
-                return True
-        return False
+        # a single 1080p HLS output — the shipping case (no split, the original
+        # pipeline parameterized).
+        return sup.build_capture_fanout_cmd(
+            render_w=1920, render_h=1080, fps=30, display=":99", sink="mymts",
+            specs=[_spec("hls", 1920, 1080, 8000, True)], grab_queue=sup.grab_queue_size(1920, 1080),
+        )
 
     def test_realtime_flags_present(self):
         cmd = self._cmd()
-        self.assertTrue(self._adjacent(cmd, "-tune", "zerolatency"), "missing -tune zerolatency")
-        self.assertTrue(self._adjacent(cmd, "-fps_mode", "cfr"), "missing -fps_mode cfr (CFR)")
-        self.assertTrue(self._adjacent(cmd, "-c:v", "libx264"))
-        # CFR rate pinned to the configured FPS
-        import run
-        self.assertTrue(self._adjacent(cmd, "-r", str(run.FPS)))
+        self.assertTrue(_adjacent(cmd, "-tune", "zerolatency"), "missing -tune zerolatency")
+        self.assertTrue(_adjacent(cmd, "-fps_mode", "cfr"), "missing -fps_mode cfr (CFR)")
+        self.assertTrue(_adjacent(cmd, "-c:v", "libx264"))
+        self.assertTrue(_adjacent(cmd, "-r", "30"))             # CFR rate pinned to the fps
+        self.assertNotIn("-filter_complex", cmd)                # single output → no split
 
     def test_grab_queue_matches_resolution(self):
-        import run
         cmd = self._cmd()
-        self.assertTrue(
-            self._adjacent(cmd, "-thread_queue_size", str(sup.grab_queue_size(run.WIDTH, run.HEIGHT)))
+        self.assertTrue(_adjacent(cmd, "-thread_queue_size", str(sup.grab_queue_size(1920, 1080))))
+
+    def test_single_output_audio_can_be_omitted(self):
+        cmd = sup.build_capture_fanout_cmd(
+            render_w=1920, render_h=1080, fps=30, display=":99", sink="mymts",
+            specs=[_spec("hls", 1920, 1080, 8000, False)], grab_queue=129,
         )
+        self.assertNotIn("aac", cmd)                            # audio:false → no audio track
+
+
+class MultiOutputFanout(unittest.TestCase):
+    """Capture-once → encode-N: the derived render resolution + the fan-out cmd +
+    the restart-decision matrix."""
+
+    def test_derive_render_resolution_is_max_enabled(self):
+        o = {"hls": {"enabled": True, "resolution": "1080p"},
+             "mercury": {"enabled": True, "resolution": "720p"}}
+        self.assertEqual(sup.derive_render_resolution(o), "1080p")
+        # a higher-res output (incl. a non-hls encoder) lifts the canvas
+        o2 = {"hls": {"enabled": True, "resolution": "720p"},
+              "hls2": {"enabled": True, "resolution": "1440p"}}
+        self.assertEqual(sup.derive_render_resolution(o2), "1440p")
+        # nothing enabled → 1080p default; disabled outputs don't count
+        self.assertEqual(sup.derive_render_resolution({"hls": {"enabled": False, "resolution": "2160p"}}), "1080p")
+
+    def test_one_output_no_split_two_outputs_split_and_scale(self):
+        one = sup.build_capture_fanout_cmd(
+            render_w=1920, render_h=1080, fps=30, display=":99", sink="mymts",
+            specs=[_spec("hls", 1920, 1080, 8000, True)], grab_queue=129,
+        )
+        self.assertNotIn("-filter_complex", one)
+        self.assertEqual(one.count("libx264"), 1)
+        # two outputs (e.g. a second hls-like test output) → ONE x11grab, split, two encodes
+        two = sup.build_capture_fanout_cmd(
+            render_w=1920, render_h=1080, fps=30, display=":99", sink="mymts",
+            specs=[_spec("hls", 1920, 1080, 8000, True), _spec("hls2", 1280, 720, 3000, False)],
+            grab_queue=129,
+        )
+        self.assertEqual(two.count("x11grab"), 1)             # captured ONCE (composite once)
+        self.assertEqual(two.count("hls"), 2)                # ...fanned out to two HLS muxers
+        fc = two[two.index("-filter_complex") + 1]
+        self.assertIn("split=2", fc)
+        self.assertIn("scale=1280:720", fc)
+        self.assertEqual(two.count("libx264"), 2)              # two encodes from one capture
+        self.assertIn("/stream/hls2/playlist.m3u8", two)
+
+    def _outputs(self, **over):
+        base = {
+            "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
+                    "audio": True, "restart_epoch": 0},
+            "mercury": {"enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
+                        "audio": True, "restart_epoch": 0, "channel_guid": "", "display_name": "X"},
+        }
+        for k, v in over.items():
+            base[k] = {**base[k], **v}
+        return base
+
+    def test_restart_matrix_resolution_move_restarts_render(self):
+        old = self._outputs()
+        new = self._outputs(hls={"resolution": "2160p"})   # moves the max
+        p = sup.plan_output_restart(old, new)
+        self.assertTrue(p["render_restart"] and p["encoder_restart"])
+        self.assertFalse(p["publisher_restart"])
+
+    def test_restart_matrix_bitrate_restarts_encoder_only(self):
+        p = sup.plan_output_restart(self._outputs(), self._outputs(hls={"bitrate_kbps": 5000}))
+        self.assertFalse(p["render_restart"])
+        self.assertTrue(p["encoder_restart"])
+        self.assertFalse(p["publisher_restart"])
+
+    def test_restart_matrix_audio_toggle_restarts_encoder_only(self):
+        p = sup.plan_output_restart(self._outputs(), self._outputs(hls={"audio": False}))
+        self.assertEqual((p["render_restart"], p["encoder_restart"], p["publisher_restart"]), (False, True, False))
+
+    def test_restart_matrix_mercury_change_restarts_publisher_only(self):
+        p = sup.plan_output_restart(self._outputs(), self._outputs(mercury={"restart_epoch": 1}))
+        self.assertEqual((p["render_restart"], p["encoder_restart"], p["publisher_restart"]), (False, False, True))
+
+    def test_restart_matrix_no_change_is_noop(self):
+        p = sup.plan_output_restart(self._outputs(), self._outputs())
+        self.assertFalse(any(p.values()))
+
+    def test_encoder_outputs_exclude_the_publisher(self):
+        self.assertEqual(list(sup.enabled_encoder_outputs(self._outputs(mercury={"enabled": True}))), ["hls"])
+        self.assertTrue(sup.is_publisher_output("mercury"))
+        self.assertTrue(sup.is_encoder_output("hls"))
+
+
+class MercuryStub(unittest.TestCase):
+    """The StubMercuryPublisher state machine — and that it NEVER opens a connection."""
+
+    def _boom_probe(self, _url):
+        raise AssertionError("the stub opened a network probe — egress leak!")
+
+    def test_disabled_state_no_probe(self):
+        import mercury
+        p = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=self._boom_probe)
+        p.configure({"enabled": False})
+        st = p.status()
+        self.assertEqual(st["state"], "disabled")
+        self.assertIsNone(st["checklist"]["tailnet_reachable"])   # never probed
+
+    def test_needs_setup_when_key_missing_no_probe(self):
+        import mercury
+        # key absent → needs_setup, and the probe is short-circuited (zero egress)
+        p = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=self._boom_probe)
+        p.configure({"enabled": True, "channel_guid": "g"})
+        st = p.status()
+        self.assertEqual(st["state"], "needs_setup")
+        self.assertIn("LiveKit key", st["detail"])
+        self.assertFalse(st["checklist"]["key_present"])
+
+    def test_ready_not_wired_when_all_present(self):
+        import mercury
+        env = {"LIVEKIT_API_KEY": "k", "LIVEKIT_API_SECRET": "s", "LIVEKIT_HOST": "wss://h:7095/x"}
+        p = mercury.StubMercuryPublisher(env=env, log=lambda m: None, probe=lambda u: True)
+        p.configure({"enabled": True, "channel_guid": "g", "resolution": "720p"})
+        st = p.status()
+        self.assertEqual(st["state"], "ready_not_wired")
+        self.assertTrue(all(st["checklist"][k] for k in ("key_present", "channel_set", "tailnet_reachable")))
+
+    def test_start_stop_restart_are_inert(self):
+        import mercury
+        logs = []
+        p = mercury.StubMercuryPublisher(env={}, log=logs.append, probe=self._boom_probe)
+        p.configure({"enabled": True, "channel_guid": "g", "resolution": "720p"})
+        p.start()                                    # must not raise, must not connect
+        p.stop()
+        p.restart()
+        self.assertTrue(any("NOT wired" in m for m in logs))
 
 
 if __name__ == "__main__":
