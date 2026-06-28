@@ -133,16 +133,19 @@ correct a physical panel and are honestly absent from the web.
 
 ![The settings modal — 2×3 grid default, category-grouped feed sources, captions off by default](docs/screenshots/web/settings.png)
 
-**Headless-container version — a picker control surface + a rendered HLS stream.** A second web
+**Headless-container version — a unified control panel + a multi-output wall.** A second web
 surface at `/control/` is the wall's layout in a browser, but **each cell is a feed-picker**
-(channel dropdown) + per-cell audio + subtitle toggles, **plus a display-tuning panel** —
-resolution (an 8-rung 720p–2160p ladder, each annotated with its sustainable fps), feed width,
-feed font, and ticker height, all fine-grained sliders. A cell can also be set to **Weather Radar**
-(free public NWS radar loops, region-selectable) instead of a video feed. **No video decode**, so
-`/control/` runs on a phone. It writes a **server-side wall config** the rendered wall (`/app/?render=1`)
-reads from, so a pick (or a tuning change) drives playback. A headless renderer container
-(Xvfb → Chromium → ffmpeg → HLS) captures that wall and streams it, so **VLC or an Apple TV opens one
-URL** — the helper serves the HLS over both HTTPS and a plain-HTTP port for strict tvOS clients.
+(channel dropdown) + **per-tile audio + subtitle toggles** (any combination audible — they mix),
+**plus a display-tuning panel** (feed width, feed font, ticker height — fine-grained sliders). A cell
+can also be set to **Weather Radar** (free public NWS radar loops, region-selectable) instead of a
+video feed. **No video decode**, so `/control/` runs on a phone. It writes a **server-side wall
+config** the rendered wall (`/app/?render=1`) reads from, so a pick drives playback. A headless
+renderer container (Xvfb → Chromium → ffmpeg) **composites the wall once and fans it out to multiple
+outputs**: an **Outputs panel** drives an **HLS/VLC card** (its own resolution from the 8-rung ladder
++ fine bitrate + audio + start/stop) — so **VLC or an Apple TV opens one URL** (HTTPS or a plain-HTTP
+port for strict tvOS clients) — and a **Mercury card** for publishing the wall into a Mercury voice
+channel. *Mercury is a pre-fillable **shell pending credentials** (Ryan): the publisher is stubbed and
+opens no connection in this build; the real LiveKit wire-up drops into the seam already defined.*
 
 ![The picker control surface — each cell a feed/audio/subtitle picker, driving the server-side wall config](docs/screenshots/web/control.png)
 
@@ -174,7 +177,7 @@ flowchart LR
   CDN["public HLS CDNs"]
   SRC -->|"aggregate + resolve · SSRF-safe, egress-bounded"| HELPER
   HELPER -->|"/api/feed · /api/ticker/{markets,sports} · /api/channels · /api/presets · /api/playlist.m3u"| TV
-  HELPER -->|"+ /api/wall · /api/weather/radar · /api/stream (the headless control plane + HLS)"| WEB
+  HELPER -->|"+ /api/wall · /api/outputs · /api/weather/radar · /api/stream (the headless control plane + multi-output)"| WEB
   CDN -.->|"streams play directly — no proxy"| TV
   CDN -.-> WEB
 ```

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(web,helper,renderer): unified wall-output system — per-tile audio + multi-output fan-out + Mercury shell (2026-06-27)
+
+One rendered wall now drives **multiple outputs**, with **per-tile audio**, and a pre-wired (but
+inert) path to publish into a Mercury voice channel. Server / web / renderer only — native unchanged.
+
+- **feat: per-tile audio + subtitle toggles (multi-audible).** The single-audible-cell pointer is
+  retired: each cell has its own `audio` + `subtitles` flag (default off), and **any combination** of
+  cells may be unmuted — they mix in the render's PulseAudio sink (the rendered wall) / locally (the
+  laptop). `/control/` gains a per-cell audio toggle (with a "N cells audible — mixed" hint) alongside
+  subtitles.
+- **feat: capture-once multi-output fan-out.** The renderer composites the wall **once** (compositing,
+  not encoding, is the GPU-less bottleneck — §31) at the *derived* canvas = `max(resolution of the
+  enabled outputs)`, and fans out to per-output encodes (each downscaling from the single capture to
+  its own resolution + bitrate). A restart matrix avoids thrashing the render: a change that moves the
+  max-resolution restarts the stack; a bitrate/audio change respawns only the encode; a per-output
+  `restart_epoch` cycles one output. The shipping single-HLS case is byte-for-byte the prior pipeline.
+- **feat: unified Outputs control panel.** A new Outputs section in `/control/`: a fully-working
+  **HLS/VLC card** (enable / resolution / fine bitrate / audio / start-stop / restart / copyable
+  playlist URL) + the resolution chooser moved off the wall editor onto the cards (the derived render
+  canvas shown read-only, "compositing at X"). New helper endpoints: `GET /api/outputs/status`
+  (runtime state from the renderer's status file, path-safe) + `POST /api/outputs/{name}/{action}`
+  (start/stop/restart through the validated merge path).
+- **feat: Mercury output shell (publisher stubbed, pending credentials).** A Mercury card renders as a
+  pre-fillable, inert shell in a **needs-setup** state — a ✓/✗ checklist (LiveKit key / tailnet /
+  channel) gates the action controls, while the non-secret fields (channel GUID, display name,
+  resolution ≤1080p, bitrate, audio) are editable now so they can be staged ahead. The
+  `StubMercuryPublisher` opens **no connection** and mints no token; the real LiveKit `screen_share`
+  publisher drops into the greppable `MERCURY-WIRE-UP` seam (see `docs/mercury-wireup-notes.md`). The
+  LiveKit secrets live ONLY in the gitignored `.env` (`.env.example` placeholders added).
+
+The wall config grows an `outputs` map (built to take more outputs with no migration) + per-cell
+`audio`; the partial-merge deepens to per-output/per-field; a load-time migration upgrades old
+`render.resolution` + `audible_cell` in place. Native unchanged → **no version tag, no APK republish**
+(kept in `[Unreleased]`). See ARCHITECTURE §34–§36 + `docs/decisions/0001`.
+
 > **Milestone marker — the headless-wall arc (server / web / renderer).** The entries below land the
 > complete headless-container wall: the control plane, the render→HLS engine, playback reliability,
 > responsive layout, the smoothness/encode envelope, finely-tunable resolution/feed/ticker, the
