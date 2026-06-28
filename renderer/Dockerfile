@@ -46,7 +46,7 @@ RUN apt-get update \
     && chown -R 10002:10002 /home/renderer /stream
 
 WORKDIR /app
-COPY supervisor.py run.py healthcheck.py ./
+COPY supervisor.py run.py healthcheck.py mercury.py ./
 RUN chown -R 10002:10002 /app
 
 USER 10002:10002
