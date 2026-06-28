@@ -21,7 +21,7 @@ import {
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
   feedPctFromPointer, clampFeedPct,
-  sectionChannels, sectionFeedSources, nextAudible, isAudible, shouldReassertAudio, feedSideOption,
+  sectionChannels, sectionFeedSources, feedSideOption,
   presetLineup, newsLineup, PRESETS_SCHEMA_VERSION,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
@@ -508,15 +508,12 @@ let autoFilled = false;
 let presets = [];
 const presetById = (id) => presets.find((p) => p.id === id);
 const isPlayable = (c) => c && (browserPlayability(c) === "yes" || browserPlayability(c) === "maybe");
-// Single-audible-tile model (native LineupStore.audibleSlot): at most ONE tile
-// is unmuted. SESSION-ONLY — never persisted: the autoplay rule blocks
-// autoplay-with-sound, so audio is an explicit per-session choice, not a saved
-// default that would try (and fail) to unmute on load. -1 = the wall is muted.
-// `audibleSlug` records WHICH channel the operator chose audio for, so a slot
-// whose channel was replaced/cleared never inherits the prior audio selection
-// (the audio is bound to slot+channel, not the slot index alone).
-let audibleIndex = -1;
-let audibleSlug = null;
+// Per-tile AUDIO (multi-audible): any combination of tiles may be unmuted; they
+// mix in the render's PulseAudio sink (the rendered wall) / locally (the laptop).
+// Default muted (the autoplay rule blocks autoplay-with-sound; a user gesture or a
+// stored config drives the unmute). Mirrors the config's per-cell `audio` flags —
+// `{ cellIndex: true }` for audio-on cells.
+let cellAudio = {};
 
 // ----- server-side wall config (the rendered wall reads it; the picker writes
 // it) -----. When a config is STORED (the operator has customised it via
@@ -544,6 +541,12 @@ function cellCaptionsOn(index) {
   return wallStored ? (cellSubtitles[index] === true) : (prefs.captions === true);
 }
 
+/** Whether AUDIO is ON for a given cell (per-tile, multi-audible). Driven by the
+ *  stored config's per-cell `audio` flag; default muted. */
+function cellAudioOn(index) {
+  return cellAudio[index] === true;
+}
+
 /** Build the server wall config from /app/'s CURRENT state (assignments + grid +
  *  the audible cell + per-cell subtitles) — the shape PUT to /api/wall. We send
  *  ONLY the fields /app/ owns: the server's partial-merge (PATCH) write preserves
@@ -553,15 +556,19 @@ function buildWallConfig() {
   const layout = gridConfig();
   const cells = [];
   for (let i = 0; i < layout.count; i++) {
-    cells.push({ channel: prefs.assignments[i] || null, subtitles: cellSubtitles[i] === true });
+    cells.push({
+      channel: prefs.assignments[i] || null,
+      audio: cellAudio[i] === true,
+      subtitles: cellSubtitles[i] === true,
+    });
   }
-  const audible = (audibleIndex >= 0 && audibleIndex < layout.count && cells[audibleIndex].channel)
-    ? audibleIndex : null;
+  // Send ONLY the fields /app/ owns (grid + per-cell channel/audio/subtitles). The
+  // server's partial-merge preserves every OMITTED field — `outputs`, `reload_epoch`,
+  // per-cell `reload`, the view tunables — so /app/ can't clobber what /control/ owns.
   return {
     schema_version: 1,
     layout: { rows: layout.rows, cols: layout.cols },
     preset: prefs.activePreset || null,
-    audible_cell: audible,
     cells,
   };
 }
@@ -588,7 +595,7 @@ async function pushWallConfig() {
 function applyWallAudioCaptions() {
   for (const c of cells) {
     if (!c.isVideo || !c.streamHandle) continue;
-    try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
+    try { c.streamHandle.setAudible(cellAudioOn(c.index)); } catch { /* ignore */ }
     try { c.streamHandle.setCaptions(cellCaptionsOn(c.index)); } catch { /* no track */ }
     updateTileAudioBadge(c);
   }
@@ -603,18 +610,18 @@ function hydrateFromWall(config) {
   prefs.gridRows = rows; prefs.gridCols = cols;
   const assignments = {};
   cellSubtitles = {};
+  cellAudio = {};
   config.cells.forEach((c, i) => {
     if (c.channel) assignments[i] = c.channel;
+    if (c.audio) cellAudio[i] = true;
     if (c.subtitles) cellSubtitles[i] = true;
   });
   prefs.assignments = assignments;
   if (config.preset) prefs.activePreset = config.preset;
-  audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1;
-  audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null;
   autoFilled = true;   // a stored config supersedes the news autofill
   if (dimsChanged) buildGrid(); else renderGrid();
-  // buildGrid() resets the audio pointer; re-apply from the hydrated config.
-  if (dimsChanged) { audibleIndex = Number.isInteger(config.audible_cell) ? config.audible_cell : -1; audibleSlug = audibleIndex >= 0 ? (assignments[audibleIndex] || null) : null; }
+  // buildGrid() rebuilds the tiles; re-apply the per-cell audio + captions to the
+  // (possibly fresh) stream handles from the hydrated config.
   applyWallAudioCaptions();
   applyReloadSignal(config, dimsChanged);   // honor a /control/ force-reload
   applyWallViewTunables(config);            // feed width / font / ticker height (rendered wall)
@@ -774,7 +781,7 @@ function teardownCells() {
 /** Rebuild the grid layout (cell count changed) from scratch. */
 function buildGrid() {
   teardownCells();
-  audibleIndex = -1; audibleSlug = null;   // fresh cells → no stale audible pointer; the wall starts muted
+  // fresh cells start muted; per-cell audio is re-applied from the config on hydrate
   if (slotModalIndex != null) closeSlotControls();   // the grid may shrink past the open slot
   applyPrefs();
   const grid = el("grid"); grid.replaceChildren();
@@ -845,28 +852,25 @@ function syncSlotModal(cell) {
   if (cell && slotModalIndex === cell.index) refreshSlotControls();
 }
 
-/** Drop the audio pointer if this cell owns it but is becoming a non-playing
- *  tile (empty / TV-only / offline / terminally dead) — so a silent slot never
- *  claims to own audio. NOT called for a transient reconnect (audio returns when
- *  the SAME channel recovers); the live re-apply's slug guard is the backstop. */
-function clearAudioIfOwner(cell) {
-  if (audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
-}
+/** Per-tile audio is independent (multi-audible) — a tile becoming empty / TV-only /
+ *  dead simply has no stream to unmute, so there is no shared pointer to clear. Kept
+ *  as a no-op so the (former single-audible) call sites stay harmless. */
+function clearAudioIfOwner(cell) { void cell; }
 
-/** Move audio to THIS tile (single-audible-tile model): unmute it, mute every
- *  other tile. Toggling the already-audible tile mutes the whole wall. The
- *  invoking click is the user gesture the autoplay rule requires to unmute. */
+/** Toggle THIS tile's audio (multi-audible: any combination may be unmuted; the
+ *  unmuted tiles mix). The invoking click is the user gesture the autoplay rule
+ *  requires to unmute. Persisted as the cell's `audio` flag in the wall config. */
 function setCellAudio(cell) {
-  audibleIndex = nextAudible(audibleIndex, cell.index);
-  // Bind the audio choice to the chosen slot's CURRENT channel (null when toggled
-  // off) so a later channel change/clear can't auto-inherit it on reconnect.
-  audibleSlug = audibleIndex === cell.index ? (prefs.assignments[cell.index] || null) : null;
-  for (const c of cells) {
-    if (!c.isVideo || !c.streamHandle) continue;
-    try { c.streamHandle.setAudible(isAudible(audibleIndex, c.index)); } catch { /* ignore */ }
-    updateTileAudioBadge(c);
+  if (cellAudioOn(cell.index)) {
+    delete cellAudio[cell.index];
+  } else {
+    cellAudio[cell.index] = true;
   }
-  pushWallConfig();   // the audible cell is wall-config state — persist it
+  if (cell.isVideo && cell.streamHandle) {
+    try { cell.streamHandle.setAudible(cellAudioOn(cell.index)); } catch { /* ignore */ }
+    updateTileAudioBadge(cell);
+  }
+  pushWallConfig();   // per-cell audio is wall-config state — persist it
 }
 
 function renderCell(cell, slug, ch, bp) {
@@ -950,12 +954,9 @@ function renderCell(cell, slug, ch, bp) {
       cell.videoAttempt = 0;          // a clean (re)connect refills the retry budget
       clearCellRetry(cell);
       dot.className = "tile-dot dot-live"; video.style.visibility = ""; clearOverlay();
-      // Audio re-asserts ONLY for the same slot+channel it was chosen for — so a
-      // transient reconnect keeps audio, but a slot whose channel was replaced
-      // never inherits it (no "audio teleport"). Clear a now-stale pointer.
-      const keepAudio = shouldReassertAudio(audibleIndex, audibleSlug, cell.index, slug);
-      if (!keepAudio && audibleIndex === cell.index) { audibleIndex = -1; audibleSlug = null; }
-      try { handle.setAudible(keepAudio); } catch { /* ignore */ }
+      // Apply this cell's per-tile audio flag (multi-audible) — a (re)connect
+      // unmutes iff the config says this cell is audible.
+      try { handle.setAudible(cellAudioOn(cell.index)); } catch { /* ignore */ }
       try { handle.setCaptions(cellCaptionsOn(cell.index)); } catch { /* no track */ }
       updateTileAudioBadge(cell);
       tile.onclick = () => openSlotControls(cell.index);
@@ -1247,11 +1248,8 @@ function assignCell(slug) {
   if (pickerCell == null) return;
   if (slug) prefs.assignments[pickerCell] = slug;
   else delete prefs.assignments[pickerCell];
-  // If the operator DELIBERATELY re-points the audible slot at a new channel
-  // (the picker click is a user gesture), audio follows the slot to that channel
-  // (native slot-based parity). Clearing the slot drops audio (handled when the
-  // empty cell renders). A non-deliberate death/clear never carries audio over.
-  if (pickerCell === audibleIndex) audibleSlug = slug || null;
+  // Per-tile audio is independent of the channel pick — the cell keeps its `audio`
+  // flag (an empty cell just has no stream to unmute).
   savePrefs();
   pushWallConfig();   // persist to the server wall config (drives the wall + /control/)
   el("picker-modal").classList.add("hidden");

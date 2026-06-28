@@ -44,22 +44,17 @@
         </select>
       </label>
       <span id="grid-note" class="grid-note"></span>
+      <span id="render-derived" class="grid-note" title="The renderer composites the wall once at the largest enabled output resolution; each output downscales from it."></span>
+      <span id="audio-hint" class="grid-note grid-note--audio"></span>
       <button id="reload-all" type="button" class="reload-all"
               title="Force every video tile on the wall to re-attach its player (re-resolving a fresh stream URL)">↻ Reload all tiles</button>
     </section>
 
-    <!-- Fine-grained DISPLAY tuning — every control is a small-step slider (gradual,
-         never radical). Resolution steps through a 16:9 ladder annotated with the
-         sustainable fps + smoothness zone on this GPU-less NAS (≤1080p smooth, above
-         is heavier — see the renderer envelope). Feed width / font + ticker height
-         scale the wall proportionally. All persist in the wall config + drive the
-         rendered TV; a resolution change briefly restarts the renderer (stream blips). -->
+    <!-- Fine-grained DISPLAY tuning — small-step sliders (gradual, never radical).
+         Feed width / font + ticker height scale the wall proportionally. The render
+         RESOLUTION now lives on the output cards (each output picks its own); the
+         render canvas is derived = max(enabled), shown read-only above. -->
     <section class="display-row" aria-label="Display tuning">
-      <label class="slab">
-        <span class="slab-head">Resolution <em id="resolution-note"></em></span>
-        <input type="range" id="resolution" min="0" max="7" step="1"
-               aria-label="Render resolution (ladder rung)" />
-      </label>
       <label class="slab">
         <span class="slab-head">Feed width <em id="feed-width-val"></em></span>
         <input type="range" id="feed-width" min="18" max="58" step="1" aria-label="News-feed column width" />
@@ -76,10 +71,17 @@
 
     <section id="cells" class="cells" aria-label="Wall cells"></section>
 
+    <!-- OUTPUTS — the multi-output fan-out: the HLS/VLC card (live) + the Mercury
+         card (an inert, pre-fillable shell pending credentials). -->
+    <section class="outputs-section" aria-label="Outputs">
+      <h2 class="outputs-title">Outputs <span class="outputs-sub">one wall, many streams</span></h2>
+      <div id="outputs" class="outputs"></div>
+    </section>
+
     <p class="footnote">
       This is the wall's layout in a browser — but each cell is a <strong>picker</strong>,
       not a video player (no decode, runs on a phone). Changes save to the server-side
-      wall config and the rendered wall reflects them.
+      wall config; the rendered wall + every output reflect them.
     </p>
   </main>
 

@@ -1,28 +1,32 @@
-// MyMTS Wall Control (/control/) — the headless-container version's picker.
+// MyMTS Wall Control (/control/) — the unified panel (wall editor + Outputs).
 //
-// The wall's layout in a browser, but each cell is a FEED-PICKER + per-cell
-// audio + subtitle controls — NO video decode (lightweight; runs on a phone).
-// Every change writes the server-side wall config (PUT /api/wall); the rendered
-// wall (/app/) reads that config, so a pick here drives playback there.
+// The wall's layout in a browser, but each cell is a FEED-PICKER + per-cell AUDIO
+// + SUBTITLE toggles (multi-audible: any combination unmuted, they mix) — NO video
+// decode (lightweight; runs on a phone). The Outputs section drives the multi-output
+// fan-out: an HLS/VLC card (live) + a Mercury card (an inert, pre-fillable shell in
+// a "needs-setup" state). Every edit writes the server-side wall config (PUT
+// /api/wall, partial-merge); the rendered wall + the renderer read that config.
 //
-// Shares the bundled pure logic with /app/ via absolute imports (served by the
-// /app static mount): the API client, the category grouping + status helpers,
-// and the pure config transforms (wallConfig.mjs). DOM text is written via
-// textContent only (no helper string becomes markup); this surface fetches only
-// the helper's own JSON (A1 boundary unchanged).
+// Shares the bundled pure logic with /app/ via absolute imports. DOM text is written
+// via textContent only (no helper string becomes markup); fetches only the helper's
+// own JSON (A1 boundary unchanged).
 
 import { api } from "/app/js/api.mjs";
 import {
   sectionChannels, channelStatus, browserPlayability, clampGridDim,
 } from "/app/js/render.mjs";
 import {
-  normalizeConfig, withCellChannel, withCellSubtitles, withAudibleCell,
-  withLayout, withPreset, cellCount, withCellReload, withWallReload, withResolution,
+  normalizeConfig, withCellChannel, withCellSubtitles, withCellAudio,
+  withLayout, withPreset, cellCount, withCellReload, withWallReload,
   withFeedPct, withFeedFont, withTickerScale,
-  RENDER_RESOLUTIONS, RESOLUTION_INFO, FEED_PCT, FEED_FONT, TICKER_SCALE,
+  withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
+  withOutputRestart, withMercuryFields,
+  RENDER_RESOLUTIONS, RESOLUTION_INFO, MERCURY_MAX_RESOLUTION, bitrateBounds,
+  deriveRenderResolution, FEED_PCT, FEED_FONT, TICKER_SCALE,
 } from "/app/js/wallConfig.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
+const OUTPUTS_POLL_MS = 5_000;
 const el = (id) => document.getElementById(id);
 
 let config = null;              // the normalized server wall config (source of truth)
@@ -31,6 +35,7 @@ let channels = [];
 let channelsBySlug = new Map();
 let validSlugs = new Set();
 let presets = [];
+let outputsStatus = null;       // GET /api/outputs/status — runtime state + checklist
 
 function node(tag, cls, text) {
   const n = document.createElement(tag);
@@ -61,14 +66,13 @@ async function loadAll() {
     config = normalizeConfig(wall, validSlugs);
     populatePresets();
     render();
+    refreshOutputsStatus();
     setStatus(stored ? "loaded" : "showing default (unsaved)", stored ? "ok" : "muted");
   } catch (e) {
     setStatus("helper unreachable — retrying…", "err");
   }
 }
 
-/** Refresh just the channel list (status/new channels) WITHOUT clobbering an
- *  in-flight edit — the wall config is owned here, so we only re-pull channels. */
 async function refreshChannels() {
   try {
     const snap = await api.channels();
@@ -79,14 +83,18 @@ async function refreshChannels() {
   } catch { /* keep last; next tick retries */ }
 }
 
+/** Poll the per-output runtime status (HLS running/stopped, Mercury state +
+ *  setup checklist) WITHOUT disturbing an in-flight config edit — status is
+ *  renderer-owned, the config is owned here. */
+async function refreshOutputsStatus() {
+  try {
+    outputsStatus = await api.outputsStatus();
+    if (config) renderOutputs();
+  } catch { /* keep last; next tick retries */ }
+}
+
 // ----- save (every edit persists; the rendered wall then reflects it) -----
 
-/** Apply a pure config transform optimistically, then PUT. On rejection, show
- *  the helper's reason and reload the authoritative server config (revert).
- *  Concurrency is last-write-wins on the server config: if two surfaces edit at
- *  once, both PUTs apply in order and each side re-reads server truth on its
- *  next poll/save — eventual-consistency for a single-operator tool (no locking,
- *  no data loss; the latest save is authoritative). */
 async function commit(nextConfig, what) {
   config = normalizeConfig(nextConfig, validSlugs);
   render();
@@ -97,9 +105,10 @@ async function commit(nextConfig, what) {
     config = normalizeConfig(saved, validSlugs);
     render();
     setStatus(`saved ${what}`, "ok");
+    refreshOutputsStatus();   // a config change may flip an output's runtime state
   } catch (e) {
     setStatus(`couldn't save: ${e.message}`, "err");
-    await loadAll();   // revert to the server's truth
+    await loadAll();
   }
 }
 
@@ -118,7 +127,6 @@ function populatePresets() {
   sel.value = "";
 }
 
-/** Annotation for a resolution rung: canvas + sustainable fps + smoothness zone. */
 function resolutionNote(name) {
   const i = RESOLUTION_INFO[name] || RESOLUTION_INFO["1080p"];
   return `${name} · ${i.w}×${i.h} · ~${i.fps}fps · ${i.zone}`;
@@ -128,16 +136,24 @@ function syncLayoutControls() {
   el("rows").value = String(clampGridDim(config.layout.rows));
   el("cols").value = String(clampGridDim(config.layout.cols));
   const count = cellCount(config);
-  el("grid-note").textContent = `${config.layout.rows} × ${config.layout.cols} = ${count} cell${count === 1 ? "" : "s"}`;
-  // Display sliders reflect the stored config (a slider's position IS the value).
-  const resName = RENDER_RESOLUTIONS.includes(config.render?.resolution) ? config.render.resolution : "1080p";
-  setSlider("resolution", RENDER_RESOLUTIONS.indexOf(resName), "resolution-note", resolutionNote(resName));
+  el("grid-note").textContent =
+    `${config.layout.rows} × ${config.layout.cols} = ${count} cell${count === 1 ? "" : "s"}`;
+  // The render canvas is DERIVED from the outputs (max enabled), shown read-only so
+  // the relationship is legible ("compositing at 1080p"). The resolution chooser now
+  // lives on the output cards.
+  const renderRes = deriveRenderResolution(config.outputs);
+  if (el("render-derived")) el("render-derived").textContent = `compositing at ${renderRes}`;
+  // multi-audio hint
+  const audioCount = config.cells.filter((c) => c.audio).length;
+  if (el("audio-hint")) {
+    el("audio-hint").textContent = audioCount > 1 ? `${audioCount} cells audible — mixed` : "";
+  }
   setSlider("feed-width", config.feed_pct, "feed-width-val", `${Math.round(config.feed_pct)}%`);
   setSlider("feed-font", config.feed_font, "feed-font-val", `${Number(config.feed_font).toFixed(2)}×`);
-  setSlider("ticker-height", config.ticker_scale, "ticker-height-val", `${Number(config.ticker_scale).toFixed(2)}×`);
+  setSlider("ticker-height", config.ticker_scale, "ticker-height-val",
+    `${Number(config.ticker_scale).toFixed(2)}×`);
 }
 
-/** Set a slider's value + its live label (no-op if the element is absent). */
 function setSlider(id, value, labelId, labelText) {
   const s = el(id);
   if (s) s.value = String(value);
@@ -145,12 +161,10 @@ function setSlider(id, value, labelId, labelText) {
   if (lab) lab.textContent = labelText;
 }
 
-// ----- the picker cells (the heart of the surface) -----
+// ----- the picker cells (the wall editor) -----
 
 function statusHint(ch) {
   if (!ch) return { dot: "dot-empty", text: "empty" };
-  // A radar WIDGET is an available source, not a probed-live video — describe it
-  // honestly (the real freshness is the rendered tile's runtime state).
   if (ch.kind === "weather-radar") return { dot: "dot-live", text: "radar loop" };
   const { label, playable } = channelStatus(ch);
   const bp = browserPlayability(ch);
@@ -161,9 +175,6 @@ function statusHint(ch) {
   return { dot: "dot-offline", text: "offline" };
 }
 
-/** A <select> of channels grouped by the server-authoritative categories (the
- *  same sectioning the /app/ picker + the native picker use), with an "(empty)"
- *  option first and the cell's current channel selected. */
 function channelPicker(index) {
   const sel = node("select", "cell-picker");
   sel.setAttribute("aria-label", `Channel for cell ${index + 1}`);
@@ -172,7 +183,6 @@ function channelPicker(index) {
   empty.value = "";
   if (!current) empty.selected = true;
   sel.appendChild(empty);
-  // Pre-sort live-first then alpha (parity with the /app/ picker), then group.
   const order = (c) => {
     const bp = browserPlayability(c);
     if (bp === "yes" || bp === "maybe") return 0;
@@ -180,7 +190,8 @@ function channelPicker(index) {
     return 2;
   };
   const sorted = channels.slice().sort((a, b) =>
-    order(a) - order(b) || (a.label || a.slug).toLowerCase().localeCompare((b.label || b.slug).toLowerCase()));
+    order(a) - order(b)
+    || (a.label || a.slug).toLowerCase().localeCompare((b.label || b.slug).toLowerCase()));
   for (const section of sectionChannels(sorted)) {
     const group = document.createElement("optgroup");
     group.label = section.category;
@@ -192,7 +203,8 @@ function channelPicker(index) {
     }
     sel.appendChild(group);
   }
-  sel.addEventListener("change", () => commit(withCellChannel(config, index, sel.value || null), `cell ${index + 1}`));
+  sel.addEventListener("change",
+    () => commit(withCellChannel(config, index, sel.value || null), `cell ${index + 1}`));
   return sel;
 }
 
@@ -200,10 +212,9 @@ function renderCell(index) {
   const cell = config.cells[index];
   const ch = cell.channel ? channelsBySlug.get(cell.channel) : null;
   const hint = statusHint(ch);
-  const isAudible = config.audible_cell === index;
   const hasChannel = !!cell.channel;
 
-  const card = node("div", `cell${isAudible ? " cell--audible" : ""}`);
+  const card = node("div", `cell${cell.audio ? " cell--audible" : ""}`);
 
   const head = node("div", "cell-head");
   head.appendChild(node("span", "cell-num", `Cell ${index + 1}`));
@@ -215,38 +226,194 @@ function renderCell(index) {
 
   card.appendChild(channelPicker(index));
 
-  // Per-cell audio + subtitle controls — disabled (and the toggles inert) when
-  // the cell is empty, matching the native model (no stream → nothing to voice
-  // or caption). Audio is the single-audible-cell model: exactly one cell, or
-  // none, carries audio across the whole wall.
+  // Per-cell AUDIO + SUBTITLE toggles (multi-audible: ANY combination of audio
+  // cells may be on; they mix in the render's sink). Both are per-cell config
+  // properties — enabled regardless of channel (pre-settable).
   const controls = node("div", "cell-controls");
 
-  const audioBtn = node("button", `pill${isAudible ? " pill--on" : ""}`, isAudible ? "🔊 Audio on" : "🔇 Audio");
+  const audioBtn = node("button", `pill${cell.audio ? " pill--on" : ""}`,
+    cell.audio ? "🔊 Audio on" : "🔇 Audio");
   audioBtn.type = "button";
-  audioBtn.disabled = !hasChannel;
-  audioBtn.title = hasChannel ? "Make this cell the wall's audio (others muted)" : "Assign a channel first";
-  audioBtn.addEventListener("click", () => commit(withAudibleCell(config, index), "audio"));
+  audioBtn.title = "Unmute this cell (multiple may be on → mixed)";
+  audioBtn.addEventListener("click", () => commit(withCellAudio(config, index), `cell ${index + 1} audio`));
   controls.appendChild(audioBtn);
 
-  const subBtn = node("button", `pill${cell.subtitles ? " pill--on" : ""}`, cell.subtitles ? "💬 Subtitles on" : "💬 Subtitles");
+  const subBtn = node("button", `pill${cell.subtitles ? " pill--on" : ""}`,
+    cell.subtitles ? "💬 Subtitles on" : "💬 Subtitles");
   subBtn.type = "button";
-  subBtn.disabled = !hasChannel;
-  subBtn.title = hasChannel ? "Toggle subtitles for this cell" : "Assign a channel first";
+  subBtn.title = "Toggle subtitles for this cell";
   subBtn.addEventListener("click", () => commit(withCellSubtitles(config, index), "subtitles"));
   controls.appendChild(subBtn);
 
-  // Per-cell force-reload: bump this cell's reload epoch so the rendered wall
-  // re-attaches just this tile's player (re-resolving a fresh stream URL) —
-  // recovers a single wedged/dead tile without disturbing the rest of the wall.
   const reloadBtn = node("button", "pill", "↻ Reload");
   reloadBtn.type = "button";
   reloadBtn.disabled = !hasChannel;
   reloadBtn.title = hasChannel ? "Reload just this tile on the wall" : "Assign a channel first";
-  reloadBtn.addEventListener("click", () => commit(withCellReload(config, index), `reload cell ${index + 1}`));
+  reloadBtn.addEventListener("click",
+    () => commit(withCellReload(config, index), `reload cell ${index + 1}`));
   controls.appendChild(reloadBtn);
 
   card.appendChild(controls);
   return card;
+}
+
+// ----- the Outputs section (HLS card + Mercury shell) -----
+
+function resOptions(sel, current, capName) {
+  const cap = capName ? RENDER_RESOLUTIONS.indexOf(capName) : RENDER_RESOLUTIONS.length - 1;
+  RENDER_RESOLUTIONS.forEach((r, i) => {
+    if (i > cap) return;
+    const o = node("option", null, resolutionNote(r));
+    o.value = r;
+    if (r === current) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+/** A labelled control row. */
+function row(labelText, controlEl) {
+  const r = node("label", "output-row");
+  r.appendChild(node("span", "output-row-label", labelText));
+  r.appendChild(controlEl);
+  return r;
+}
+
+function hlsCard(o, rt) {
+  const card = node("div", "output-card");
+  const head = node("div", "output-head");
+  head.appendChild(node("span", "output-name", "HLS / VLC"));
+  const state = rt.state || (o.enabled ? "stopped" : "disabled");
+  head.appendChild(node("span", `output-state state-${state}`, state));
+  card.appendChild(head);
+
+  const enableBtn = node("button", `pill${o.enabled ? " pill--on" : ""}`,
+    o.enabled ? "On" : "Off");
+  enableBtn.type = "button";
+  enableBtn.addEventListener("click", () => commit(withOutputEnabled(config, "hls", !o.enabled), "HLS on/off"));
+  card.appendChild(row("Enabled", enableBtn));
+
+  const resSel = node("select", "output-res");
+  resOptions(resSel, o.resolution, null);
+  resSel.addEventListener("change", () => commit(withOutputResolution(config, "hls", resSel.value), "HLS resolution"));
+  card.appendChild(row("Resolution", resSel));
+
+  const b = bitrateBounds(o.resolution);
+  const brWrap = node("div", "output-bitrate");
+  const br = node("input", "output-br-slider");
+  br.type = "range"; br.min = String(b.min); br.max = String(b.max); br.step = String(b.step);
+  br.value = String(o.bitrate_kbps);
+  const brVal = node("span", "output-br-val", `${(o.bitrate_kbps / 1000).toFixed(1)} Mbps`);
+  br.addEventListener("input", () => { brVal.textContent = `${(Number(br.value) / 1000).toFixed(1)} Mbps`; });
+  br.addEventListener("change", () => commit(withOutputBitrate(config, "hls", Number(br.value)), "HLS bitrate"));
+  brWrap.append(br, brVal);
+  card.appendChild(row("Bitrate", brWrap));
+
+  const audBtn = node("button", `pill${o.audio ? " pill--on" : ""}`, o.audio ? "🔊 On" : "🔇 Off");
+  audBtn.type = "button";
+  audBtn.addEventListener("click", () => commit(withOutputAudio(config, "hls", !o.audio), "HLS audio"));
+  card.appendChild(row("Audio", audBtn));
+
+  const actions = node("div", "output-actions");
+  const startStop = node("button", "pill", o.enabled ? "Stop" : "Start");
+  startStop.type = "button";
+  startStop.addEventListener("click", () => commit(withOutputEnabled(config, "hls", !o.enabled), o.enabled ? "stop HLS" : "start HLS"));
+  const restart = node("button", "pill", "↻ Restart");
+  restart.type = "button";
+  restart.addEventListener("click", () => commit(withOutputRestart(config, "hls"), "restart HLS"));
+  actions.append(startStop, restart);
+  card.appendChild(actions);
+
+  const playlist = rt.playlist_path || "/api/stream/playlist.m3u8";
+  const urlLine = node("div", "output-url");
+  urlLine.appendChild(node("span", "output-url-label", "Playlist"));
+  const code = node("code", "output-url-code", playlist);
+  urlLine.appendChild(code);
+  card.appendChild(urlLine);
+  return card;
+}
+
+function mercuryCard(o, rt) {
+  const card = node("div", "output-card output-card--mercury");
+  const head = node("div", "output-head");
+  head.appendChild(node("span", "output-name", "Mercury"));
+  const state = rt.state || (o.enabled ? "needs_setup" : "disabled");
+  head.appendChild(node("span", `output-state state-${state}`, state.replace(/_/g, " ")));
+  card.appendChild(head);
+
+  // Honest needs-setup checklist (renderer-computed). Actions stay disabled until
+  // every item is satisfied; this build's stub NEVER connects.
+  const cl = rt.checklist || {};
+  const ready = cl.key_present === true && cl.channel_set === true && cl.tailnet_reachable === true;
+  const checklist = node("div", "mercury-checklist");
+  const item = (ok, label) => {
+    const i = node("div", `check ${ok === true ? "ok" : ok === false ? "bad" : "unknown"}`);
+    i.appendChild(node("span", "check-mark", ok === true ? "✓" : ok === false ? "✗" : "?"));
+    i.appendChild(node("span", "check-label", label));
+    return i;
+  };
+  checklist.appendChild(item(cl.key_present, "LiveKit key"));
+  checklist.appendChild(item(cl.tailnet_reachable, "Tailnet reachable"));
+  checklist.appendChild(item(cl.channel_set, "Channel set"));
+  card.appendChild(checklist);
+  card.appendChild(node("div", "mercury-detail", rt.detail || "Pending credentials (Ryan)"));
+
+  // Pre-fillable config fields (no secrets) — editable NOW so Will can stage ahead.
+  const guid = node("input", "mercury-input");
+  guid.type = "text"; guid.value = o.channel_guid || ""; guid.placeholder = "channel GUID";
+  guid.addEventListener("change", () => commit(withMercuryFields(config, { channel_guid: guid.value.trim() }), "Mercury channel"));
+  card.appendChild(row("Channel GUID", guid));
+
+  const dname = node("input", "mercury-input");
+  dname.type = "text"; dname.value = o.display_name || ""; dname.placeholder = "display name";
+  dname.addEventListener("change", () => commit(withMercuryFields(config, { display_name: dname.value }), "Mercury name"));
+  card.appendChild(row("Display name", dname));
+
+  const resSel = node("select", "output-res");
+  resOptions(resSel, o.resolution, MERCURY_MAX_RESOLUTION);   // capped ≤1080p
+  resSel.addEventListener("change", () => commit(withOutputResolution(config, "mercury", resSel.value), "Mercury resolution"));
+  card.appendChild(row("Resolution", resSel));
+
+  const b = bitrateBounds(o.resolution);
+  const br = node("input", "output-br-slider");
+  br.type = "range"; br.min = String(b.min); br.max = String(b.max); br.step = String(b.step);
+  br.value = String(o.bitrate_kbps);
+  const brVal = node("span", "output-br-val", `${(o.bitrate_kbps / 1000).toFixed(1)} Mbps`);
+  br.addEventListener("input", () => { brVal.textContent = `${(Number(br.value) / 1000).toFixed(1)} Mbps`; });
+  br.addEventListener("change", () => commit(withOutputBitrate(config, "mercury", Number(br.value)), "Mercury bitrate"));
+  const brWrap = node("div", "output-bitrate"); brWrap.append(br, brVal);
+  card.appendChild(row("Bitrate", brWrap));
+
+  const audBtn = node("button", `pill${o.audio ? " pill--on" : ""}`, o.audio ? "🔊 On" : "🔇 Off");
+  audBtn.type = "button";
+  audBtn.addEventListener("click", () => commit(withOutputAudio(config, "mercury", !o.audio), "Mercury audio"));
+  card.appendChild(row("Audio", audBtn));
+
+  // Action controls — DISABLED until the checklist is satisfied; never triggers a
+  // connection in this build (the publisher is stubbed).
+  const actions = node("div", "output-actions");
+  const enableBtn = node("button", "pill", o.enabled ? "Disable" : "Enable");
+  const startStop = node("button", "pill", o.enabled ? "Stop" : "Start");
+  const restart = node("button", "pill", "↻ Restart");
+  for (const btn of [enableBtn, startStop, restart]) {
+    btn.type = "button";
+    btn.disabled = !ready;   // armed only when the checklist passes
+    btn.title = ready ? "" : "Waiting on setup";
+  }
+  enableBtn.addEventListener("click", () => commit(withOutputEnabled(config, "mercury", !o.enabled), o.enabled ? "disable Mercury" : "enable Mercury"));
+  startStop.addEventListener("click", () => commit(withOutputEnabled(config, "mercury", !o.enabled), o.enabled ? "stop Mercury" : "start Mercury"));
+  restart.addEventListener("click", () => commit(withOutputRestart(config, "mercury"), "restart Mercury"));
+  actions.append(enableBtn, startStop, restart);
+  card.appendChild(actions);
+  return card;
+}
+
+function renderOutputs() {
+  const root = el("outputs");
+  if (!root || !config) return;
+  const rt = (outputsStatus && outputsStatus.outputs) || {};
+  root.replaceChildren();
+  root.appendChild(hlsCard(config.outputs.hls, rt.hls || {}));
+  root.appendChild(mercuryCard(config.outputs.mercury, rt.mercury || {}));
 }
 
 function render() {
@@ -256,6 +423,7 @@ function render() {
   root.replaceChildren();
   root.style.setProperty("--cols", String(clampGridDim(config.layout.cols)));
   for (let i = 0; i < cellCount(config); i++) root.appendChild(renderCell(i));
+  renderOutputs();
 }
 
 // ----- wire -----
@@ -265,21 +433,6 @@ function wire() {
     commit(withLayout(config, Number(e.target.value), config.layout.cols), "layout"));
   el("cols").addEventListener("change", (e) =>
     commit(withLayout(config, config.layout.rows, Number(e.target.value)), "layout"));
-  // ---- fine-grained DISPLAY sliders (all small-step, gradual) ----
-  // Each: 'input' updates the live label only (no commit-per-step); 'change'
-  // (on release) commits ONE config write. Resolution especially must commit only
-  // on release — each commit restarts the renderer, so we never restart per step.
-  const resSlider = el("resolution");
-  if (resSlider) {
-    resSlider.addEventListener("input", (e) => {
-      const name = RENDER_RESOLUTIONS[Number(e.target.value)] || "1080p";
-      const lab = el("resolution-note"); if (lab) lab.textContent = resolutionNote(name);
-    });
-    resSlider.addEventListener("change", (e) => {
-      const name = RENDER_RESOLUTIONS[Number(e.target.value)] || "1080p";
-      commit(withResolution(config, name), `resolution ${name}`);
-    });
-  }
   const liveLabel = (sliderId, labelId, fmt) => {
     const s = el(sliderId), lab = el(labelId);
     if (s && lab) s.addEventListener("input", () => { lab.textContent = fmt(Number(s.value)); });
@@ -298,11 +451,8 @@ function wire() {
     const p = presets.find((x) => x.id === e.target.value);
     if (!p) return;
     commit(withPreset(config, p, validSlugs), `preset “${p.name || p.id}”`);
-    e.target.value = "";   // it's an action, not a persistent selection
+    e.target.value = "";
   });
-  // Whole-wall force-reload: bump the wall reload epoch so the rendered wall
-  // re-attaches EVERY video tile — recovers a wall that's silently degraded
-  // (several wedged tiles) in one tap, the remote analog of /app/'s header ↻.
   const reloadAll = el("reload-all");
   if (reloadAll) reloadAll.addEventListener("click", () => {
     if (!config) return;
@@ -314,5 +464,6 @@ function main() {
   wire();
   loadAll();
   setInterval(refreshChannels, CHANNELS_POLL_MS);
+  setInterval(refreshOutputsStatus, OUTPUTS_POLL_MS);
 }
 document.addEventListener("DOMContentLoaded", main);

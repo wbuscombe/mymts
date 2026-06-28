@@ -72,4 +72,8 @@ export const api = {
   // (/app/) reads it; the picker (/control/) writes it.
   wall: () => getJson(`/api/wall`),
   putWall: (config) => putJson(`/api/wall`, config),
+  // Per-output runtime status (HLS running/stopped + Mercury state + setup
+  // checklist) — read from the renderer's status file by the helper. The Outputs
+  // panel polls this; all EDITS still go through putWall (partial-merge).
+  outputsStatus: () => getJson(`/api/outputs/status`),
 };

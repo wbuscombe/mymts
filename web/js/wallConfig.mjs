@@ -4,25 +4,23 @@
 // the rendered wall (/app/) which READS it, so the two can never disagree on
 // the shape or the edit semantics. Every function is a pure config → config
 // transform (no DOM, no fetch) — unit-tested in web/test/wallConfig.test.mjs.
-// Mirrors the server validator in helper/.../wall/store.py (same schema,
-// same single-audible + per-cell-subtitle model).
+// Mirrors the server validator in helper/.../wall/store.py (same schema: per-cell
+// audio + subtitles, and the outputs fan-out map).
 
 import { clampGridDim } from "./render.mjs";
 
 export const WALL_SCHEMA_VERSION = 1;
 
-/** The render-resolution ladder the wall config understands (mirror of the helper's
- *  RENDER_RESOLUTIONS + the renderer's). The renderer maps each name → canvas + a
- *  SUSTAINABLE fps + bitrate; the web wall scales to any of them via --ux. */
+/** The render-resolution ladder (mirror of the helper's RENDER_RESOLUTIONS + the
+ *  renderer's). Outputs pick a rung; the renderer composites at max(enabled) + each
+ *  output downscales to its own rung. */
 export const RENDER_RESOLUTIONS = [
   "720p", "900p", "1080p", "1260p", "1440p", "1620p", "1800p", "2160p",
 ];
 export const DEFAULT_RESOLUTION = "1080p";
 
 /** Per-resolution display metadata for the /control/ chooser: the canvas, the
- *  sustainable fps on this CPU-only renderer, and the honest smoothness zone (from
- *  the smoothness envelope, ARCHITECTURE §31) so the operator's choice is informed —
- *  ≤1080p is the smooth zone; above it is marginal→heavy (GPU-territory). */
+ *  sustainable fps on this CPU-only renderer, and the honest smoothness zone (§31). */
 export const RESOLUTION_INFO = {
   "720p":  { w: 1280, h: 720,  fps: 30, zone: "smooth" },
   "900p":  { w: 1600, h: 900,  fps: 30, zone: "smooth" },
@@ -34,41 +32,110 @@ export const RESOLUTION_INFO = {
   "2160p": { w: 3840, h: 2160, fps: 10, zone: "heavy" },
 };
 
-/** Coerce a render block to {resolution} with a valid ladder choice (else 1080p).
- *  Defensive on read so a bad/absent value never breaks the picker. Pure. */
-function normalizeRender(render) {
-  const res = render && typeof render === "object" ? render.resolution : null;
-  return { resolution: RENDER_RESOLUTIONS.includes(res) ? res : DEFAULT_RESOLUTION };
+// ----- outputs (the multi-output fan-out; mirror helper store.py) -----
+export const OUTPUT_NAMES = ["hls", "mercury"];
+export const MERCURY_MAX_RESOLUTION = "1080p";
+export const BITRATE_KBPS_MIN = 500;
+export const BITRATE_KBPS_CEIL = 60000;
+export const RES_BITRATE_KBPS = {
+  "720p": 4000, "900p": 6000, "1080p": 8000, "1260p": 10000,
+  "1440p": 12000, "1620p": 14000, "1800p": 16000, "2160p": 20000,
+};
+export const DEFAULT_DISPLAY_NAME = "MyMTS News Wall";
+
+function ladderIndex(res) {
+  const i = RENDER_RESOLUTIONS.indexOf(res);
+  return i < 0 ? RENDER_RESOLUTIONS.indexOf(DEFAULT_RESOLUTION) : i;
+}
+function clampResolution(v, def) { return RENDER_RESOLUTIONS.includes(v) ? v : def; }
+function capMercury(res) {
+  return ladderIndex(res) > ladderIndex(MERCURY_MAX_RESOLUTION) ? MERCURY_MAX_RESOLUTION : res;
 }
 
-/** Fine-grained, proportional view tunables — bounds mirror the helper (nothing
- *  collapses/overflows). Clamped on read; absent → default. Pure. */
-export const FEED_PCT = { min: 18, max: 58, step: 1, default: 32 };
-export const FEED_FONT = { min: 0.7, max: 1.6, step: 0.05, default: 1 };
-export const TICKER_SCALE = { min: 0.6, max: 2.0, step: 0.05, default: 1 };
-function clampScale(v, b) {
-  const n = Number(v);
+/** The bitrate slider bounds for a resolution: a floor that carries motion, a
+ *  ceiling of ~3x the rung's recommended bitrate (mirror helper clamp). */
+export function bitrateBounds(resolution) {
+  const rec = RES_BITRATE_KBPS[resolution] ?? 8000;
+  return { min: BITRATE_KBPS_MIN, max: Math.min(BITRATE_KBPS_CEIL, rec * 3), step: 250, default: rec };
+}
+function clampBitrate(v, resolution) {
+  const b = bitrateBounds(resolution);
+  const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.min(b.max, Math.max(b.min, n)) : b.default;
 }
 
-/** A non-negative integer reload counter (else 0). Force-reload epochs are
- *  monotonic counters: a surface bumps one to signal "reload"; the rendered wall
- *  reattaches when it sees the value INCREASE. Defensive read for the wire. */
+export function defaultOutputs() {
+  return {
+    hls: { enabled: true, resolution: "1080p", bitrate_kbps: 8000, audio: true, restart_epoch: 0 },
+    mercury: {
+      enabled: false, resolution: "720p", bitrate_kbps: 3000, audio: true, restart_epoch: 0,
+      channel_guid: "", display_name: DEFAULT_DISPLAY_NAME,
+    },
+  };
+}
+
+function normalizeOutput(name, raw, def) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  let res = clampResolution(src.resolution ?? def.resolution, def.resolution);
+  if (name === "mercury") res = capMercury(res);
+  const out = {
+    enabled: src.enabled === undefined ? def.enabled : src.enabled === true,
+    resolution: res,
+    bitrate_kbps: clampBitrate(src.bitrate_kbps ?? def.bitrate_kbps, res),
+    audio: src.audio === undefined ? def.audio : src.audio === true,
+    restart_epoch: reloadInt(src.restart_epoch),
+  };
+  if (name === "mercury") {
+    out.channel_guid = typeof src.channel_guid === "string" ? src.channel_guid : def.channel_guid;
+    out.display_name = typeof src.display_name === "string" ? src.display_name : def.display_name;
+  }
+  return out;
+}
+
+/** The render canvas /control/ shows read-only ("compositing at X") — the largest
+ *  ENABLED output resolution (each output downscales from it). 1080p if none on.
+ *  Mirrors helper store.derive_render_resolution + renderer supervisor. Pure. */
+export function deriveRenderResolution(outputs) {
+  const enabled = Object.values(outputs || {})
+    .filter((o) => o && typeof o === "object" && o.enabled && RENDER_RESOLUTIONS.includes(o.resolution))
+    .map((o) => o.resolution);
+  if (!enabled.length) return DEFAULT_RESOLUTION;
+  return enabled.reduce((a, b) => (ladderIndex(b) > ladderIndex(a) ? b : a));
+}
+
+/** Normalise/clamp the outputs map (each output to the ladder + sane bitrate;
+ *  Mercury ≤1080p). Always returns the two known outputs. Pure. */
+export function normalizeOutputs(raw) {
+  const def = defaultOutputs();
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    hls: normalizeOutput("hls", src.hls, def.hls),
+    mercury: normalizeOutput("mercury", src.mercury, def.mercury),
+  };
+}
+
+/** A non-negative integer reload/restart counter (else 0). Monotonic on the wire. */
 function reloadInt(v) { return Number.isInteger(v) && v >= 0 ? v : 0; }
 
-/** A fresh empty cell. `reload` is the per-cell force-reload epoch (0 = never). */
-function emptyCell() { return { channel: null, subtitles: false, reload: 0 }; }
+/** A fresh empty cell. Per-cell audio + subtitles default off; reload epoch 0. */
+function emptyCell() { return { channel: null, audio: false, subtitles: false, reload: 0 }; }
 
-/** Resize a cells array to exactly `count`, preserving assignments BY INDEX
- *  (pad with empties, truncate the overflow) — native LineupStore behaviour on
- *  a grid-dim change. The per-cell `reload` epoch rides along by index. Returns a
- *  new array (never mutates the input). */
-export function resizeCells(cells, count) {
+/** Resize a cells array to exactly `count`, preserving assignments BY INDEX. When
+ *  `legacyAudible` is a migrating single-audible index, an old cell with no `audio`
+ *  field at that index becomes audio:true. Returns a new array. */
+export function resizeCells(cells, count, legacyAudible = null) {
   const src = Array.isArray(cells) ? cells : [];
   const out = [];
   for (let i = 0; i < count; i++) {
     const c = src[i];
-    out.push(c ? { channel: c.channel ?? null, subtitles: c.subtitles === true, reload: reloadInt(c.reload) } : emptyCell());
+    if (c) {
+      const audio = c.audio === undefined ? (legacyAudible === i) : c.audio === true;
+      out.push({
+        channel: c.channel ?? null, audio, subtitles: c.subtitles === true, reload: reloadInt(c.reload),
+      });
+    } else {
+      out.push(emptyCell());
+    }
   }
   return out;
 }
@@ -81,47 +148,51 @@ export function cellCount(config) {
 }
 
 /** Normalise/repair a config read from the wire so the client always has a
- *  well-formed object to render+edit (lenient mirror of the server validator:
- *  clamp dims, resize cells to match, drop an audible pointer that no longer
- *  references a populated cell). `validSlugs` (optional) clears a cell whose
- *  channel is no longer a known channel. Pure. */
+ *  well-formed object to render+edit (lenient mirror of the server validator).
+ *  MIGRATES an old-shape config in memory: an absent `outputs` seeds hls.resolution
+ *  from the legacy `render.resolution`; a legacy `audible_cell` folds into that
+ *  cell's audio. `validSlugs` clears a cell whose channel vanished. Pure. */
 export function normalizeConfig(raw, validSlugs = null) {
   const cfg = raw && typeof raw === "object" ? raw : {};
   const rows = clampGridDim(cfg.layout?.rows ?? 2);
   const cols = clampGridDim(cfg.layout?.cols ?? 2);
   const count = rows * cols;
-  let cells = resizeCells(cfg.cells, count);
+  const legacyAudible = Number.isInteger(cfg.audible_cell) ? cfg.audible_cell : null;
+  let cells = resizeCells(cfg.cells, count, legacyAudible);
   if (validSlugs) {
     const ok = validSlugs instanceof Set ? validSlugs : new Set(validSlugs);
     cells = cells.map((c) => (c.channel && !ok.has(c.channel) ? emptyCell() : c));
   }
-  let audible = Number.isInteger(cfg.audible_cell) ? cfg.audible_cell : null;
-  if (audible == null || audible < 0 || audible >= count || !cells[audible].channel) {
-    audible = null;
+  let outputs;
+  if (cfg.outputs && typeof cfg.outputs === "object") {
+    outputs = normalizeOutputs(cfg.outputs);
+  } else {
+    const def = defaultOutputs();
+    const legacyRes = cfg.render?.resolution;
+    if (RENDER_RESOLUTIONS.includes(legacyRes)) def.hls.resolution = legacyRes;
+    outputs = normalizeOutputs(def);
   }
   return {
     schema_version: WALL_SCHEMA_VERSION,
     layout: { rows, cols },
     preset: typeof cfg.preset === "string" ? cfg.preset : null,
-    audible_cell: audible,
     reload_epoch: reloadInt(cfg.reload_epoch),
-    // CRITICAL: carry these through normalize, else every commit() round-trip
-    // (which runs the config through normalizeConfig) would STRIP them and silently
-    // revert the choice on the next save.
-    render: normalizeRender(cfg.render),
     feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
     feed_font: clampScale(cfg.feed_font, FEED_FONT),
     ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
+    outputs,
     cells,
   };
 }
 
-/** Set the render resolution (a ladder rung; unknown → 1080p). The renderer
- *  re-reads this and restarts its Xvfb/ffmpeg stack at the new canvas + fps. Pure. */
-export function withResolution(config, resolution) {
-  const cfg = normalizeConfig(config);
-  const res = RENDER_RESOLUTIONS.includes(resolution) ? resolution : DEFAULT_RESOLUTION;
-  return { ...cfg, render: { resolution: res } };
+/** Fine-grained, proportional view tunables — bounds mirror the helper. Clamped on
+ *  read; absent → default. Pure. */
+export const FEED_PCT = { min: 18, max: 58, step: 1, default: 32 };
+export const FEED_FONT = { min: 0.7, max: 1.6, step: 0.05, default: 1 };
+export const TICKER_SCALE = { min: 0.6, max: 2.0, step: 0.05, default: 1 };
+function clampScale(v, b) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(b.max, Math.max(b.min, n)) : b.default;
 }
 
 /** Set the feed-column width (% of the wall), clamped fine-grained. Pure. */
@@ -156,16 +227,22 @@ export function withCellReload(config, index) {
   return { ...cfg, cells };
 }
 
-/** Assign (or clear, slug=null) a cell's channel. Clearing a cell that owns the
- *  audio drops the audio pointer (an empty cell can't be the audio source). */
+/** Assign (or clear, slug=null) a cell's channel. Pure (audio/subtitles ride along). */
 export function withCellChannel(config, index, slug) {
   const cfg = normalizeConfig(config);
   if (index < 0 || index >= cfg.cells.length) return cfg;
   const cells = cfg.cells.map((c, i) =>
     i === index ? { ...c, channel: slug || null } : c);
-  let audible = cfg.audible_cell;
-  if (!slug && audible === index) audible = null;
-  return { ...cfg, cells, audible_cell: audible };
+  return { ...cfg, cells };
+}
+
+/** Toggle a cell's per-tile AUDIO on/off. ANY combination may be on (multiple
+ *  unmuted cells mix in the render's sink). Default off (muted). Pure. */
+export function withCellAudio(config, index) {
+  const cfg = normalizeConfig(config);
+  if (index < 0 || index >= cfg.cells.length) return cfg;
+  const cells = cfg.cells.map((c, i) => i === index ? { ...c, audio: !c.audio } : c);
+  return { ...cfg, cells };
 }
 
 /** Toggle a cell's subtitles on/off (per-cell, native captionsOnSlots parity). */
@@ -177,32 +254,54 @@ export function withCellSubtitles(config, index) {
   return { ...cfg, cells };
 }
 
-/** Single-audible-cell toggle (native LineupStore.toggleAudible): set this cell
- *  as the audio source; toggling the already-audible cell mutes the wall; an
- *  EMPTY cell can never be made audible (no stream to unmute). */
-export function withAudibleCell(config, index) {
+// ----- outputs transforms (the /control/ Outputs section) -----
+
+/** Patch ONE output's fields (clamped via normalizeOutputs). Unknown name → no-op. */
+export function withOutput(config, name, patch) {
   const cfg = normalizeConfig(config);
-  if (index < 0 || index >= cfg.cells.length) return cfg;
-  if (!cfg.cells[index].channel) return cfg;            // empty → no-op
-  const audible = cfg.audible_cell === index ? null : index;
-  return { ...cfg, audible_cell: audible };
+  if (!OUTPUT_NAMES.includes(name)) return cfg;
+  const outputs = normalizeOutputs({ ...cfg.outputs, [name]: { ...cfg.outputs[name], ...patch } });
+  return { ...cfg, outputs };
+}
+export function withOutputEnabled(config, name, on) {
+  return withOutput(config, name, { enabled: on === true });
+}
+export function withOutputResolution(config, name, resolution) {
+  return withOutput(config, name, { resolution });
+}
+export function withOutputBitrate(config, name, kbps) {
+  return withOutput(config, name, { bitrate_kbps: kbps });
+}
+export function withOutputAudio(config, name, on) {
+  return withOutput(config, name, { audio: on === true });
+}
+/** Bump an output's restart_epoch (+1): cycle that one output's encoder/publisher. */
+export function withOutputRestart(config, name) {
+  const cfg = normalizeConfig(config);
+  if (!OUTPUT_NAMES.includes(name)) return cfg;
+  return withOutput(config, name, { restart_epoch: reloadInt(cfg.outputs[name].restart_epoch) + 1 });
+}
+/** Set the Mercury non-secret fields (channel_guid / display_name). NO secrets. */
+export function withMercuryFields(config, fields) {
+  const patch = {};
+  if (typeof fields?.channel_guid === "string") patch.channel_guid = fields.channel_guid;
+  if (typeof fields?.display_name === "string") patch.display_name = fields.display_name;
+  return withOutput(config, "mercury", patch);
 }
 
 /** Change the grid layout (rows × cols, each clamped 1..3), resizing the cells
- *  by index + dropping a now-invalid audio pointer. */
+ *  by index. Per-cell audio/subtitles ride along by index. Pure. */
 export function withLayout(config, rows, cols) {
   const cfg = normalizeConfig(config);
   const r = clampGridDim(rows);
   const c = clampGridDim(cols);
   const cells = resizeCells(cfg.cells, r * c);
-  let audible = cfg.audible_cell;
-  if (audible != null && (audible >= r * c || !cells[audible].channel)) audible = null;
-  return { ...cfg, layout: { rows: r, cols: c }, cells, audible_cell: audible };
+  return { ...cfg, layout: { rows: r, cols: c }, cells };
 }
 
 /** Apply a server preset: take its grid + fill cells from its slugs (filtered to
- *  channels that exist), reset audio + subtitles. `preset` is a /api/presets
- *  entry; `validSlugs` is the live channel set. Mirrors the wall's preset apply. */
+ *  channels that exist), reset audio + subtitles. Carries reload_epoch + outputs +
+ *  the view tunables forward (orthogonal to the channel preset). */
 export function withPreset(config, preset, validSlugs) {
   const cfg = normalizeConfig(config);
   if (!preset) return cfg;
@@ -213,23 +312,17 @@ export function withPreset(config, preset, validSlugs) {
   const fill = (Array.isArray(preset.slugs) ? preset.slugs : []).filter((s) => ok.has(s));
   const cells = [];
   for (let i = 0; i < count; i++) {
-    cells.push({ channel: i < fill.length ? fill[i] : null, subtitles: false, reload: 0 });
+    cells.push({ channel: i < fill.length ? fill[i] : null, audio: false, subtitles: false, reload: 0 });
   }
   return {
     schema_version: WALL_SCHEMA_VERSION,
     layout: { rows, cols },
     preset: preset.id ?? null,
-    audible_cell: null,
-    // A preset reshapes the grid (fresh cells → per-cell reload resets to 0) but
-    // the WHOLE-WALL reload epoch is monotonic, so carry it forward (resetting it
-    // would make a later "reload all" look like it went backwards → missed).
     reload_epoch: reloadInt(cfg.reload_epoch),
-    // Resolution + the view tunables are orthogonal to the channel preset — carry
-    // them forward so applying a preset never resets the canvas / feed / ticker.
-    render: normalizeRender(cfg.render),
     feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
     feed_font: clampScale(cfg.feed_font, FEED_FONT),
     ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
+    outputs: normalizeOutputs(cfg.outputs),
     cells,
   };
 }
