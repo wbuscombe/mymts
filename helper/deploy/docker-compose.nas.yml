@@ -133,7 +133,7 @@ services:
       # VLC). LAN-bound; serves ONLY the hardened /api/stream route, no API/keys.
       - "8082:8082"
       # Plain-HTTP Discord Activity public app (2026-06-28). The operator's Cloudflare
-      # tunnel maps the public hostname (e.g. wall.3slstudios.com) to this port and
+      # tunnel maps the public hostname (e.g. wall.your-domain.example) to this port and
       # terminates TLS at the edge. Serves ONLY the Activity + /api/discord/* + the
       # /api/stream passthrough — the full API + /control/ are NOT here. Until the
       # tunnel hostname is added in the CF dashboard, this is just a LAN-local port.

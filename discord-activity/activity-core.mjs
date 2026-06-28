@@ -14,7 +14,7 @@
  *  base, which is what makes the Activity work in both worlds with no edit:
  *   - inside Discord the base is `https://<app-id>.discordsays.com/.proxy/`, so this
  *     becomes `…/.proxy/api/stream/playlist.m3u8` — Discord's required proxy path,
- *     which it forwards to the public origin (e.g. wall.3slstudios.com);
+ *     which it forwards to the public origin (e.g. wall.your-domain.example);
  *   - served standalone at the public origin root it resolves to
  *     `/api/stream/playlist.m3u8`.
  *  The playlist's segment URIs are themselves relative (`seg_N.ts`), so they

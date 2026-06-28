@@ -118,7 +118,7 @@ class Config:
     # client_id is PUBLIC (served to the Activity via /api/discord/config). The
     # SECRET is server-side only (the token endpoint), referenced by var name,
     # never logged/echoed. public_origin is the operator-facing https URL (e.g.
-    # https://wall.3slstudios.com) used for the /control/ checklist + reachability.
+    # https://wall.your-domain.example) used for the /control/ checklist + reachability.
     discord_client_id: str | None = None
     discord_client_secret: str | None = None
     discord_activity_public_origin: str | None = None
