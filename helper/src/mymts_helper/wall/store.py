@@ -7,17 +7,29 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "schema_version": 1,
       "layout": {"rows": 2, "cols": 2},
       "preset": "news",                       # informational: last-applied preset
-      "audible_cell": 0 | null,               # single-audible-cell model
       "reload_epoch": 0,                      # whole-wall force-reload counter
-      "render": {"resolution": "1080p"},      # renderer canvas: a 16:9 ladder rung
       "feed_pct": 32.0,                       # feed-column width (% of the wall)
       "feed_font": 1.0,                       # feed text scale (proportional)
       "ticker_scale": 1.0,                    # ticker height + content scale
+      "outputs": {                            # the unified multi-output fan-out
+        "hls":     {"enabled": true,  "resolution": "1080p", "bitrate_kbps": 8000,
+                    "audio": true, "restart_epoch": 0},
+        "mercury": {"enabled": false, "resolution": "720p",  "bitrate_kbps": 3000,
+                    "audio": true, "restart_epoch": 0,
+                    "channel_guid": "", "display_name": "MyMTS News Wall"}
+      },
       "cells": [                              # length == rows*cols (by index)
-        {"channel": "bbc-news" | null, "subtitles": false, "reload": 0},
+        {"channel": "bbc-news" | null, "audio": false, "subtitles": false, "reload": 0},
         ...
       ]
     }
+
+The renderer composites the wall ONCE (Chromium) at ``max(resolution of the enabled
+outputs)`` and fans out to per-output encodes — so ``render.resolution`` is no longer
+stored: it is DERIVED from ``outputs.*.resolution``. Audio is per-cell + per-output
+(not a single audible pointer): cells flagged ``audio:true`` play unmuted in the render
+Chromium and combine in its PulseAudio sink (the "mix"); each output then muxes that
+sink (``outputs.X.audio``) or omits audio entirely.
 
 **Force-reload epochs** are monotonic counters a control surface bumps to tell
 the rendered wall (`/app/`) to re-attach a tile's player without a channel change:
@@ -25,11 +37,18 @@ the rendered wall (`/app/`) to re-attach a tile's player without a channel chang
 sees a value INCREASE. They are additive to schema v1 (default 0), so an old
 stored file without them loads fine.
 
-**Per-cell model mirrors the native app**, not invented controls:
+**Per-cell model** (the single-audible pointer is retired — per-tile audio now):
   - per-cell ``channel`` (the slot's assigned channel slug, or null = empty),
+  - per-cell ``audio`` on/off (default false; ANY combination may be on — multiple
+    unmuted cells mix in the render's PulseAudio sink),
   - per-cell ``subtitles`` on/off (native ``captionsOnSlots`` is per-slot),
-  - one ``audible_cell`` (native ``audibleSlot`` single-audible model; null =
-    the whole wall is muted).
+  - per-cell ``reload`` (force-reload epoch).
+
+**Migration (load-time, idempotent):** an old stored file is upgraded in memory on
+read — an absent ``outputs`` block is seeded (``hls.resolution`` from the old
+``render.resolution``, ``mercury`` from defaults); a present ``audible_cell`` sets
+that cell's ``audio:true``. The legacy ``render`` + ``audible_cell`` keys are dropped
+from the validated result. The first PUT persists the new shape.
 
 All validation is **pure + testable here** (no FastAPI); the router calls
 :func:`validate_wall_config` with the live channel registry's slug set so a
@@ -78,6 +97,42 @@ FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT = 18.0, 58.0, 32.0
 FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT = 0.7, 1.6, 1.0
 TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT = 0.6, 2.0, 1.0
 
+# ---- outputs (the multi-output fan-out) ----
+# The two outputs the wall fans out to. The block is a MAP so more can be added
+# later with no schema_version bump (add a validator + defaults entry — no migration).
+OUTPUT_NAMES = ("hls", "mercury")
+# Mercury publishes a 720p-ish screen-share into a voice channel; cap it at 1080p
+# (no point pushing a 4K wall down a chat pipe). The ladder is ascending, so the cap
+# is an index comparison.
+MERCURY_MAX_RESOLUTION = "1080p"
+DEFAULT_DISPLAY_NAME = "MyMTS News Wall"
+# bitrate_kbps is a fine-grained per-output knob, clamped to a sane band per
+# resolution: a floor that always carries motion, and a ceiling of ~3x the rung's
+# RECOMMENDED bitrate (mirrors renderer RENDER_BITRATES, in kbps) so a slider can't
+# ask for an absurd bitrate the encoder/queue can't sustain.
+BITRATE_KBPS_MIN = 500
+BITRATE_KBPS_CEIL = 60000
+RES_BITRATE_KBPS = {
+    "720p": 4000, "900p": 6000, "1080p": 8000, "1260p": 10000,
+    "1440p": 12000, "1620p": 14000, "1800p": 16000, "2160p": 20000,
+}
+
+
+def default_outputs() -> dict[str, Any]:
+    """The default outputs block: HLS on (the shipping VLC stream), Mercury off
+    (the inert shell pending credentials). Built fresh each call (never shared)."""
+    return {
+        "hls": {
+            "enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
+            "audio": True, "restart_epoch": 0,
+        },
+        "mercury": {
+            "enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
+            "audio": True, "restart_epoch": 0,
+            "channel_guid": "", "display_name": DEFAULT_DISPLAY_NAME,
+        },
+    }
+
 
 class WallConfigError(ValueError):
     """A wall config failed validation. The message is operator-facing (the
@@ -108,17 +163,16 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
     for i in range(count):
         channel = news[i] if i < len(news) else None
-        cells.append({"channel": channel, "subtitles": False, "reload": 0})
+        cells.append({"channel": channel, "audio": False, "subtitles": False, "reload": 0})
     return {
         "schema_version": WALL_SCHEMA_VERSION,
         "layout": {"rows": DEFAULT_ROWS, "cols": DEFAULT_COLS},
         "preset": DEFAULT_PRESET_ID,
-        "audible_cell": None,
         "reload_epoch": 0,
-        "render": {"resolution": DEFAULT_RESOLUTION},
         "feed_pct": FEED_PCT_DEFAULT,
         "feed_font": FEED_FONT_DEFAULT,
         "ticker_scale": TICKER_SCALE_DEFAULT,
+        "outputs": default_outputs(),
         "cells": cells,
     }
 
@@ -135,19 +189,90 @@ def _validate_scale(value: Any, name: str, lo: float, hi: float, default: float)
     return float(min(hi, max(lo, value)))
 
 
-def _validate_render(value: Any) -> dict[str, Any]:
-    """The render block: a resolution name from :data:`RENDER_RESOLUTIONS`.
-    Additive to schema v1 — absent ``render`` defaults to 1080p (an old stored
-    file loads unchanged). Returns the normalised ``{"resolution": name}``."""
+def _coerce_bool(value: Any, default: bool) -> bool:
+    """Coerce a flag to bool (absent → default). JSON bools pass through; anything
+    else is truth-tested — these are toggles, not strict enums."""
     if value is None:
-        return {"resolution": DEFAULT_RESOLUTION}
-    if not isinstance(value, dict):
-        raise WallConfigError("render must be an object with a resolution")
-    res = value.get("resolution", DEFAULT_RESOLUTION)
-    if res not in RENDER_RESOLUTIONS:
-        allowed = ", ".join(RENDER_RESOLUTIONS)
-        raise WallConfigError(f"render.resolution must be one of {allowed} (got {res!r})")
-    return {"resolution": res}
+        return default
+    if isinstance(value, bool):
+        return value
+    return bool(value)
+
+
+def _coerce_str(value: Any, default: str) -> str:
+    """A plain string field (absent/non-string → default). Used for the Mercury
+    non-secret fields (channel_guid / display_name) — never validated as a secret,
+    never logged as one."""
+    return value if isinstance(value, str) else default
+
+
+def _clamp_resolution(value: Any, default: str) -> str:
+    """Clamp a resolution to the ladder — an unknown value snaps to ``default``
+    (output knobs are operator-friendly: clamp, don't reject)."""
+    return value if value in RENDER_RESOLUTIONS else default
+
+
+def _cap_mercury_resolution(res: str) -> str:
+    """Cap a resolution at :data:`MERCURY_MAX_RESOLUTION` (the ladder is ascending,
+    so the cap is an index comparison)."""
+    if RENDER_RESOLUTIONS.index(res) > RENDER_RESOLUTIONS.index(MERCURY_MAX_RESOLUTION):
+        return MERCURY_MAX_RESOLUTION
+    return res
+
+
+def _clamp_bitrate_kbps(value: Any, resolution: str) -> int:
+    """Clamp ``bitrate_kbps`` to a sane band for the resolution: a floor that always
+    carries motion, and a ceiling of ~3x the rung's recommended bitrate. A
+    non-integer falls to the rung's recommended value, then is clamped."""
+    rec = RES_BITRATE_KBPS.get(resolution, 8000)
+    ceil = min(BITRATE_KBPS_CEIL, rec * 3)
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        v = rec
+    return max(BITRATE_KBPS_MIN, min(ceil, v))
+
+
+def _validate_output(name: str, raw: Any, defaults: dict[str, Any]) -> dict[str, Any]:
+    """Validate ONE output entry against its defaults: resolution clamped to the
+    ladder (Mercury additionally ≤1080p), bitrate clamped per-resolution, the flags
+    coerced to bool, ``restart_epoch`` a non-negative monotonic counter. The Mercury
+    non-secret fields (channel_guid / display_name) are plain strings."""
+    src = raw if isinstance(raw, dict) else {}
+    res = _clamp_resolution(src.get("resolution", defaults["resolution"]), defaults["resolution"])
+    if name == "mercury":
+        res = _cap_mercury_resolution(res)
+    out: dict[str, Any] = {
+        "enabled": _coerce_bool(src.get("enabled"), defaults["enabled"]),
+        "resolution": res,
+        "bitrate_kbps": _clamp_bitrate_kbps(src.get("bitrate_kbps", defaults["bitrate_kbps"]), res),
+        "audio": _coerce_bool(src.get("audio"), defaults["audio"]),
+        "restart_epoch": _validate_reload(
+            src.get("restart_epoch"), f"outputs.{name}.restart_epoch"
+        ),
+    }
+    if name == "mercury":
+        out["channel_guid"] = _coerce_str(src.get("channel_guid"), defaults["channel_guid"])
+        out["display_name"] = _coerce_str(src.get("display_name"), defaults["display_name"])
+    return out
+
+
+def _validate_outputs(raw_outputs: Any, legacy_render: Any) -> dict[str, Any]:
+    """Validate the outputs block. MIGRATION: when ``outputs`` is absent, seed
+    ``hls.resolution`` from the legacy ``render.resolution`` (so an old stored file
+    keeps its canvas), and create ``mercury`` from defaults. Only the known outputs
+    (:data:`OUTPUT_NAMES`) are produced; an unknown extra key is dropped (a future
+    output adds a defaults entry here — no schema bump)."""
+    defaults = default_outputs()
+    if not isinstance(raw_outputs, dict):
+        raw_outputs = {}
+        legacy_res = legacy_render.get("resolution") if isinstance(legacy_render, dict) else None
+        if legacy_res in RENDER_RESOLUTIONS:
+            defaults["hls"]["resolution"] = legacy_res
+    return {
+        name: _validate_output(name, raw_outputs.get(name), defaults[name])
+        for name in OUTPUT_NAMES
+    }
 
 
 def _validate_reload(value: Any, name: str) -> int:
@@ -183,10 +308,10 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         don't understand is rejected, never half-applied);
       - ``layout.rows`` / ``layout.cols`` are ints in 1..3;
       - ``cells`` is a list of length ``rows*cols``; each cell's ``channel`` is
-        null or a slug in ``valid_slugs``; ``subtitles`` is a bool (default
-        false);
-      - ``audible_cell`` is null or a valid cell index whose cell has a channel
-        (you can't make an empty cell audible — the single-audible model);
+        null or a slug in ``valid_slugs``; ``audio`` + ``subtitles`` are bools
+        (default false; any combination of audio cells allowed);
+      - ``outputs`` is the fan-out map (hls + mercury), each clamped to the ladder
+        + sane bitrate (Mercury ≤1080p); absent → seeded (migrating ``render``);
       - ``preset`` is null or a string (informational).
     """
     if not isinstance(raw, dict):
@@ -213,6 +338,12 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
             f"cells must have exactly rows*cols = {count} entries (got {len(cells_raw)})"
         )
 
+    # MIGRATION input: the retired single-audible pointer. A valid index folds into
+    # that cell's `audio:true` below (an explicit per-cell `audio` always wins).
+    legacy_audible = raw.get("audible_cell")
+    if not (isinstance(legacy_audible, int) and not isinstance(legacy_audible, bool)):
+        legacy_audible = None
+
     cells: list[dict[str, Any]] = []
     for i, cell in enumerate(cells_raw):
         if not isinstance(cell, dict):
@@ -228,29 +359,24 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         subtitles = cell.get("subtitles", False)
         if not isinstance(subtitles, bool):
             raise WallConfigError(f"cells[{i}].subtitles must be true/false")
+        # Per-tile audio (default false; any combination allowed). An absent flag on
+        # a cell the legacy `audible_cell` pointed at migrates to audio:true.
+        audio_raw = cell.get("audio")
+        audio = (
+            True if (audio_raw is None and legacy_audible == i)
+            else _coerce_bool(audio_raw, False)
+        )
         reload = _validate_reload(cell.get("reload"), f"cells[{i}].reload")
-        cells.append({"channel": channel, "subtitles": subtitles, "reload": reload})
-
-    audible = raw.get("audible_cell")
-    if audible is not None:
-        if not isinstance(audible, int) or isinstance(audible, bool):
-            raise WallConfigError("audible_cell must be a cell index or null")
-        if not (0 <= audible < count):
-            raise WallConfigError(
-                f"audible_cell must be in 0..{count - 1} (got {audible})"
-            )
-        if cells[audible]["channel"] is None:
-            raise WallConfigError(
-                f"audible_cell {audible} points at an empty cell — only a cell with "
-                "a channel can be the audio source"
-            )
+        cells.append(
+            {"channel": channel, "audio": audio, "subtitles": subtitles, "reload": reload}
+        )
 
     preset = raw.get("preset")
     if preset is not None and not isinstance(preset, str):
         raise WallConfigError("preset must be a string or null")
 
     reload_epoch = _validate_reload(raw.get("reload_epoch"), "reload_epoch")
-    render = _validate_render(raw.get("render"))
+    outputs = _validate_outputs(raw.get("outputs"), raw.get("render"))
     feed_pct = _validate_scale(
         raw.get("feed_pct"), "feed_pct", FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT
     )
@@ -266,12 +392,11 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         "schema_version": WALL_SCHEMA_VERSION,
         "layout": {"rows": rows, "cols": cols},
         "preset": preset,
-        "audible_cell": audible,
         "reload_epoch": reload_epoch,
-        "render": render,
         "feed_pct": feed_pct,
         "feed_font": feed_font,
         "ticker_scale": ticker_scale,
+        "outputs": outputs,
         "cells": cells,
     }
 
@@ -294,6 +419,24 @@ def _merge_cells(
         base = dict(stored_cell) if isinstance(stored_cell, dict) else {}
         base.update(cell)
         out.append(base)
+    return out
+
+
+def _merge_outputs(
+    stored_outputs: Any, incoming_outputs: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge an incoming outputs map onto the stored one per-output AND per-field:
+    ``outputs.hls.bitrate_kbps`` alone overrides only that field — it preserves
+    ``outputs.hls.resolution`` and the whole ``outputs.mercury`` entry. A non-dict
+    output value passes through for the validator to reject. Pure."""
+    out: dict[str, Any] = copy.deepcopy(stored_outputs) if isinstance(stored_outputs, dict) else {}
+    for name, fields in incoming_outputs.items():
+        if isinstance(fields, dict):
+            base = dict(out.get(name)) if isinstance(out.get(name), dict) else {}
+            base.update(fields)
+            out[name] = base
+        else:
+            out[name] = copy.deepcopy(fields)
     return out
 
 
@@ -326,6 +469,8 @@ def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
     for key, value in incoming.items():
         if key == "cells" and isinstance(value, list):
             merged["cells"] = _merge_cells(stored.get("cells") or [], value)
+        elif key == "outputs" and isinstance(value, dict):
+            merged["outputs"] = _merge_outputs(stored.get("outputs"), value)
         else:
             merged[key] = copy.deepcopy(value)
     return merged
@@ -343,19 +488,29 @@ def clamp_reload_monotonic(
     be able to rewind a force-reload another surface (``/control/``) already
     bumped. Per-cell counters clamp **by index** (the same slot model the rest of
     the config uses); a grid resize simply has no old counterpart for new indices
-    (→ floor 0). Pure; returns a new dict (never mutates the inputs).
+    (→ floor 0). The same monotonic rule covers each output's ``restart_epoch``
+    (the per-output encoder/publisher cycle counter, §4). Pure; returns a new dict.
     """
     old_cells = old_config.get("cells") or []
     cells: list[dict[str, Any]] = []
     for i, cell in enumerate(new_config.get("cells") or []):
         old_reload = old_cells[i].get("reload", 0) if i < len(old_cells) else 0
         cells.append({**cell, "reload": max(cell.get("reload", 0), old_reload)})
+    old_outputs = old_config.get("outputs") or {}
+    outputs: dict[str, Any] = {}
+    for name, out in (new_config.get("outputs") or {}).items():
+        if not isinstance(out, dict):
+            outputs[name] = out
+            continue
+        old_epoch = (old_outputs.get(name) or {}).get("restart_epoch", 0)
+        outputs[name] = {**out, "restart_epoch": max(out.get("restart_epoch", 0), old_epoch)}
     return {
         **new_config,
         "reload_epoch": max(
             new_config.get("reload_epoch", 0), old_config.get("reload_epoch", 0)
         ),
         "cells": cells,
+        "outputs": outputs,
     }
 
 
