@@ -25,7 +25,12 @@ PLAYLIST_NAME = "playlist.m3u8"
 _SEGMENT_RE = re.compile(r"seg_\d+\.ts")
 
 # no-store: HLS is live; never let a cache pin a stale playlist/segment.
-_NO_CACHE = {"Cache-Control": "no-store"}
+# Access-Control-Allow-Origin: * — the HLS is PUBLIC video (no secret); a browser HLS
+# consumer (the Mercury publisher's livekit-client, served from a different local
+# origin; any in-browser player) fetches the playlist + segments cross-origin via XHR,
+# which CORS otherwise blocks. Read-only GET of our own renderer output → ACAO:* is
+# the standard, safe posture for an HLS endpoint.
+_STREAM_HEADERS = {"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"}
 
 
 def get_router(stream_dir: str) -> APIRouter:
@@ -51,7 +56,7 @@ def get_router(stream_dir: str) -> APIRouter:
                 raise HTTPException(status_code=404, detail="not found")
         except (OSError, ValueError) as e:
             raise HTTPException(status_code=404, detail="not found") from e
-        return FileResponse(real, media_type=media_type, headers=_NO_CACHE)
+        return FileResponse(real, media_type=media_type, headers=_STREAM_HEADERS)
 
     # GET + HEAD: some strict players (incl. tvOS clients) HEAD-probe a manifest
     # / segment before fetching; a GET-only route 405s the probe and can stall

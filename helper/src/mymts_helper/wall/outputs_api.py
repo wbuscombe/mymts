@@ -138,6 +138,10 @@ def get_router(
                 entry["detail"] = r.get(
                     "detail", "Renderer not reporting" if not reporting else ""
                 )
+                # The real publisher reports these; absent (stub / no report) → None.
+                entry["viewer_count"] = r.get("viewer_count")
+                entry["last_error"] = r.get("last_error")
+                entry["room"] = r.get("room", "")
             else:
                 entry["state"] = r.get("state", ("stopped" if o.get("enabled") else "disabled"))
                 entry["playlist_path"] = r.get(

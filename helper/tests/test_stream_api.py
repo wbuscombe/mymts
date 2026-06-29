@@ -186,3 +186,16 @@ def test_config_reads_stream_http_port(monkeypatch):
     assert Config.from_env().stream_http_port == 8082
     monkeypatch.delenv("STREAM_HTTP_PORT", raising=False)
     assert Config.from_env().stream_http_port is None
+
+
+def test_stream_serves_cors_header_for_browser_consumers(tmp_path: Path):
+    # The HLS is public video; a browser HLS consumer (the Mercury publisher's
+    # livekit-client, served from a different local origin) fetches it cross-origin,
+    # which CORS otherwise blocks. The playlist + segments carry Access-Control-Allow-Origin: *.
+    stream = tmp_path / "stream"
+    stream.mkdir()
+    (stream / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:4.0,\nseg_00001.ts\n")
+    (stream / "seg_00001.ts").write_bytes(b"\x47" + b"\x00" * 187)
+    c = _client(tmp_path, stream_dir=str(stream))
+    assert c.get("/api/stream/playlist.m3u8").headers.get("access-control-allow-origin") == "*"
+    assert c.get("/api/stream/seg_00001.ts").headers.get("access-control-allow-origin") == "*"
