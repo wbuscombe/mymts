@@ -341,7 +341,7 @@ function mercuryCard(o, rt) {
   card.appendChild(head);
 
   // Honest needs-setup checklist (renderer-computed). Actions stay disabled until
-  // every item is satisfied; this build's stub NEVER connects.
+  // every item is satisfied (creds present + tailnet reachable).
   const cl = rt.checklist || {};
   const ready = cl.key_present === true && cl.channel_set === true && cl.tailnet_reachable === true;
   const checklist = node("div", "mercury-checklist");
@@ -355,7 +355,14 @@ function mercuryCard(o, rt) {
   checklist.appendChild(item(cl.tailnet_reachable, "Tailnet reachable"));
   checklist.appendChild(item(cl.channel_set, "Channel set"));
   card.appendChild(checklist);
-  card.appendChild(node("div", "mercury-detail", rt.detail || "Pending credentials (Ryan)"));
+  // Live publisher line: viewer count when publishing, the last error when errored.
+  const live = [];
+  if (state === "publishing" || state === "dynacast_paused") {
+    live.push(rt.viewer_count != null ? `${rt.viewer_count} viewer${rt.viewer_count === 1 ? "" : "s"}` : "0 viewers");
+  }
+  if (state === "error" && rt.last_error) live.push(`error: ${rt.last_error}`);
+  card.appendChild(node("div", "mercury-detail", rt.detail || "Pending credentials"));
+  if (live.length) card.appendChild(node("div", "mercury-live", live.join(" · ")));
 
   // Pre-fillable config fields (no secrets) — editable NOW so Will can stage ahead.
   const guid = node("input", "mercury-input");

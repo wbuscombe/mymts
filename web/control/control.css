@@ -185,6 +185,14 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .check.bad .check-mark { color: var(--err); }
 .check.unknown .check-mark { color: var(--muted); }
 .mercury-detail { font-size: 12px; color: var(--warn); }
+/* Live Mercury publisher states (the real LiveKit screen_share publisher). */
+.output-state.state-publishing { background: rgba(67,196,120,0.16); color: var(--ok); }
+.output-state.state-connected,
+.output-state.state-connecting { background: rgba(78,161,255,0.14); color: var(--accent); }
+.output-state.state-dynacast_paused { background: rgba(139,151,170,0.16); color: var(--muted); }
+.output-state.state-reconnecting { background: rgba(224,179,65,0.16); color: var(--warn); }
+.output-state.state-error { background: rgba(236,106,106,0.16); color: var(--err); }
+.mercury-live { font-size: 12px; color: var(--ok); margin-top: 2px; }
 .mercury-input {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; font-size: 13px; max-width: 62%; min-width: 0;
