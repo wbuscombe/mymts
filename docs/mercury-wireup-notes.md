@@ -1,29 +1,35 @@
-# Mercury output — wire-up notes (the spec for the real LiveKit publisher)
+# Mercury output — wire-up notes
 
-This is a **spec / decision-record** for the future step that replaces
-`renderer/mercury.py`'s `StubMercuryPublisher` with a real LiveKit publisher. The
-abstraction (`MercuryPublisher`) and the renderer's output manager already route the
-`mercury` output to it; only the *implementation* is deferred. The swap point is the
-greppable boundary comment:
+> **Status: IMPLEMENTED (2026-06-29); pending prod creds + tailnet.** The real LiveKit
+> publisher now ships at the `MERCURY-WIRE-UP` seam, verified end-to-end against a local
+> dev SFU. The mechanism + the full investigation (why the browser SDK, why
+> `captureStream` of the HLS instead of `getDisplayMedia`, the dev-SFU recipe) live in
+> **`docs/decisions/0003`**. This file is the original spec, kept for the note-by-note
+> requirements (E/K/L/B/D/C/G/H/I/J/M/18) it captured — all of which the implementation
+> honors.
+
+The abstraction (`MercuryPublisher`) and the renderer's output manager route the
+`mercury` output to the publisher. The swap point is the greppable boundary comment:
 
 ```
-# MERCURY-WIRE-UP: replace StubMercuryPublisher with the real LiveKit
-# screen_share publisher
+# MERCURY-WIRE-UP: the real LiveKit screen_share publisher (browser SDK on the
+# shared Xvfb) — replaces the former StubMercuryPublisher.
 ```
 
-## What ships today (the inert shell)
+## What ships now (the real publisher; stub = no-creds fallback)
 
 - The wall config has an `outputs.mercury` entry (disabled by default), pre-fillable
   in `/control/` (`channel_guid`, `display_name`, resolution ≤1080p, bitrate, audio).
   **No secrets in the config.**
-- The renderer composites the wall ONCE and could fan a Mercury encode branch off the
-  same capture (an H.264 video at the Mercury resolution/bitrate) — but in this build
-  the `mercury` output routes to the **stub**, which:
-  - reports `disabled` / `needs_setup` / `ready_not_wired` (never "connected"),
-  - computes a setup checklist (LiveKit key present? channel set? tailnet reachable?),
-  - opens **no socket** and mints **no token** on `start`/`stop`/`restart`,
-  - short-circuits the tailnet probe until the key + channel are present, so the
-    default (no creds) performs **zero** network egress.
+- The renderer composites the wall ONCE → HLS. The Mercury publisher (a publisher Chrome
+  running `livekit-client`) RE-USES that single render: it plays the HLS and publishes
+  `video.captureStream()` as a simulcast `source: screen_share` track (render-once; no
+  second compositing). The token is minted server-side; the API secret never reaches the
+  browser.
+- With **no `LIVEKIT_API_KEY`/`SECRET`** the renderer falls back to the inert
+  **`StubMercuryPublisher`**: `disabled`/`needs_setup`, opens no socket, mints no token,
+  short-circuits the tailnet probe until key + channel are present → the default (no
+  creds) performs **zero** egress to Mercury.
 
 ## The five things the operator (Ryan) must supply
 

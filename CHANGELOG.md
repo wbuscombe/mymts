@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## feat(renderer,helper,web): Mercury LiveKit screen_share publisher — verified against a local dev SFU (2026-06-29)
+
+The Mercury output's `StubMercuryPublisher` is replaced with the REAL LiveKit publisher at the
+`MERCURY-WIRE-UP` seam: the wall is published into a Mercury voice channel as a simulcast
+`source: screen_share` track. Built + verified END-TO-END against a throwaway local LiveKit dev SFU;
+it goes live on Mercury as a pure config swap once the prod creds + tailnet land. Renderer / helper /
+web only — native unchanged.
+
+- **feat: real publisher via the BROWSER SDK on a publisher Chrome.** A dedicated Chrome in the
+  renderer container runs `livekit-client` (vendored, same-origin) — Mercury's hand-rolled
+  `/livekit-proxy` is only proven against the browser client (note M), so a server SDK is off the
+  table. The token is minted server-side (HS256, no PyJWT) with the exact publish-only grant
+  (`canSubscribe`/`canPublishData` false, identity `mymts-wall-bot`, 24h, re-minted on reload); the
+  API secret never reaches the browser.
+- **feat: render-once capture via `captureStream()` of the single HLS render.** `getDisplayMedia`
+  framebuffer capture is non-functional under the renderer's headless Xvfb (Chromium's X11 capturer
+  fails `SelectSource`/`NotReadableError` across every flag), so the publisher re-uses the one
+  composite the renderer already produces — it plays the wall's HLS in a hidden `<video>` and
+  publishes `video.captureStream()` (no second compositing; carries the wall's mixed audio). The
+  off-screen publisher window (kept out of the HLS `x11grab`) needs anti-backgrounding flags so Chrome
+  doesn't suspend its media decode.
+- **feat: FORCED screen-share simulcast + the Mercury facts.** `simulcast: true` + an explicit layer
+  ladder (1080/720/360, top = `mercury.resolution`) — screen-share simulcast is off by default (note B);
+  `source: screen_share` (note D); `--host-resolver-rules` maps the prod host → the tailnet IP (note H);
+  backed-off single-instance reconnect (note G/18); `dynacast` idle-pause reported as `dynacast_paused`,
+  never torn down (note C). `Access-Control-Allow-Origin: *` added to `/api/stream` (the publisher
+  fetches the HLS cross-origin).
+- **feat: `/control` Mercury card is now functional** — live states (`connecting | connected |
+  publishing | dynacast_paused | reconnecting | error | needs_setup | disabled`) + viewer count + last
+  error; the renderer status file carries them. No creds → the inert stub (zero egress), unchanged.
+
+Verified against the dev SFU: a `SCREEN_SHARE` track, 3 simulcast layers, the publish-only grant,
+dynacast-pause-not-fatal, and forced-disconnect → backed-off reconnect → recovery. Native unchanged →
+**no version tag** (kept in `[Unreleased]`). See ARCHITECTURE §38 + `docs/decisions/0003`.
+
 ## feat(helper,web,discord-activity): Discord as a unified output — an Activity that plays the wall (2026-06-28)
 
 Discord becomes the **third output destination** (alongside HLS/VLC live + Mercury stubbed), with the
