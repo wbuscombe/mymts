@@ -294,9 +294,11 @@ class MultiOutputFanout(unittest.TestCase):
 
 
 class MercuryStub(unittest.TestCase):
-    """The StubMercuryPublisher state machine — and that it NEVER opens a connection."""
+    """The StubMercuryPublisher (the no-creds fallback) — needs_setup/disabled, and it
+    NEVER opens a connection. The credentialed publishing path is RealMercuryPublisher
+    (see test_mercury.py)."""
 
-    def _boom_probe(self, _url):
+    def _boom_probe(self, *_a, **_k):
         raise AssertionError("the stub opened a network probe — egress leak!")
 
     def test_disabled_state_no_probe(self):
@@ -317,24 +319,17 @@ class MercuryStub(unittest.TestCase):
         self.assertIn("LiveKit key", st["detail"])
         self.assertFalse(st["checklist"]["key_present"])
 
-    def test_ready_not_wired_when_all_present(self):
-        import mercury
-        env = {"LIVEKIT_API_KEY": "k", "LIVEKIT_API_SECRET": "s", "LIVEKIT_HOST": "wss://h:7095/x"}
-        p = mercury.StubMercuryPublisher(env=env, log=lambda m: None, probe=lambda u: True)
-        p.configure({"enabled": True, "channel_guid": "g", "resolution": "720p"})
-        st = p.status()
-        self.assertEqual(st["state"], "ready_not_wired")
-        self.assertTrue(all(st["checklist"][k] for k in ("key_present", "channel_set", "tailnet_reachable")))
-
     def test_start_stop_restart_are_inert(self):
         import mercury
         logs = []
+        # The stub is the NO-CREDS fallback (env has no key): start/stop/restart must
+        # not raise and must open NO connection — they only log intent.
         p = mercury.StubMercuryPublisher(env={}, log=logs.append, probe=self._boom_probe)
         p.configure({"enabled": True, "channel_guid": "g", "resolution": "720p"})
         p.start()                                    # must not raise, must not connect
         p.stop()
         p.restart()
-        self.assertTrue(any("NOT wired" in m for m in logs))
+        self.assertTrue(any("not publishing" in m or "no-op" in m for m in logs))
 
 
 class StatusFile(unittest.TestCase):

@@ -47,6 +47,11 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY supervisor.py run.py healthcheck.py mercury.py ./
+# The Mercury publisher's browser assets (publisher.html/js + vendored livekit-client,
+# served same-origin by the in-process localhost control server to the publisher
+# Chrome). Inert static files — no secrets. (A missing COPY here would crash-loop the
+# real publisher on start; the stub path is unaffected.)
+COPY publisher ./publisher
 RUN chown -R 10002:10002 /app
 
 USER 10002:10002

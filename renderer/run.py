@@ -402,9 +402,15 @@ def main() -> int:
 
     env = dict(os.environ, DISPLAY=DISPLAY, PULSE_SINK=SINK)
 
-    # Mercury output → the publisher abstraction (the STUB in this build: inert,
-    # never opens a connection). Configured + (inert-)started if enabled.
-    publisher = mercury.StubMercuryPublisher(log=log)
+    # Mercury output → the publisher abstraction. The factory picks the REAL LiveKit
+    # screen_share publisher (a publisher Chrome on THIS Xvfb running livekit-client)
+    # when credentials are present, else the inert stub (zero egress). The publisher
+    # captures this same framebuffer (render-once preserved) and parks its own window
+    # off the WxH canvas — set_canvas tells it which canvas to park off of.
+    publisher = mercury.make_publisher(
+        env=os.environ, log=log, display=DISPLAY, chromium_bin=CHROMIUM_BIN
+    )
+    publisher.set_canvas(WIDTH, HEIGHT, FPS)
     publisher.configure(outputs.get("mercury", {}))
     if outputs.get("mercury", {}).get("enabled"):
         publisher.start()

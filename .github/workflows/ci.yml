@@ -54,6 +54,9 @@ jobs:
       - name: Discord Activity tests (node:test — OAuth wiring + hls attach + error states)
         run: node --test discord-activity/test/*.test.mjs
 
+      - name: Mercury publisher tests (node:test — forced screen_share simulcast wiring)
+        run: node --test renderer/test/*.test.mjs
+
       - name: Renderer pure tests (supervisor policy + encode-pipeline flags — stdlib, no deps)
         run: python3 -m unittest discover -s renderer
 
