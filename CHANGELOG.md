@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-06
+
+## feat(app,helper,web): unified channel registry — every surface offers the same lineup + native renders weather-radar tiles (2026-07-06)
+
+The per-surface split is gone. Weather radar was shipped web-only (behind `/api/channels?widgets=1`,
+native picker untouched), which meant the native TV wall was silently missing the radar-loop channels
+the web wall had. That model was wrong. The channel registry is now **unified**: `/api/channels` serves
+the SAME lineup — video channels AND the non-video WIDGET sources (the NWS radar loops) — to **every**
+surface (native TV picker, web `/app/`, `/control/`), with no membership-changing query param. A
+channel's `kind` tells a renderer HOW to render it (video vs animated image), never WHETHER to list it.
+The native app **learned to render the radar loop** in a tile, and a cross-surface parity test guards the
+registry so a surface can never silently drift from the others again.
+
+- **feat(helper): kill the `?widgets=1` gate — radar is a first-class registry entry everywhere.**
+  `GET /api/channels` appends the weather-radar widgets unconditionally; the old opt-in param is removed
+  (a stale `?widgets=1` from a cached client is now an ignored no-op, same response). A `is_widget_kind`
+  concept (`weather.regions.WIDGET_KINDS`) names the render-type distinction the registry keys on. The M3U
+  playlist export (`/api/playlist.m3u`, for VLC/IPTV) honestly omits widgets — a non-video widget has no
+  stream URL to hand an external player (honest capability degradation, made explicit).
+- **feat(app): native weather-radar tiles.** A new `Slot.Radar` renders the helper-proxied NWS RIDGE loop
+  as an animated GIF via **Coil** (`GifDecoder`, works on the Onn box's minSdk-23 floor) — no ExoPlayer, no
+  audio, no captions, no LIVE badge. The radar channel's relative `/api/weather/radar/<region>` proxy path
+  is resolved against the helper base into an absolute image URL; the tile cache-busts a fresh scan every
+  ~5 min (parity with the web tile). The per-tile Audio/Captions/Reconnect controls are hidden for a widget
+  slot (honest UI — a widget has none of those). Radar slugs are kept OUT of the auto-filled default grid
+  (`LineupSelector`), matching the web — radar stays an explicit per-cell pick.
+- **feat(app): section taxonomy aligned across surfaces.** `ChannelCategory.ORDER` now compiles the
+  full section set (adds Weather Radar / Cameras / Government / Nature / Space) so the native picker orders
+  sections IDENTICALLY to the helper `CATEGORY_ORDER` and the web `CHANNEL_CATEGORY_ORDER`.
+- **test: cross-surface parity contract.** `scripts/check_channel_parity.py` (CI) asserts the three
+  surfaces' section taxonomies are the same ordered list and that no surface has a widget gate — the guard
+  against a future "web got X, native didn't" recurrence. Per-surface unit tests assert a radar widget
+  survives each surface's list-building (helper `/api/channels`, web `sectionChannels`, native
+  `parseChannels` + `sectionedByCategory` + `TileSlotResolver`).
+- **docs(findings): new-source probes — 0 added, 5 honest-no.** Researched + live-probed C-SPAN, CNN
+  International, the EarthCam Wrigleyville cams (Addison & Sheffield; Clark & Addison), and a Field Museum
+  cam (`docs/findings/23-*`). All honest-no with specifics: C-SPAN unchanged (MVPD-gated / no FAST); CNN
+  International is back on US FAST but Pluto-JWT-token-gated (a change worth noting); all three Chicago
+  EarthCam cams exist and play but are Referer-gated + rotating-signed-token, sustainable only via a
+  fragile page-scraping resolver — declined per the no-brittle-scraping discipline. Lineup count unchanged.
+
 ## feat(renderer,helper,web): Mercury LiveKit screen_share publisher — verified against a local dev SFU (2026-06-29)
 
 The Mercury output's `StubMercuryPublisher` is replaced with the REAL LiveKit publisher at the
