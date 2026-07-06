@@ -106,13 +106,13 @@ class TileSlotResolverTest {
             defaultChannels = listOf(playable("a")),
             allChannels = listOf(playable("a"), radar("kilx")),
             overrides = mapOf(0 to "weather-radar-kilx"),
-            helperBaseUrl = "http://192.168.50.92:8080",
+            helperBaseUrl = "http://192.0.2.10:8080",   // RFC 5737 documentation IP (no real topology)
         )
         val s0 = slots[0]
         assertTrue("slot 0 should be Radar but was $s0", s0 is Slot.Radar)
         s0 as Slot.Radar
         assertEquals("weather-radar-kilx", s0.channel.slug)
-        assertEquals("http://192.168.50.92:8080/api/weather/radar/kilx", s0.imageUrl)
+        assertEquals("http://192.0.2.10:8080/api/weather/radar/kilx", s0.imageUrl)
         assertEquals("slot-0/radar-weather-radar-kilx", s0.id)
         // no radar slug leaks a Playing slot
         assertTrue(slots.none { it is Slot.Playing && it.channel.isRadar })
