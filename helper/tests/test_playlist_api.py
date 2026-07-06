@@ -19,6 +19,7 @@ from mymts_helper import db
 from mymts_helper.app import create_app
 from mymts_helper.channels import registry
 from mymts_helper.config import Config
+from mymts_helper.weather.regions import is_widget_kind
 
 URL_BBC = "https://cdn.test/bbc/master.m3u8"
 URL_CNN = "https://cdn.test/cnn/master.m3u8"
@@ -167,7 +168,13 @@ def test_phantom_default_playlist_lists_the_seeded_lineup(tmp_path: Path) -> Non
     app = create_app(_cfg(tmp_path, phantom=True))
     with TestClient(app) as client:
         channels = client.get("/api/channels").json()["channels"]
-        live = [c for c in channels if c["status"] == "live"]
+        # The M3U is a VIDEO-STREAM export for external players (VLC/IPTV). Since the
+        # unified registry (2026-07), /api/channels also lists non-video WIDGET sources
+        # (the weather-radar loops) to every picker surface — but those have no stream
+        # URL to hand an external player, so the playlist honestly omits them (they live
+        # in the DB-backed stream set only). Compare against the stream-able live set.
+        live = [c for c in channels
+                if c["status"] == "live" and not is_widget_kind(c["kind"])]
         assert live  # phantom preloads seeded channels as live
         body = client.get("/api/playlist.m3u").text
         assert body.startswith("#EXTM3U")

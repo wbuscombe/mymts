@@ -168,16 +168,24 @@ def test_app_mounts_radar_route_with_honest_offline(tmp_path: Path):
     assert client.get("/api/weather/radar/bogus").status_code == 404
 
 
-def test_channels_widgets_param_is_web_only(tmp_path: Path):
+def test_channels_lists_radar_widgets_unconditionally(tmp_path: Path):
+    """Unified registry (2026-07): radar is served to EVERY surface — the plain
+    /api/channels the native TV picker fetches now lists the radar widgets, closing
+    the old web-only split. There is no membership-changing query param: the legacy
+    ?widgets=1 an older cached web client might still send is ignored, yielding the
+    identical set (no per-surface filtering anywhere)."""
     client = _client(tmp_path)
     base = client.get("/api/channels").json()["channels"]
-    assert not any(c["slug"].startswith("weather-radar-") for c in base)   # native unchanged
-    widg = client.get("/api/channels?widgets=1").json()["channels"]
-    radar = [c for c in widg if c["slug"].startswith("weather-radar-")]
-    assert len(radar) == len(regions.radar_slugs())
-    assert any(c["slug"] == "weather-radar-kilx" for c in radar)
+    radar = [c for c in base if c["slug"].startswith("weather-radar-")]
+    assert len(radar) == len(regions.radar_slugs())          # ALL radar slugs, no gate
+    assert any(c["slug"] == "weather-radar-kilx" for c in radar)   # the local (central IL)
+    assert all(c["kind"] == regions.RADAR_KIND for c in radar)
+    assert all(regions.is_widget_kind(c["kind"]) for c in radar)   # widget-kind concept
     assert all(c["category"] == "Weather Radar" for c in radar)
     assert all(c["current_url"].startswith("/api/weather/radar/") for c in radar)
+    # The legacy opt-in param is a no-op now — same membership, not an error.
+    legacy = client.get("/api/channels?widgets=1").json()["channels"]
+    assert {c["slug"] for c in legacy} == {c["slug"] for c in base}
 
 
 def _cells_with_first(client: TestClient, channel: str) -> list[dict]:

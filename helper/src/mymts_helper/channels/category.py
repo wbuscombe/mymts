@@ -30,9 +30,10 @@ BUSINESS = "Business"
 WEATHER = "Weather"
 # Weather RADAR widgets (the free public NWS radar-loop cell source) — a distinct
 # section from the WEATHER video channels so the animated-image radar sources group
-# together and read clearly as widgets. Web-first: surfaced only to the web picker
-# (GET /api/channels?widgets=1), so the native TV picker is unchanged. See
-# weather/regions.py (the source of truth) and the web CHANNEL_CATEGORY_ORDER.
+# together and read clearly as widgets. UNIFIED REGISTRY (2026-07): surfaced to EVERY
+# picker (native TV, web /app/, /control/) — the native app renders the loop in a tile
+# now, so this is no longer web-only. See weather/regions.py (the source of truth), the
+# native ChannelCategory.WEATHER_RADAR, and the web CHANNEL_CATEGORY_ORDER.
 WEATHER_RADAR = "Weather Radar"
 # Session-gated official .gov feeds (chamber floors, committee hearings, agency
 # briefings) — honest-offline when not in session. Split out of US News so that

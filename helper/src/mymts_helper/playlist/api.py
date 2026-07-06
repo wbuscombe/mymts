@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Response
 from .. import db
 from ..channels import registry
 from ..channels.registry import ChannelRow
+from ..weather.regions import is_widget_kind
 from .m3u import M3U_MEDIA_TYPE, render_m3u
 from .profiles import DEFAULT_PROFILE_NAME, Profile, select_channels
 
@@ -36,7 +37,12 @@ def get_router(db_path: Path, profiles: Mapping[str, Profile]) -> APIRouter:
         # Honest inclusion: only channels that actually resolve right now.
         # current_url is masked to None unless status==live, so this is the
         # same gate the TV + web clients use — never list a dead endpoint.
-        return [c for c in rows if c.status == "live" and c.current_url]
+        # Widget-kind sources (weather-radar loops) are non-video and never DB rows,
+        # but the `is_widget_kind` guard makes the video-stream-only intent explicit:
+        # the M3U hands external players a stream URL, which an animated-image widget
+        # has none of — so it is honestly omitted here (it still lists in every picker).
+        return [c for c in rows
+                if c.status == "live" and c.current_url and not is_widget_kind(c.kind)]
 
     def _playlist_response(profile: Profile) -> Response:
         selected = select_channels(profile, _live_channels())

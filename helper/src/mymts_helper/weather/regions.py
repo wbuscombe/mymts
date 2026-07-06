@@ -32,6 +32,21 @@ RADAR_SLUG_PREFIX = "weather-radar-"
 # so the wall render branches to the animated-image path instead of a <video>.
 RADAR_KIND = "weather-radar"
 
+# The set of non-video WIDGET kinds. A widget-kind channel is a FIRST-CLASS registry
+# entry every surface LISTS (the unified-registry rule); its `kind` only tells a
+# renderer HOW to render it — an animated image / looping frames rather than a
+# <video>/ExoPlayer stream — and carries no audio or caption track (so a surface's
+# per-tile audio/caption toggles are hidden for it). Radar is the first widget kind;
+# a future widget (e.g. a metar/alerts card) joins this set. The web (render.mjs),
+# the native app (Channel.isWidget), and the parity guard all key on this concept.
+WIDGET_KINDS = frozenset({RADAR_KIND})
+
+
+def is_widget_kind(kind: object) -> bool:
+    """True iff ``kind`` names a non-video WIDGET source (rendered as an animated
+    image, listed on every surface, no audio/captions). See :data:`WIDGET_KINDS`."""
+    return isinstance(kind, str) and kind in WIDGET_KINDS
+
 # The free public NWS RIDGE "standard" animated loop (a 10-frame GIF89a). Verified
 # live: CONUS_loop.gif (national) + {SITE}_loop.gif per WSR-88D site, ~5-min scan.
 NWS_LOOP_URL = "https://radar.weather.gov/ridge/standard/{site}_loop.gif"
@@ -106,9 +121,10 @@ def loop_url_for_region(region: RadarRegion) -> str:
 
 
 def channel_entries() -> list[dict[str, Any]]:
-    """Synthetic ``/api/channels`` rows for the radar regions — surfaced (web-only,
-    via ``?widgets=1``) so each region appears in the per-cell picker under the
-    Weather Radar group and the wall can look it up by slug exactly like a video
+    """Synthetic ``/api/channels`` rows for the radar regions — surfaced to EVERY
+    surface (unified registry, 2026-07: no ``?widgets`` gate) so each region appears in
+    the per-cell picker under the Weather Radar group on the native TV, the web /app/,
+    and /control/ alike, and the wall can look it up by slug exactly like a video
     channel. ``current_url`` is the helper proxy path (the wall reads it as the
     image src — parity with a video channel's HLS url); ``status=live`` +
     ``browser_playable`` make it sort + render as an available source. The actual

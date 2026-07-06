@@ -36,14 +36,11 @@ def get_router(db_path: Path, data_dir: str) -> APIRouter:
             slugs = [c.slug for c in registry.list_channels(conn, enabled_only=True)]
         # Radar pseudo-sources are legal cell assignments too — a cell may hold a
         # `weather-radar-*` slug exactly like a channel slug (the region is encoded
-        # in the slug; weather/regions.py is the source of truth). This is wall-
-        # config validation only; it's independent of the web-only picker `?widgets`.
-        # SCOPE (intentional): weather radar is a WEB-WALL widget. A native TV client
-        # (which fetches /api/channels without ?widgets and so never lists radar)
-        # that reads a stored radar cell simply won't resolve the slug and GRACEFULLY
-        # falls back to its default cycler for that cell — the same honest degradation
-        # it already does for any unknown slug, not a crash. Radar renders on the web
-        # wall (the headless renderer captures /app/); the native app is unchanged.
+        # in the slug; weather/regions.py is the source of truth).
+        # UNIFIED REGISTRY (2026-07): radar is now offered to EVERY surface — the native
+        # TV picker lists it (no more `?widgets` gate) and the native app renders the
+        # loop in a tile, so a stored radar cell resolves + renders on the TV wall, the
+        # web /app/, and the headless renderer alike. This is wall-config validation only.
         return slugs + weather_regions.radar_slugs()
 
     def _payload(config: dict[str, Any], stored: bool) -> dict[str, Any]:
