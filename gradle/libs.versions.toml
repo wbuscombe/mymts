@@ -19,6 +19,12 @@ compose-tv-material = "1.1.0-alpha01"
 # hard boundary (no camera-auth model on the TV).
 media3 = "1.5.0"
 
+# Coil — image loader for the weather-radar WIDGET tiles (animated NWS loop GIFs).
+# coil-gif's GifDecoder works on all API levels (minSdk 23), so the radar loop
+# animates on the Onn box without an API-28 ImageDecoder gate. Radar is the first
+# non-video widget kind the native wall renders (unified registry, 2026-07).
+coil = "2.7.0"
+
 # Test deps
 junit = "4.13.2"
 mockk = "1.13.13"
@@ -51,6 +57,9 @@ compose-tv-material = { group = "androidx.tv", name = "tv-material", version.ref
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls", version.ref = "media3" }
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+coil-gif = { group = "io.coil-kt", name = "coil-gif", version.ref = "coil" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }

@@ -36,8 +36,13 @@ class LineupSelector(
         if (maxCount == 0 || playable.isEmpty()) return emptyList()
 
         // Filter out denied slugs at the source — they can't sneak back in
-        // via the "rest" tier later in this function.
-        val allowed = playable.filterNot { it.slug in denySlugs }
+        // via the "rest" tier later in this function. Radar WIDGET sources are
+        // excluded too: since the unified registry (2026-07) lists radar to the
+        // native picker, `playable` now includes the weather-radar pseudo-channels
+        // (they report status=live), but radar is an EXPLICIT per-cell pick — it must
+        // never be auto-swept into a default/top-up video slot. Parity with the web
+        // client's isRadarSlug exclusion. An operator still assigns it from the picker.
+        val allowed = playable.filterNot { it.slug in denySlugs || Channel.isRadarSlug(it.slug) }
         if (allowed.isEmpty()) return emptyList()
 
         val bySlug = allowed.associateBy { it.slug }

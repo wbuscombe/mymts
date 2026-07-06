@@ -19,10 +19,26 @@ object ChannelCategory {
     const val GLOBAL_NEWS = "Global News"
     const val BUSINESS = "Business"
     const val WEATHER = "Weather"
+    // The 2026-06 server-first sections (previously appended alphabetically by
+    // [sectionedByCategory]) are now compiled into [ORDER] so the native picker
+    // orders sections IDENTICALLY to the helper (channels/category.py CATEGORY_ORDER)
+    // and the web (render.mjs CHANNEL_CATEGORY_ORDER) — the cross-surface parity lock.
+    // WEATHER_RADAR is the widget section the native app now renders (unified registry,
+    // 2026-07); the ambient trio (Cameras/Nature/Space) + Government were already
+    // server-served and are made explicit here so all three surfaces agree on order.
+    const val WEATHER_RADAR = "Weather Radar"
+    const val CAMERAS = "Cameras"
+    const val GOVERNMENT = "Government"
+    const val NATURE = "Nature"
+    const val SPACE = "Space"
     const val GENERAL = "General"
 
-    /** Section render order in the picker. */
-    val ORDER: List<String> = listOf(SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, GENERAL)
+    /** Section render order in the picker — IDENTICAL to the helper CATEGORY_ORDER and
+     *  the web CHANNEL_CATEGORY_ORDER (asserted by scripts/check_channel_parity.py). */
+    val ORDER: List<String> = listOf(
+        SPORTS, US_NEWS, GLOBAL_NEWS, BUSINESS, WEATHER, WEATHER_RADAR,
+        CAMERAS, GOVERNMENT, NATURE, SPACE, GENERAL,
+    )
 
     private val BY_SLUG: Map<String, String> = mapOf(
         "cbs-sports-hq" to SPORTS,

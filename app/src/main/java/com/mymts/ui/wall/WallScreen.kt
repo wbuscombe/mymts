@@ -244,12 +244,15 @@ fun WallScreen(
                 ).invoke(playable)
         }
     }
-    val slots = remember(effectiveTileCount, defaultOrder, allChannels, overrides) {
+    val slots = remember(effectiveTileCount, defaultOrder, allChannels, overrides, helperBaseUrl) {
         TileSlotResolver.resolve(
             tileCount = effectiveTileCount,
             defaultChannels = defaultOrder,
             allChannels = allChannels,
             overrides = overrides,
+            // Radar widget slots resolve their relative `/api/weather/radar/<region>`
+            // proxy path against the helper base into an absolute image URL the tile loads.
+            helperBaseUrl = helperBaseUrl,
         )
     }
 
@@ -645,6 +648,9 @@ fun WallScreen(
                 onReconnect = { requestReconnect(pending.slotIndex); menu.dismissSelection() },
                 onCancel = { menu.dismissSelection() },
                 modifier = Modifier.fillMaxSize(),
+                // Radar (widget) slots hide the audio/captions/reconnect rows — a widget
+                // has no audio or caption track and nothing to reconnect (it auto-refreshes).
+                isWidget = slots.getOrNull(pending.slotIndex) is TileSlotResolver.Slot.Radar,
             )
         }
         if (pending is MenuState.PendingSelection.SlotPicker) {
@@ -829,6 +835,7 @@ private val STAGED_LEAGUES = emptyList<String>()
 
 private fun TileSlotResolver.Slot.displayLabel(): String = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.label
+    is TileSlotResolver.Slot.Radar -> channel.label
     is TileSlotResolver.Slot.Offline -> "${channel.label} (offline)"
     is TileSlotResolver.Slot.Empty -> "— empty —"
 }
@@ -843,6 +850,12 @@ private fun TileSlotResolver.Slot.toRow(): SlotRow = when (this) {
         slotIndex = index,
         title = "Slot ${index + 1}",
         detail = "${channel.label} · live",
+        detailStyle = SlotRow.DetailStyle.Live,
+    )
+    is TileSlotResolver.Slot.Radar -> SlotRow(
+        slotIndex = index,
+        title = "Slot ${index + 1}",
+        detail = "${channel.label} · radar",
         detailStyle = SlotRow.DetailStyle.Live,
     )
     is TileSlotResolver.Slot.Offline -> SlotRow(
@@ -861,6 +874,7 @@ private fun TileSlotResolver.Slot.toRow(): SlotRow = when (this) {
 
 private fun TileSlotResolver.Slot.currentSlug(): String? = when (this) {
     is TileSlotResolver.Slot.Playing -> channel.slug
+    is TileSlotResolver.Slot.Radar -> channel.slug
     is TileSlotResolver.Slot.Offline -> channel.slug
     is TileSlotResolver.Slot.Empty -> null
 }

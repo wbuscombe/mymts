@@ -33,6 +33,36 @@ data class Channel(
     /** A channel is playable iff the helper says it's live AND gave us a URL. */
     val isPlayable: Boolean
         get() = status == Status.LIVE && !currentUrl.isNullOrBlank()
+
+    /**
+     * A non-video WIDGET source (unified registry, 2026-07). The helper lists these
+     * on `/api/channels` for EVERY surface (no per-surface gate); [kind] tells the
+     * wall to render an animated image (Coil) instead of a `<video>`/ExoPlayer stream,
+     * and a widget carries no audio/caption track (its per-tile toggles are hidden).
+     * Currently the NWS weather-radar loops; a future widget kind joins [WIDGET_KINDS].
+     * Mirrors the helper's `weather.regions.is_widget_kind`.
+     */
+    val isWidget: Boolean get() = kind in WIDGET_KINDS
+
+    /** The weather-radar widget specifically (an NWS RIDGE loop image). */
+    val isRadar: Boolean get() = kind == KIND_WEATHER_RADAR
+
+    companion object {
+        /** Wire `kind` for the NWS weather-radar widget (mirrors helper RADAR_KIND). */
+        const val KIND_WEATHER_RADAR = "weather-radar"
+
+        /** Every non-video widget kind. Radar is the first; future widgets join here. */
+        val WIDGET_KINDS = setOf(KIND_WEATHER_RADAR)
+
+        /** Slug prefix the helper assigns radar pseudo-channels (mirrors helper
+         *  RADAR_SLUG_PREFIX + web RADAR_SLUG_PREFIX). Used by the lineup selector to
+         *  keep radar OUT of the auto-filled default grid (it is an explicit per-cell
+         *  pick only), parity with the web client. */
+        const val RADAR_SLUG_PREFIX = "weather-radar-"
+
+        /** True iff [slug] is a radar pseudo-channel slug (e.g. weather-radar-kilx). */
+        fun isRadarSlug(slug: String): Boolean = slug.startsWith(RADAR_SLUG_PREFIX)
+    }
 }
 
 /**

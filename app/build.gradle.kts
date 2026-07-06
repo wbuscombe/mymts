@@ -180,10 +180,10 @@ android {
         // it with headroom and matches Media3 1.5.0's effective floor.
         minSdk = 23
         targetSdk = 35
-        // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.3.0 -> 300.
+        // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.4.0 -> 400.
         // (Was pinned at the stale `1`.) Bump in lockstep with the released tag so
         // versionCode rises with versionName (which tracks the git tag below).
-        versionCode = 300
+        versionCode = 400
         versionName = getVersionFromGit()
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
@@ -280,6 +280,12 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
+
+    // Coil — animated-GIF rendering for the weather-radar WIDGET tiles (the NWS
+    // RIDGE loop, helper-proxied). Video tiles use ExoPlayer above; widget tiles
+    // use Coil (no audio, no captions). See ui/wall/WallTile.kt (RadarTile).
+    implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

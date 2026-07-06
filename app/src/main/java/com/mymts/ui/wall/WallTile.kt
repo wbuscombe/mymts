@@ -1,6 +1,7 @@
 package com.mymts.ui.wall
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,20 +11,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.ExoPlayer
+import coil.ImageLoader
+import coil.compose.SubcomposeAsyncImage
+import coil.decode.GifDecoder
+import coil.request.ImageRequest
 import com.mymts.data.helper.Channel
 import com.mymts.player.StreamPlayer
 import com.mymts.ui.components.StreamSurface
+import kotlinx.coroutines.delay
 
 /**
  * One tile — a [video + label] UNIT (2026-06-11 refactor).
@@ -54,6 +66,7 @@ internal fun WallTile(
         when (val slot = bound.slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
             is TileSlotResolver.Slot.Offline -> OfflineTile(channel = slot.channel)
+            is TileSlotResolver.Slot.Radar -> RadarTile(slot)
             is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player)
         }
     }
@@ -105,6 +118,86 @@ private fun PlayingTile(slot: TileSlotResolver.Slot.Playing, player: StreamPlaye
             StateBadge(state = state)
         }
         LabelStrip(label = slot.channel.label, color = labelColor)
+    }
+}
+
+/**
+ * A weather-radar WIDGET tile (unified registry, 2026-07) — the helper-proxied NWS
+ * RIDGE animated loop, rendered as an animated GIF via Coil (NOT an ExoPlayer surface).
+ * Same [video-area + label-strip] shape as a video tile so the wall reads uniformly.
+ * No audio, no captions, no LIVE/state badge — a widget has no stream liveness to
+ * assert; its honesty is the `<img>` load itself. Honest fallback: until the FIRST
+ * frame loads it shows a quiet "radar unavailable" state (never a fake radar); the
+ * helper already serves last-good-stale frames, so a later refresh almost always still
+ * yields a real (if stale) image rather than an error.
+ */
+@Composable
+private fun RadarTile(slot: TileSlotResolver.Slot.Radar) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().weight(1f).background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            RadarImage(imageUrl = slot.imageUrl, label = slot.channel.label)
+        }
+        LabelStrip(label = slot.channel.label, color = WallColors.LabelPrimary)
+    }
+}
+
+/** A radar tile re-pulls a fresh NWS scan on this cadence (the loop GIF refreshes
+ *  ~every 5 min; the helper cache is region-keyed so the cache-bust hits a warm cache,
+ *  not NWS). Mirrors the web client's RADAR_REFRESH_MS. */
+private const val RADAR_REFRESH_MS = 5 * 60 * 1000L
+
+@Composable
+private fun RadarImage(imageUrl: String, label: String) {
+    val context = LocalContext.current
+    // One Coil ImageLoader with the GIF decoder (GifDecoder works on all API levels,
+    // so the loop animates on the Onn box's minSdk-23 floor). Remembered on the app
+    // context so tiles don't rebuild it each recomposition.
+    val loader = remember(context.applicationContext) {
+        ImageLoader.Builder(context)
+            .components { add(GifDecoder.Factory()) }
+            .build()
+    }
+    // Bump a refresh tick every RADAR_REFRESH_MS so the tile pulls the next scan.
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(imageUrl) {
+        while (true) {
+            delay(RADAR_REFRESH_MS)
+            tick++
+        }
+    }
+    // Cache-bust so a refresh actually refetches (distinct URL → new Coil cache key);
+    // the helper's region-keyed cache means NWS isn't re-hit per pull.
+    val model = remember(imageUrl, tick) {
+        val sep = if (imageUrl.contains('?')) "&" else "?"
+        "$imageUrl${sep}t=$tick"
+    }
+
+    SubcomposeAsyncImage(
+        model = ImageRequest.Builder(context)
+            .data(model)
+            .crossfade(false)
+            .build(),
+        imageLoader = loader,
+        contentDescription = label,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize(),
+        loading = { RadarPlaceholder(label, "loading radar…") },
+        error = { RadarPlaceholder(label, "weather radar unavailable") },
+    )
+}
+
+@Composable
+private fun RadarPlaceholder(label: String, sub: String) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(WallColors.DeadTile),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = label, color = WallColors.LabelPrimary, fontSize = 12.sp, maxLines = 1)
+        Text(text = sub, color = WallColors.LabelGhost, fontSize = 10.sp)
     }
 }
 

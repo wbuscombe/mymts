@@ -85,4 +85,62 @@ class TileSlotResolverTest {
             assertTrue(e.message!!.contains("tileCount"))
         }
     }
+
+    // ---- weather-radar WIDGET slots (unified registry, 2026-07) ----
+
+    private fun radar(region: String, live: Boolean = true) = Channel(
+        slug = "weather-radar-$region",
+        label = "Radar $region",
+        kind = Channel.KIND_WEATHER_RADAR,
+        currentUrl = if (live) "/api/weather/radar/$region" else null,
+        status = if (live) Channel.Status.LIVE else Channel.Status.UNAVAILABLE,
+        lastSuccessAt = null, lastError = null, errorCount = 0,
+    )
+
+    @Test fun `a radar override resolves to a Radar slot with an absolute image url`() {
+        // A radar channel's current_url is a RELATIVE proxy path; the resolver joins it
+        // onto the helper base so the tile has an absolute URL to load — it is NOT a
+        // Playing slot (no ExoPlayer / StreamSpec, which would reject the non-http url).
+        val slots = TileSlotResolver.resolve(
+            tileCount = 2,
+            defaultChannels = listOf(playable("a")),
+            allChannels = listOf(playable("a"), radar("kilx")),
+            overrides = mapOf(0 to "weather-radar-kilx"),
+            helperBaseUrl = "http://192.168.50.92:8080",
+        )
+        val s0 = slots[0]
+        assertTrue("slot 0 should be Radar but was $s0", s0 is Slot.Radar)
+        s0 as Slot.Radar
+        assertEquals("weather-radar-kilx", s0.channel.slug)
+        assertEquals("http://192.168.50.92:8080/api/weather/radar/kilx", s0.imageUrl)
+        assertEquals("slot-0/radar-weather-radar-kilx", s0.id)
+        // no radar slug leaks a Playing slot
+        assertTrue(slots.none { it is Slot.Playing && it.channel.isRadar })
+    }
+
+    @Test fun `an offline radar channel resolves to Offline, never a broken Radar`() {
+        val slots = TileSlotResolver.resolve(
+            tileCount = 1,
+            defaultChannels = emptyList(),
+            allChannels = listOf(radar("kilx", live = false)),
+            overrides = mapOf(0 to "weather-radar-kilx"),
+            helperBaseUrl = "http://h:8080",
+        )
+        assertTrue(slots[0] is Slot.Offline)
+    }
+
+    @Test fun `absolutizeRadarUrl joins relative paths and passes absolutes through`() {
+        assertEquals("http://h:8080/api/weather/radar/kilx",
+            TileSlotResolver.absolutizeRadarUrl("http://h:8080", "/api/weather/radar/kilx"))
+        assertEquals("http://h:8080/api/weather/radar/kilx",
+            TileSlotResolver.absolutizeRadarUrl("http://h:8080/", "/api/weather/radar/kilx"))
+        assertEquals("http://h:8080/x",
+            TileSlotResolver.absolutizeRadarUrl("http://h:8080", "x"))
+        // already-absolute passes through untouched
+        assertEquals("https://cdn/x.gif",
+            TileSlotResolver.absolutizeRadarUrl("http://h:8080", "https://cdn/x.gif"))
+        // blank base leaves the path unchanged (tile honestly fails to load, no crash)
+        assertEquals("/api/weather/radar/kilx",
+            TileSlotResolver.absolutizeRadarUrl("", "/api/weather/radar/kilx"))
+    }
 }

@@ -102,6 +102,34 @@ class HelperClientParseTest {
         assertFalse(x.isPlayable)
     }
 
+    @Test fun `parses a weather-radar WIDGET row (unified registry) — kind, category, relative url`() {
+        // The native client now receives the radar widgets on /api/channels (no gate).
+        // The parser keeps them verbatim: kind=weather-radar, the served category, and
+        // the RELATIVE proxy current_url (resolved to absolute later by TileSlotResolver).
+        val body = """
+          {
+            "schema_version": 1,
+            "channels": [
+              {
+                "slug": "weather-radar-kilx", "label": "Central Illinois (Lincoln)",
+                "kind": "weather-radar", "category": "Weather Radar",
+                "current_url": "/api/weather/radar/kilx", "status": "live",
+                "enabled": true, "last_success_at": null, "last_error": null, "error_count": 0
+              }
+            ]
+          }
+        """.trimIndent()
+        val snap = HelperClient.parseChannels(JSONObject(body))
+        val r = snap.channels.single()
+        assertEquals("weather-radar-kilx", r.slug)
+        assertEquals(Channel.KIND_WEATHER_RADAR, r.kind)
+        assertEquals("Weather Radar", r.category)
+        assertEquals("/api/weather/radar/kilx", r.currentUrl)
+        assertTrue("a widget kind is recognized", r.isWidget)
+        assertTrue(r.isRadar)
+        assertTrue("a live radar widget is treated as available", r.isPlayable)
+    }
+
     @Test fun `current_url blank string treated as null`() {
         val body = """
           {

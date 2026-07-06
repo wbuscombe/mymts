@@ -53,6 +53,18 @@ class LineupSelectorTest {
         assertEquals(listOf("a", "e"), pick)
     }
 
+    @Test fun `radar widget slugs are never swept into the default or top-up lineup`() {
+        // Unified registry (2026-07): /api/channels now lists the radar widgets to the
+        // native client, and they report status=live (so they're in `playable`). Radar
+        // is an EXPLICIT per-cell pick — it must NOT auto-fill a default/top-up video
+        // slot (parity with the web isRadarSlug exclusion). Even with room to spare, a
+        // weather-radar-* slug is skipped by both the preferred/fallback and rest tiers.
+        val playable = listOf(ch("a"), ch("weather-radar-kilx"), ch("weather-radar-conus"), ch("z"))
+        val pick = selector(playable).map { it.slug }
+        assertEquals(listOf("a", "z"), pick)   // radar excluded; z tops up the rest
+        assertTrue(pick.none { Channel.isRadarSlug(it) })
+    }
+
     @Test fun `zero playable — empty result`() {
         assertTrue(selector(emptyList()).isEmpty())
     }

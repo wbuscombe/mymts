@@ -56,6 +56,9 @@ internal fun bindTiles(
     when (slot) {
         is TileSlotResolver.Slot.Empty -> BoundTile(slot = slot, player = null)
         is TileSlotResolver.Slot.Offline -> BoundTile(slot = slot, player = null)
+        // A radar WIDGET renders an animated image, not an ExoPlayer surface —
+        // no player is ever paired with it (WallTile routes it to RadarTile).
+        is TileSlotResolver.Slot.Radar -> BoundTile(slot = slot, player = null)
         is TileSlotResolver.Slot.Playing -> {
             val candidate = findPlayer(slot.spec.id)
             // The init {} check inside BoundTile guarantees the player's

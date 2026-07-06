@@ -75,6 +75,11 @@ fun SlotControlsOverlay(
     onReconnect: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    // A non-video WIDGET slot (radar): a widget has no audio track, no caption track,
+    // and no stream to reconnect (it auto-refreshes), so those three rows are hidden —
+    // the widget's controls are just Channel (re-pick) + Close. Parity with the web +
+    // the "per-tile toggles hidden for widget kinds on every surface" rule.
+    isWidget: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -97,6 +102,7 @@ fun SlotControlsOverlay(
                 onToggleCaptions = onToggleCaptions,
                 onReconnect = onReconnect,
                 onCancel = onCancel,
+                isWidget = isWidget,
             )
         }
     }
@@ -113,6 +119,7 @@ private fun ControlsCard(
     onToggleCaptions: () -> Unit,
     onReconnect: () -> Unit,
     onCancel: () -> Unit,
+    isWidget: Boolean,
 ) {
     val firstRowFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { firstRowFocusRequester.requestFocus() }
@@ -148,34 +155,39 @@ private fun ControlsCard(
             onSelect = onPickChannel,
             modifier = Modifier.focusRequester(firstRowFocusRequester),
         )
-        ControlRow(
-            title = "Audio",
-            detail = audioState.detail(),
-            detailStyle = if (audioState == AudioState.Audible) MenuColors.RowDetail
-            else MenuColors.RowDetailMuted,
-            onSelect = onToggleAudio,
-        )
-        ControlRow(
-            title = "Captions",
-            detail = captionsState.detail(),
-            detailStyle = when (captionsState) {
-                CaptionsState.On -> MenuColors.RowDetail
-                CaptionsState.NotAvailable -> MenuColors.RowDetailOffline
-                CaptionsState.Off -> MenuColors.RowDetailMuted
-            },
-            onSelect = onToggleCaptions,
-            // Disabled-looking when the stream has no soft track:
-            // the row still navigates (we want focus to land here so
-            // the operator can confirm what's happening) but pressing
-            // SELECT is a no-op — caller doesn't toggle when no track.
-            isEffectivelyDisabled = captionsState == CaptionsState.NotAvailable,
-        )
-        ControlRow(
-            title = "Reconnect",
-            detail = "reload this stream",
-            detailStyle = MenuColors.RowDetailMuted,
-            onSelect = onReconnect,
-        )
+        // Audio / Captions / Reconnect apply only to VIDEO streams. A widget slot
+        // (radar) has none of these — its rows are hidden so the operator isn't shown
+        // a toggle that can't do anything (honest UI, parity with the web widget tile).
+        if (!isWidget) {
+            ControlRow(
+                title = "Audio",
+                detail = audioState.detail(),
+                detailStyle = if (audioState == AudioState.Audible) MenuColors.RowDetail
+                else MenuColors.RowDetailMuted,
+                onSelect = onToggleAudio,
+            )
+            ControlRow(
+                title = "Captions",
+                detail = captionsState.detail(),
+                detailStyle = when (captionsState) {
+                    CaptionsState.On -> MenuColors.RowDetail
+                    CaptionsState.NotAvailable -> MenuColors.RowDetailOffline
+                    CaptionsState.Off -> MenuColors.RowDetailMuted
+                },
+                onSelect = onToggleCaptions,
+                // Disabled-looking when the stream has no soft track:
+                // the row still navigates (we want focus to land here so
+                // the operator can confirm what's happening) but pressing
+                // SELECT is a no-op — caller doesn't toggle when no track.
+                isEffectivelyDisabled = captionsState == CaptionsState.NotAvailable,
+            )
+            ControlRow(
+                title = "Reconnect",
+                detail = "reload this stream",
+                detailStyle = MenuColors.RowDetailMuted,
+                onSelect = onReconnect,
+            )
+        }
         Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
         ControlRow(
             title = "Close",

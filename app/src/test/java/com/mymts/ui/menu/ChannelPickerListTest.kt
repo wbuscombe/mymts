@@ -135,15 +135,60 @@ class ChannelPickerListTest {
     }
 
     @Test fun `an unrecognized server category is shown, ordered just before General`() {
-        // A future server-side section (e.g. "Government") the app doesn't know must
-        // still appear — appended before General — never silently dropped.
+        // A future server-side section the app's compiled ORDER doesn't know must still
+        // appear — appended (alphabetically) before General — never silently dropped.
+        // ("Podcasts" is deliberately NOT in ChannelCategory.ORDER; Government/Cameras/
+        // Nature/Space now ARE, so they no longer exercise this unknown-append path.)
         val list = listOf(
             ch("cbs-sports-hq", category = "Sports"),
-            ch("us-senate-floor", category = "Government"),
+            ch("some-show", category = "Podcasts"),
             ch("redbull-tv", category = "General"),
         )
         val sections = pickerSections(list)
-        assertEquals(listOf("Sports", "Government", "General"), sections.map { it.first })
+        assertEquals(listOf("Sports", "Podcasts", "General"), sections.map { it.first })
+    }
+
+    // ---- weather-radar WIDGET section (unified registry, 2026-07) ----
+
+    private fun radar(region: String) = Channel(
+        slug = "weather-radar-$region",
+        label = "Radar $region",
+        kind = Channel.KIND_WEATHER_RADAR,
+        category = ChannelCategory.WEATHER_RADAR,
+        currentUrl = "/api/weather/radar/$region",
+        status = Channel.Status.LIVE,
+        lastSuccessAt = null, lastError = null, errorCount = 0,
+    )
+
+    @Test fun `radar widgets section under Weather Radar, right after Weather`() {
+        // The native picker now lists the radar widgets (no more web-only gate) and
+        // sections them under "Weather Radar", immediately after "Weather" — identical
+        // ordering to the helper CATEGORY_ORDER + web CHANNEL_CATEGORY_ORDER.
+        val list = listOf(
+            ch("cnn", category = "US News"),
+            ch("fox-weather", category = "Weather"),
+            radar("kilx"),
+            radar("conus"),
+            ch("earthcam-live", category = "Cameras"),
+        )
+        val sections = pickerSections(list)
+        assertEquals(
+            listOf("US News", "Weather", "Weather Radar", "Cameras"),
+            sections.map { it.first },
+        )
+        val radarSection = sections.first { it.first == "Weather Radar" }
+        assertEquals(listOf("weather-radar-kilx", "weather-radar-conus"),
+            radarSection.second.map { it.slug })
+    }
+
+    @Test fun `ChannelCategory ORDER matches the helper and web taxonomy exactly`() {
+        // The cross-surface parity lock (also enforced by scripts/check_channel_parity.py):
+        // native section order MUST equal the helper CATEGORY_ORDER / web CHANNEL_CATEGORY_ORDER.
+        assertEquals(
+            listOf("Sports", "US News", "Global News", "Business", "Weather",
+                "Weather Radar", "Cameras", "Government", "Nature", "Space", "General"),
+            ChannelCategory.ORDER,
+        )
     }
 
     @Test fun `blank server category falls back to the compiled slug map`() {

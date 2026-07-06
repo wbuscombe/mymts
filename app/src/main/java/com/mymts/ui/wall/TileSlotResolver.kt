@@ -51,6 +51,23 @@ object TileSlotResolver {
         }
 
         /**
+         * A slot holding a non-video WIDGET source — currently an NWS weather-radar
+         * loop (unified registry, 2026-07). Renders an animated image (Coil), NOT an
+         * ExoPlayer surface, so it is deliberately NOT a [Playing] slot: the video
+         * grid's player manager skips it and `WallTile` routes it to the radar tile.
+         * [imageUrl] is the ABSOLUTE helper URL (the channel's relative `current_url`
+         * proxy path resolved against the helper base) the tile loads as its image.
+         * No audio, no captions — the per-tile toggles are hidden for it.
+         */
+        data class Radar(
+            override val index: Int,
+            val channel: Channel,
+            val imageUrl: String,
+        ) : Slot() {
+            override val id: String get() = "slot-$index/radar-${channel.slug}"
+        }
+
+        /**
          * A genuinely empty slot — no operator assignment and no
          * default available. Renders a blank C2 tile with no label.
          */
@@ -81,6 +98,7 @@ object TileSlotResolver {
         defaultChannels: List<Channel>,
         allChannels: List<Channel> = defaultChannels,
         overrides: Map<Int, String> = emptyMap(),
+        helperBaseUrl: String = "",
     ): List<Slot> {
         require(tileCount >= 0) { "tileCount must be >= 0 (was $tileCount)" }
         if (tileCount == 0) return emptyList()
@@ -93,7 +111,7 @@ object TileSlotResolver {
             val overrideChannel = overrideSlug?.let { allBySlug[it] }
 
             when {
-                overrideChannel != null -> slotFromChannel(i, overrideChannel)
+                overrideChannel != null -> slotFromChannel(i, overrideChannel, helperBaseUrl)
                 defaultChannels.isEmpty() -> Slot.Empty(i)
                 else -> {
                     // Cycle the default list, skipping any channel the
@@ -102,14 +120,29 @@ object TileSlotResolver {
                     // an unassigned slot through the cycler.
                     val pool = defaultChannels.filterNot { it.slug in byOverrideSlug }
                     if (pool.isEmpty()) Slot.Empty(i)
-                    else slotFromChannel(i, pool[i % pool.size])
+                    else slotFromChannel(i, pool[i % pool.size], helperBaseUrl)
                 }
             }
         }
     }
 
-    private fun slotFromChannel(index: Int, channel: Channel): Slot =
-        if (channel.isPlayable && channel.currentUrl != null) {
+    private fun slotFromChannel(index: Int, channel: Channel, helperBaseUrl: String): Slot = when {
+        // A WIDGET source (radar): render an animated image, not an ExoPlayer stream.
+        // Its `current_url` is a RELATIVE helper proxy path (e.g. /api/weather/radar/kilx),
+        // not an http(s) stream URL, so it must NOT go through the StreamSpec path (which
+        // requires http(s)). Resolve it against the helper base into an absolute image URL.
+        channel.isWidget ->
+            if (channel.status == Channel.Status.LIVE && !channel.currentUrl.isNullOrBlank()) {
+                Slot.Radar(
+                    index = index,
+                    channel = channel,
+                    imageUrl = absolutizeRadarUrl(helperBaseUrl, channel.currentUrl),
+                )
+            } else {
+                Slot.Offline(index = index, channel = channel)
+            }
+
+        channel.isPlayable && channel.currentUrl != null ->
             Slot.Playing(
                 index = index,
                 channel = channel,
@@ -119,7 +152,22 @@ object TileSlotResolver {
                     url = channel.currentUrl,
                 ),
             )
-        } else {
-            Slot.Offline(index = index, channel = channel)
-        }
+
+        else -> Slot.Offline(index = index, channel = channel)
+    }
+
+    /**
+     * Resolve a radar channel's proxy path into an absolute URL the image loader
+     * can fetch. The helper serves radar's `current_url` as a same-origin RELATIVE
+     * path (`/api/weather/radar/<region>`) — the web client loads it same-origin, but
+     * the native app must join it onto the helper base it fetched `/api/channels` from.
+     * An already-absolute url passes through; a blank base leaves the path unchanged
+     * (the tile then honestly fails to load rather than crashing — production always
+     * supplies the base). Pure — unit-tested.
+     */
+    internal fun absolutizeRadarUrl(baseUrl: String, path: String): String = when {
+        path.startsWith("http://") || path.startsWith("https://") -> path
+        baseUrl.isBlank() -> path
+        else -> baseUrl.trimEnd('/') + if (path.startsWith("/")) path else "/$path"
+    }
 }
