@@ -59,11 +59,13 @@ async function getTicker(path) {
 
 export const api = {
   feed: (limit = 100) => getJson(`/api/feed?limit=${encodeURIComponent(limit)}`),
-  // widgets=1: also list the web-only WIDGET sources (the NWS weather-radar
-  // pseudo-channels) alongside the video channels, so they appear in the picker
-  // + are resolvable by the wall. The native TV client uses its own client and
-  // never sends this, so its channel list is unchanged.
-  channels: () => getJson(`/api/channels?widgets=1`),
+  // Unified registry (2026-07): /api/channels serves the SAME lineup to every
+  // surface — the video channels AND the non-video WIDGET sources (the NWS
+  // weather-radar loops) in one list. The former `?widgets=1` opt-in is gone (the
+  // native TV now lists + renders radar too), so this is a plain fetch. A channel's
+  // `kind` tells this client HOW to render each tile (video vs radar <img>), never
+  // whether to list it.
+  channels: () => getJson(`/api/channels`),
   presets: () => getJson(`/api/presets`),
   tickerMarkets: () => getTicker(`/api/ticker/markets`),
   tickerSports: () => getTicker(`/api/ticker/sports`),

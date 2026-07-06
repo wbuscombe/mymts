@@ -576,10 +576,10 @@ export const WEB_FALLBACK = ["c-span", "iss-feed", "white-house-tv", "newsmax", 
 export const WEB_DENY = new Set(["nasa-tv"]);
 
 /** The slug prefix the helper assigns weather-radar WIDGET sources (mirrors helper
- *  weather/regions.py RADAR_SLUG_PREFIX). Radar is an EXPLICIT per-cell pick — a
- *  non-video widget that must NEVER be swept into a DEFAULT / auto-filled lineup
- *  (parity with native, which never auto-fills radar; it's a web-only widget). The
- *  autofill + top-up paths exclude it; an operator still picks it from the picker. */
+ *  weather/regions.py RADAR_SLUG_PREFIX + native RadarChannel.SLUG_PREFIX). Radar is an
+ *  EXPLICIT per-cell pick — a non-video widget that must NEVER be swept into a DEFAULT /
+ *  auto-filled lineup (parity with native's LineupSelector, which now also excludes it).
+ *  The autofill + top-up paths exclude it; an operator still picks it from the picker. */
 export const RADAR_SLUG_PREFIX = "weather-radar-";
 export function isRadarSlug(slug) {
   return typeof slug === "string" && slug.startsWith(RADAR_SLUG_PREFIX);
@@ -774,9 +774,11 @@ export function browserPlayability(channel) {
  *  "General" so it's never dropped from the picker. */
 export const CHANNEL_CATEGORY_ORDER = [
   "Sports", "US News", "Global News", "Business", "Weather",
-  // Weather Radar: the free public NWS radar-loop WIDGET sources (web-only, served
-  // via /api/channels?widgets=1). Placed right after Weather, mirroring the helper
-  // CATEGORY_ORDER (channels/category.py) so both clients section it identically.
+  // Weather Radar: the free public NWS radar-loop WIDGET sources. Unified registry
+  // (2026-07): served to every surface on /api/channels (no more web-only gate).
+  // Placed right after Weather, mirroring the helper CATEGORY_ORDER
+  // (channels/category.py) + native ChannelCategory.ORDER so all three surfaces
+  // section it identically.
   "Weather Radar",
   // Government / Cameras / Nature / Space are the server-first sections native appends
   // ALPHABETICALLY before General, so they sit in that same order here for parity.
