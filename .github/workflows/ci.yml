@@ -45,6 +45,9 @@ jobs:
       - name: Cross-component schema_version consistency (ARCH-1)
         run: python3 scripts/check_schema_consistency.py
 
+      - name: Cross-surface channel-picker parity (unified registry — helper/web/native)
+        run: python3 scripts/check_channel_parity.py
+
       - name: adb deploy-invariant gate test (DEPLOY-2)
         run: bash scripts/test_adb_invariant.sh
 
