@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(discord-activity): stream requests forced through /.proxy/ + in-frame diagnostics (2026-07-07)
+
+The Discord Activity launched and OAuth completed, but the wall stayed black — the
+helper saw **zero** stream traffic. Root cause, in the code: every request was a bare
+relative URL (`api/stream/playlist.m3u8`, `api/discord/token`, …) that relied on the
+iframe base being Discord's `/.proxy/` — but Discord serves the Activity at the origin
+**root**, so those URLs resolved to `…discordsays.com/api/...` (outside `/.proxy/`) and
+Discord's CSP dropped the hls.js stream chain before it left the sandbox. (OAuth's
+simple `fetch`es were tolerated under the `/` mapping; the hls.js manifest+segment XHRs
+were not.) The app also never called the SDK's `patchUrlMappings`. Discord-Activity +
+helper only — native untouched (no APK/tag), Mercury inert, renderer unchanged.
+
+- **fix: one proxy base, used everywhere.** `proxied(path)` (activity-core) maps every
+  request to `${origin}/.proxy${path}` inside Discord (`isInsideDiscord()` detects the
+  `*.discordsays.com` host) and to the plain path when opened standalone at the public
+  origin — config, token, and playlist all go through it.
+- **fix: hls.js forced through the proxy, both belts.** (a) the playlist is loaded via
+  its proxied URL so relative `seg_N.ts` URIs resolve under `/.proxy/`; (b) a custom
+  hls.js loader (`makeProxyLoader` → `rewriteHlsUrl`) rewrites EVERY derived request —
+  segments, child manifests, redirects, absolute URIs — back under `/.proxy/`,
+  idempotently (blob:/data: MSE buffers untouched).
+- **feat: in-frame diagnostics overlay.** No DevTools inside Discord, so a dismissible
+  overlay (tap the corner ⓘ badge; auto-shown on a fatal error) reports the environment,
+  each OAuth stage, the resolved playlist URL, hls.js lifecycle, and any error's
+  type/details/failing-URL/HTTP-status — honest (never fakes progress), never a secret.
+- **test/helper: the passthrough M3U8 is verified relative-URI-only** (an absolute URI
+  would escape `/.proxy/`); `/.proxy/` prefix tolerance + path-safety unchanged. The
+  renderer already emits relative URIs (verified live), so no ffmpeg change was needed.
+
 ## [0.4.0] - 2026-07-06
 
 ## feat(app,helper,web): unified channel registry — every surface offers the same lineup + native renders weather-radar tiles (2026-07-06)

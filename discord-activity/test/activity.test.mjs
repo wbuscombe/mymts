@@ -9,7 +9,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  authorizeAndAuthenticate, attachStream,
+  authorizeAndAuthenticate, attachStream, makeProxyLoader,
+  isInsideDiscord, proxied, rewriteHlsUrl, formatHlsError,
   STREAM_PLAYLIST, TOKEN_PATH, CONFIG_PATH, OAUTH_SCOPE, ActivityError,
 } from "../activity-core.mjs";
 
@@ -110,26 +111,98 @@ test("authenticate failure / empty session surfaces stage=authenticate", async (
   );
 });
 
-// ----- the endpoint paths are RELATIVE (so they ride Discord's /.proxy/ base) -----
+// ----- proxy enforcement: every request forced through Discord's /.proxy/ path -----
 
-test("the stream/token/config paths are relative (proxy-safe)", () => {
-  for (const p of [STREAM_PLAYLIST, TOKEN_PATH, CONFIG_PATH]) {
-    assert.ok(!p.startsWith("/"), `${p} must be relative so it resolves under /.proxy/`);
-    assert.ok(!p.startsWith("http"), `${p} must not be an absolute URL`);
-  }
-  assert.equal(STREAM_PLAYLIST, "api/stream/playlist.m3u8");
+const DISCORD_LOC = { hostname: "1234567890.discordsays.com" };
+const BROWSER_LOC = { hostname: "wall.3slstudios.example" };
+const DISCORD_CTX = { origin: "https://1234567890.discordsays.com", inDiscord: true };
+const DIRECT_CTX = { origin: "https://wall.3slstudios.example", inDiscord: false };
+
+test("isInsideDiscord detects the *.discordsays.com iframe host, not a direct browser", () => {
+  assert.equal(isInsideDiscord(DISCORD_LOC), true);
+  assert.equal(isInsideDiscord({ hostname: "abc.discordsays.com" }), true);
+  assert.equal(isInsideDiscord(BROWSER_LOC), false);
+  assert.equal(isInsideDiscord({ hostname: "discordsays.com.evil.example" }), false); // suffix spoof
+  assert.equal(isInsideDiscord({}), false);
+  assert.equal(isInsideDiscord(null), false);
+});
+
+test("proxied() maps every path through /.proxy/ inside Discord, plain when direct", () => {
+  // Inside Discord: absolute URL onto the proxy origin, under /.proxy/.
+  assert.equal(
+    proxied(STREAM_PLAYLIST, DISCORD_CTX),
+    "https://1234567890.discordsays.com/.proxy/api/stream/playlist.m3u8",
+  );
+  assert.equal(proxied(TOKEN_PATH, DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/discord/token");
+  assert.equal(proxied(CONFIG_PATH, DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/discord/config");
+  // Direct browser: the plain path at the public origin (no /.proxy/).
+  assert.equal(proxied(STREAM_PLAYLIST, DIRECT_CTX), "https://wall.3slstudios.example/api/stream/playlist.m3u8");
+  // A path without a leading slash is normalized (the helper is the single source of truth).
+  assert.equal(proxied("api/x", DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/x");
+  // The constants are leading-slash paths (mapped, never used bare).
+  for (const p of [STREAM_PLAYLIST, TOKEN_PATH, CONFIG_PATH]) assert.ok(p.startsWith("/api/"));
+});
+
+test("rewriteHlsUrl forces any hls.js URL under /.proxy/, idempotently, inside Discord", () => {
+  // An already-proxied URL (a relative segment resolved against the proxied playlist) → passthrough.
+  const proxiedSeg = "https://1234567890.discordsays.com/.proxy/api/stream/seg_1.ts";
+  assert.equal(rewriteHlsUrl(proxiedSeg, DISCORD_CTX), proxiedSeg);
+  // An absolute URI the manifest could smuggle in (escaping /.proxy/) → re-homed onto the proxy path.
+  assert.equal(
+    rewriteHlsUrl("https://wall.3slstudios.example/api/stream/seg_9.ts", DISCORD_CTX),
+    "https://1234567890.discordsays.com/.proxy/api/stream/seg_9.ts",
+  );
+  // A root path that escaped /.proxy/ → fixed.
+  assert.equal(
+    rewriteHlsUrl("https://1234567890.discordsays.com/api/stream/seg_2.ts?x=1", DISCORD_CTX),
+    "https://1234567890.discordsays.com/.proxy/api/stream/seg_2.ts?x=1",
+  );
+  // blob:/data: (MSE source buffers) are never rewritten.
+  assert.equal(rewriteHlsUrl("blob:https://x/abc", DISCORD_CTX), "blob:https://x/abc");
+  // Outside Discord: a no-op.
+  assert.equal(rewriteHlsUrl("https://wall.3slstudios.example/api/stream/seg_9.ts", DIRECT_CTX),
+    "https://wall.3slstudios.example/api/stream/seg_9.ts");
+});
+
+test("makeProxyLoader rewrites context.url through the proxy before the base loader", () => {
+  const loads = [];
+  // A fake hls.js exposing a DefaultConfig.loader base (the real lib has XhrLoader).
+  const FakeHls = { DefaultConfig: { loader: class { load(ctx) { loads.push(ctx.url); } } } };
+  const Loader = makeProxyLoader(FakeHls, DISCORD_CTX);
+  const inst = new Loader();
+  const ctx = { url: "https://1234567890.discordsays.com/api/stream/seg_5.ts" };
+  inst.load(ctx, {}, {});
+  assert.equal(ctx.url, "https://1234567890.discordsays.com/.proxy/api/stream/seg_5.ts"); // rewritten in place
+  assert.deepEqual(loads, ["https://1234567890.discordsays.com/.proxy/api/stream/seg_5.ts"]); // base saw the proxied url
+  // A lib with no default loader (a bare fake) → null (caller omits the override).
+  assert.equal(makeProxyLoader({}, DISCORD_CTX), null);
+});
+
+test("formatHlsError names the type, details, failing URL, and HTTP status", () => {
+  const line = formatHlsError({
+    type: "networkError", details: "manifestLoadError",
+    url: "https://x/.proxy/api/stream/playlist.m3u8",
+    response: { code: 403 }, fatal: true,
+  });
+  assert.match(line, /networkError/);
+  assert.match(line, /manifestLoadError/);
+  assert.match(line, /playlist\.m3u8/);
+  assert.match(line, /HTTP 403/);
+  assert.match(line, /fatal/);
+  assert.equal(formatHlsError(null), "unknown hls error");   // honest, never blank
+  assert.equal(formatHlsError({}), "unknown hls error");
 });
 
 // ----- hls.js attach -----
 
 function fakeHls({ supported = true } = {}) {
-  const Events = { MANIFEST_PARSED: "manifestParsed", ERROR: "hlsError" };
+  const Events = { MANIFEST_LOADING: "manifestLoading", MANIFEST_PARSED: "manifestParsed", ERROR: "hlsError" };
   const ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError", OTHER_ERROR: "otherError" };
   const instances = [];
-  function Hls() {
+  function Hls(config) {
     const handlers = {};
     const inst = {
-      handlers, loaded: null, attached: null, destroyed: false,
+      handlers, config, loaded: null, attached: null, destroyed: false,
       startLoadCount: 0, recoverCount: 0,
       on(evt, cb) { (handlers[evt] = handlers[evt] || []).push(cb); },
       emit(evt, data) { (handlers[evt] || []).forEach((cb) => cb(evt, data)); },
@@ -145,6 +218,9 @@ function fakeHls({ supported = true } = {}) {
   Hls.isSupported = () => supported;
   Hls.Events = Events;
   Hls.ErrorTypes = ErrorTypes;
+  // The real lib exposes a default loader class hls.js instantiates per request;
+  // attachStream subclasses it (makeProxyLoader) to rewrite URLs through /.proxy/.
+  Hls.DefaultConfig = { loader: class { load() {} } };
   Hls.instances = instances;
   return Hls;
 }
@@ -201,4 +277,41 @@ test("attachStream reports an error when no HLS path is available", () => {
   const states = [];
   attachStream({ HlsLib: undefined, video, onState: (s) => states.push(s) });
   assert.ok(states.includes("error"));
+});
+
+test("attachStream loads the caller's proxied url + wires the /.proxy/ loader", () => {
+  const Hls = fakeHls();
+  const video = fakeVideo();
+  const url = "https://1234567890.discordsays.com/.proxy/api/stream/playlist.m3u8";
+  attachStream({ HlsLib: Hls, video, url, proxyCtx: DISCORD_CTX, onState: () => {} });
+  const inst = Hls.instances[0];
+  assert.equal(inst.loaded, url);                              // belt (a): the proxied playlist url
+  assert.equal(typeof inst.config.loader, "function");        // belt (b): the URL-rewriting loader is wired
+  // and that wired loader rewrites through /.proxy/ (same behavior as makeProxyLoader)
+  const l = new inst.config.loader();
+  const ctx = { url: "https://1234567890.discordsays.com/api/stream/seg_7.ts" };
+  l.load(ctx, {}, {});
+  assert.equal(ctx.url, "https://1234567890.discordsays.com/.proxy/api/stream/seg_7.ts");
+});
+
+test("attachStream feeds the diagnostics overlay: playlist url, lifecycle, and errors", () => {
+  const Hls = fakeHls();
+  const video = fakeVideo();
+  const events = [];
+  const url = "https://x.discordsays.com/.proxy/api/stream/playlist.m3u8";
+  attachStream({ HlsLib: Hls, video, url, proxyCtx: DISCORD_CTX, onEvent: (k, d) => events.push([k, d]) });
+  const inst = Hls.instances[0];
+  // the resolved playlist url is reported up-front (readable in-frame)
+  assert.deepEqual(events[0], ["playlist", url]);
+  inst.emit(Hls.Events.MANIFEST_LOADING, {});
+  inst.emit(Hls.Events.MANIFEST_PARSED, {});
+  assert.ok(events.some(([k, d]) => k === "hls" && /manifest loading/.test(d)));
+  assert.ok(events.some(([k, d]) => k === "hls" && /manifest parsed/.test(d)));
+  // a NON-fatal error is still named in-frame (helps the operator), but doesn't churn
+  inst.emit(Hls.Events.ERROR, { fatal: false, type: "networkError", details: "levelLoadError",
+    url: "https://x/.proxy/api/stream/level.m3u8", response: { code: 404 } });
+  assert.equal(inst.startLoadCount, 0);
+  const errLine = events.find(([k]) => k === "error");
+  assert.ok(errLine, "an error event was recorded");
+  assert.match(errLine[1], /networkError · levelLoadError · .*level\.m3u8 · HTTP 404/);
 });

@@ -66,3 +66,49 @@ html, body {
   backdrop-filter: blur(6px);
 }
 #unmute:hover { background: rgba(40, 40, 48, 0.85); }
+
+/* Diagnostics badge — a small always-present corner affordance (no DevTools in
+   Discord). Tapping it toggles the diagnostics panel. */
+#diagbadge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.55);
+  color: #b6b8bf;
+  font-size: 0.85rem;
+  line-height: 1.5rem;
+  cursor: pointer;
+  opacity: 0.5;
+}
+#diagbadge:hover { opacity: 1; }
+
+/* Diagnostics panel — a compact, scrollable, monospace event log. Hidden by
+   default; shown by the badge or auto-shown on a fatal error. Reports what
+   actually happened (env, OAuth stages, resolved playlist URL, hls.js lifecycle
+   + errors with the failing URL/status) — plain text, never a secret. */
+#diag {
+  position: absolute;
+  top: 2.4rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  max-height: 55%;
+  display: none;
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.4rem;
+  background: rgba(8, 8, 10, 0.88);
+  color: #cdd0d6;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  backdrop-filter: blur(4px);
+}

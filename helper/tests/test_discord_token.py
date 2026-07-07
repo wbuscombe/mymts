@@ -152,6 +152,27 @@ def test_public_app_tolerates_proxy_prefix(tmp_path):
     assert c.get("/.proxy/api/discord/config").json() == {"client_id": "CID"}
 
 
+def test_passthrough_playlist_has_only_relative_uris(tmp_path):
+    # The crux of the Discord Activity stream fix: the passthrough serves the
+    # renderer's playlist VERBATIM, and its segment URIs must be RELATIVE
+    # (`seg_N.ts`) — never absolute. Relative is what lets every consumer resolve
+    # the segments correctly: the Activity inherits Discord's `/.proxy/` base (so
+    # `…/.proxy/api/stream/seg_N.ts`, in-sandbox), and VLC/LAN resolve against the
+    # origin. An absolute URI here would escape `/.proxy/` and black out the wall.
+    c, _ = _public_client(tmp_path, client_id="CID")
+    for path in ("/api/stream/playlist.m3u8", "/.proxy/api/stream/playlist.m3u8"):
+        body = c.get(path).text
+        uri_lines = [ln.strip() for ln in body.splitlines()
+                     if ln.strip() and not ln.startswith("#")]
+        assert uri_lines, f"{path}: playlist had no segment URIs"
+        for ln in uri_lines:
+            assert not ln.lower().startswith(("http://", "https://")), \
+                f"{path}: absolute URI escapes /.proxy/: {ln!r}"
+            assert not ln.startswith("/"), \
+                f"{path}: root-absolute URI escapes /.proxy/: {ln!r}"
+        assert uri_lines == ["seg_0.ts"]   # served verbatim (no rewrite to absolute)
+
+
 def test_public_app_does_not_expose_the_lan_api(tmp_path):
     c, _ = _public_client(tmp_path)
     # The full API + /control/ + /app/ are NOT on the public surface.

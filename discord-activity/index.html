@@ -24,6 +24,11 @@
     <video id="wall" playsinline autoplay muted></video>
     <button id="unmute" type="button" aria-label="Enable sound">🔊 Tap for sound</button>
     <div id="overlay" role="status" aria-live="polite">Connecting to Discord…</div>
+    <!-- In-frame diagnostics (no DevTools inside Discord): tap the corner badge to
+         toggle; auto-shown on a fatal error. Names the failing URL/status so the
+         operator can paste it back. Plain text only (no secrets, no console dump). -->
+    <button id="diagbadge" type="button" aria-label="Show diagnostics">ⓘ</button>
+    <pre id="diag" role="status" aria-live="polite"></pre>
   </div>
   <script type="module" src="activity.mjs"></script>
 </body>
