@@ -123,7 +123,14 @@ services:
       # a compromised renderer cannot reach the helper's data/cert volumes.
       - mymts-stream:/stream:ro
     networks:
+      # mymts-net: the helper + renderer's own bridge (TV/LAN + renderer reach the
+      # helper here). tunnel-net: the operator's EXTERNAL Cloudflare-tunnel network
+      # (owned by the separate cloudflared stack) — attaching the helper here makes the
+      # Discord Activity origin DURABLE: cloudflared reaches `mymts-helper:8084` over
+      # tunnel-net even if cloudflared is recreated, replacing the fragile one-off
+      # `docker network connect`. We touch ONLY our own compose. See ARCHITECTURE §39.
       - mymts-net
+      - tunnel-net
     # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed
     # + /api/channels at https://<nas-lan-ip>:8443. LAN-only; the
     # container is still non-root + cap-dropped + read-only-rootfs.
@@ -258,6 +265,17 @@ networks:
     # sources and HLS upstreams. Bounded egress (a Squid-style allowlist)
     # is a Stage 6 hardening item; for v1 the SSRF guard in the fetcher
     # prevents the poller from being turned into a pivot.
+  # EXTERNAL: the operator's Cloudflare-tunnel network, created + owned by the separate
+  # cloudflared stack (NOT us). `external: true` means we ATTACH the helper to it and
+  # never create/manage/tear it down. This makes the public Discord Activity origin
+  # durable (cloudflared → mymts-helper:8084 over tunnel-net) without the fragile manual
+  # `docker network connect`, and without editing the cloudflared/kavita stack. Egress
+  # is unaffected — tunnel-net is an ordinary bridge out the NAS's residential WAN, never
+  # a VPN. Only cloudflared/kavita (already on tunnel-net) can reach the helper here; the
+  # public internet still only sees the tunnel-mapped :8084 host.
+  tunnel-net:
+    external: true
+    name: tunnel-net
 
 volumes:
   mymts-helper-data:
