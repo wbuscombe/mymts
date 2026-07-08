@@ -45,6 +45,8 @@ because something actually slipped).
 | **Cross-component `schema_version` consistency** | `[ENFORCED]` — `ci.yml` (`scripts/check_schema_consistency.py`) | ARCH-1 (web/native/helper wire-contract drift) |
 | **adb deploy-invariant** | `[ENFORCED]` — `ci.yml` (`scripts/test_adb_invariant.sh`) + `[RITUAL]` checklist §6 | DEPLOY-2 (scripts not matching the push→byte-verify→pm-install invariant; wrong-box device; health-gate false-rollback) |
 | **Web client tests** (render/cards/schema-guard) | `[ENFORCED]` — `ci.yml` (`node --test`) | HALF 1 parity correctness |
+| **Cross-surface channel-parity** — the picker lineup can't silently drift between native/web/`/control/` | `[ENFORCED]` — `ci.yml` (`scripts/check_channel_parity.py`) | decision 0004 (the radar web-only split; a section added on one surface but not the others) |
+| **Discord Activity + renderer tests** (OAuth/`/.proxy/`/failure-surface; supervisor + LiveKit publisher) | `[ENFORCED]` — `ci.yml` (`node --test discord-activity/… renderer/…` + `python -m unittest -s renderer`) | the Discord Activity white-frame arc + the renderer fan-out/self-heal |
 | **Screenshot/gallery freshness** | `[RITUAL]` — checklist §1 | stale gallery captions; the phase-end-screenshot workspace standard |
 | **Docs-vs-reality** | `[RITUAL]` — checklist §2 | "2 channels"→21, imaginary-CI→planned→live, a crash-looping README quickstart, stale counts |
 | **Destructive ops have explicit guards + tests** | `[RITUAL]` — checklist §4 | the seeder reconcile-and-PRUNE (safe only because the API happened to be GET-only — incidental, not guarded) |

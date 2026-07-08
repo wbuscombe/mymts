@@ -42,7 +42,7 @@ Verify in another shell:
 ```bash
 curl -fsS http://localhost:8091/health      # 200 + build info
 curl -fsS http://localhost:8091/api/feed     # preloaded mock feed items
-curl -fsS http://localhost:8091/api/channels # all 52 seeded channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams)
+curl -fsS http://localhost:8091/api/channels # 52 seeded video channels (HLS + YouTube + 2 C-SPAN/.gov; incl. Space/Nature/Cameras/Ocean+Eagle cams) + the NWS weather-radar widget rows (unified registry — every surface, no ?widgets gate)
 curl -fsS http://localhost:8091/api/presets  # wall presets: News Wall, Nature, Space, Chill / Mixed, Ocean, Eagles (default: news)
 ```
 You can also open the **web client** at <http://localhost:8091/app>.
@@ -95,9 +95,12 @@ for details (and to override the helper URL via `local.properties`).
 
 ## Run the tests
 ```bash
-cd helper && uv run pytest          # helper suite
-./gradlew :app:testReleaseUnitTest  # app suite
-node --test web/test/*.test.mjs     # web client suite (pure render/honesty logic, no deps)
+cd helper && uv run pytest                        # helper suite
+./gradlew :app:testReleaseUnitTest                # app suite
+node --test web/test/*.test.mjs                   # web client suite (pure render/honesty logic, no deps)
+node --test discord-activity/test/*.test.mjs      # Discord Activity (OAuth / proxy / failure surface)
+node --test renderer/test/*.test.mjs              # renderer LiveKit publisher (browser side)
+python -m unittest discover -s renderer -p 'test_*.py'  # renderer supervisor + mercury (pure)
 ```
 
 ## What you can play with

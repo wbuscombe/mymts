@@ -37,7 +37,7 @@ components:
 
 routes:
   - GET /health             # liveness + build_sha + counts
-  - GET /api/channels       # phantom: all 52 seeded channels, marked live (+ ?widgets=1 adds radar rows)
+  - GET /api/channels       # phantom: all 52 seeded channels marked live + the NWS radar widget rows (unified registry — served to every surface, no ?widgets gate)
   - GET /api/feed           # phantom: preloaded mock feed items
   - GET /api/ticker         # phantom: sample markets + sports
   - GET /api/presets        # server-authoritative wall presets

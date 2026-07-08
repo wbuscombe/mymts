@@ -9,7 +9,7 @@
     /health `sources_count` is the seeded real sources + 1 — by design, an
     honest demo fixture, never a real outlet faked into carrying items.
   - The channel prober is NOT started; preload also seeds every channel
-    from seed.json (all 53) to status=live with synthetic current_urls.
+    from seed.json (all 52) to status=live with synthetic current_urls.
   - The fetcher's `default_resolver` is replaced with `phantom_resolver`
     so any code path that does try to make a real HTTP call refuses to
     resolve any hostname — phantom mode is a hard contract that no

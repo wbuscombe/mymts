@@ -145,9 +145,11 @@ outputs**: an **Outputs panel** drives an **HLS/VLC card** (its own resolution f
 + fine bitrate + audio + start/stop) — so **VLC or an Apple TV opens one URL** (HTTPS or a plain-HTTP
 port for strict tvOS clients) — a **Mercury card** for publishing the wall into a Mercury voice
 channel, and a **Discord card** for showing the wall *inside a Discord voice channel* as a launchable
-Activity. *Mercury is a pre-fillable **shell pending credentials** (Ryan): the publisher is stubbed and
-opens no connection in this build; the real LiveKit wire-up drops into the seam already defined.
-Discord is a **launch-to-start Activity** that views the same HLS render (no extra encode) — see below.*
+Activity. *Mercury's real LiveKit `screen_share` publisher is **implemented and verified against a dev
+SFU**, but stays **INERT on prod** — with no LiveKit credentials it falls back to a zero-egress stub
+that opens no connection (it goes live as a pure config swap once the creds + tailnet land; see
+`docs/decisions/0003`). Discord is a **launch-to-start Activity** that views the same HLS render (no
+extra encode) — see below.*
 
 ![The picker control surface — each cell a feed/audio/subtitle picker, driving the server-side wall config](docs/screenshots/web/control.png)
 

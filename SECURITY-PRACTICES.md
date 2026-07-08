@@ -25,9 +25,11 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 - Structured JSON to stdout (helper). Captured by Docker `json-file` driver with rotation.
 
 ### Network
-- Unrelated services sharing the helper's host are **never** touched; the helper stays isolated on its own network. Standing rule.
+- Unrelated services sharing the helper's host are **never** touched; the helper stays isolated on its own network (plus the operator's external Cloudflare-tunnel network, attached read-only for the Discord origin — see below). Standing rule.
 - The helper has bounded egress; it cannot reach anything on the operator's internal network beyond what its two jobs require.
-- Inbound: the TV app talks only to the helper; the helper does not expose itself to the public internet.
+- Inbound: the full LAN API / `/control/` / `/app/` are **LAN-only** (the TV app talks only to the helper). The **one** public surface is the Discord Activity's `create_public_app` — a deliberately minimal app (the Activity static files + `/api/discord/*` + the hardened `/api/stream` passthrough, nothing else) behind the operator's Cloudflare tunnel; the raw LAN stream and the full API are never on it. Its only egress-capable endpoint (the server-side OAuth token exchange to `discord.com`) is credential-gated + off in phantom. See ARCHITECTURE §37/§40, decisions 0002/0005.
+- **Mercury** (the LiveKit `screen_share` publisher) is implemented but **INERT on prod** — no credentials, no connection, zero egress — until the operator supplies the LiveKit key/secret/host (gitignored `.env`) + tailnet. See decision 0003.
+- Committed docs + config templates carry **no private topology** (rule above): the docs-hygiene gate now scans `*.md`/`.phantom.yml` **and** the config templates (`*.env.example`, compose) so a private address can't slip into either surface (`tools/docs-hygiene/check.mjs`).
 
 ### Containers (helper side)
 - Non-root user.
