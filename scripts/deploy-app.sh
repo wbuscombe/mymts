@@ -153,25 +153,42 @@ write_known_good_atomic() {
     log "promoted: known-good = $name"
 }
 
+# Locate apksigner: prefer PATH, else the highest-versioned build-tools in the
+# Android SDK ($ANDROID_HOME / $ANDROID_SDK_ROOT / the default SDK path). apksigner
+# ships in build-tools, which is usually NOT on PATH — finding it here makes the
+# signing-identity check work with a normal Android Studio SDK, no extra operator
+# setup (the §7 gap: the check WARN-skipped because apksigner wasn't on PATH).
+_find_apksigner() {
+    if command -v apksigner >/dev/null 2>&1; then command -v apksigner; return 0; fi
+    local sdk found
+    for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+        [[ -n "$sdk" && -d "$sdk/build-tools" ]] || continue
+        found="$(ls -d "$sdk"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+        [[ -n "$found" ]] && { echo "$found"; return 0; }
+    done
+    return 1
+}
+
 verify_signed_release() {
     # A debug-signed APK MUST NOT be deployed as a release — refuse
     # here, never push debug to the device. apksigner is the source of truth
     # for the actual signing cert; aapt2 dump can't see it past
     # v2-signed APKs reliably.
-    if command -v apksigner >/dev/null 2>&1; then
+    local apksigner
+    if apksigner="$(_find_apksigner)"; then
         local subject
         # apksigner's --print-certs label changed across build-tools: older
         # prints "Subject: <DN>", build-tools 33+ prints
         # "Signer #1 certificate DN: <DN>". Match BOTH so the debug-vs-release
         # check works on modern SDKs (35.0.0) instead of reading an empty
         # subject and falsely failing a correctly-signed release.
-        subject="$(apksigner verify --print-certs "$APK_PATH" 2>/dev/null | \
+        subject="$("$apksigner" verify --print-certs "$APK_PATH" 2>/dev/null | \
             awk -F': ' '/certificate DN:|Subject:/ {print $2; exit}')"
         if [[ -z "$subject" ]]; then
             log "FATAL: apksigner could not read the release APK's certificate"
             return 4
         fi
-        log "signing cert subject: $subject"
+        log "signing cert subject: $subject  (apksigner: $apksigner)"
         # The Android debug signing cert is well-known:
         # CN=Android Debug,O=Android,C=US
         if [[ "$subject" == *"Android Debug"* ]]; then
@@ -180,8 +197,8 @@ verify_signed_release() {
             return 5
         fi
     else
-        log "WARN: apksigner not on PATH — cannot verify signing identity."
-        log "      Install Android build-tools to enable this check."
+        log "WARN: apksigner not found (not on PATH nor in \$ANDROID_HOME/build-tools) —"
+        log "      cannot verify signing identity. Install build-tools: sdkmanager 'build-tools;35.0.0'"
     fi
 }
 
