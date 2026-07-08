@@ -7,6 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   authorizeAndAuthenticate, attachStream, makeProxyLoader,
@@ -314,4 +315,39 @@ test("attachStream feeds the diagnostics overlay: playlist url, lifecycle, and e
   const errLine = events.find(([k]) => k === "error");
   assert.ok(errLine, "an error event was recorded");
   assert.match(errLine[1], /networkError · levelLoadError · .*level\.m3u8 · HTTP 404/);
+});
+
+// ----- the JS-free failure surface in index.html (a dead module must never be a
+//       silent white frame; this layer works even when the module fails to load) -----
+
+const INDEX_HTML = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+
+test("index.html registers an inline error handler FIRST, before the module", () => {
+  const errHandler = INDEX_HTML.indexOf('addEventListener("error"');
+  const rejHandler = INDEX_HTML.indexOf('addEventListener("unhandledrejection"');
+  const moduleTag = INDEX_HTML.indexOf('src="activity.mjs"');
+  assert.ok(errHandler > 0, "an inline window error handler is present");
+  assert.ok(rejHandler > 0, "an inline unhandledrejection handler is present");
+  // the inline bootstrap must run BEFORE the module loads (so it catches its failures)
+  assert.ok(errHandler < moduleTag, "the error handler must come before the module script");
+  // it writes the error to a visible on-screen element (not console-only)
+  assert.match(INDEX_HTML, /getElementById\("booterror"\)|id="booterror"/);
+});
+
+test("index.html can never render a white void — inline dark bg + loading text + noscript", () => {
+  // an inline <style> gives a dark background even if activity.css is stale/blocked
+  assert.match(INDEX_HTML, /<style>[\s\S]*background:\s*#0b0b0d[\s\S]*<\/style>/);
+  // a static loading state (not an empty frame) if JS never overrides it
+  assert.match(INDEX_HTML, /MyMTS wall — loading…/);
+  assert.match(INDEX_HTML, /<noscript>/);
+});
+
+test("index.html carries the build-sha version-stamp placeholder + CSP allows the inline bootstrap", () => {
+  assert.match(INDEX_HTML, /name="mymts-version"/);
+  assert.match(INDEX_HTML, /__MYMTS_BUILD_SHA__/);   // replaced with the real sha at serve time
+  // the CSP must permit the inline bootstrap script/style (else the failure surface
+  // is itself silently blocked); connect-src stays strict 'self'.
+  assert.match(INDEX_HTML, /script-src[^;]*'unsafe-inline'/);
+  assert.match(INDEX_HTML, /style-src[^;]*'unsafe-inline'/);
+  assert.match(INDEX_HTML, /connect-src 'self'/);
 });

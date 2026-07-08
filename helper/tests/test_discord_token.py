@@ -114,18 +114,25 @@ def test_token_oversized_code_rejected():
 
 # ----- the public app (the only public surface; minimal by construction) -----
 
-def _public_client(tmp_path, *, client_id=None, client_secret=None):
+def _public_client(tmp_path, *, client_id=None, client_secret=None, build_sha="dev"):
     stream = tmp_path / "stream"
     stream.mkdir()
     (stream / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:2.0,\nseg_0.ts\n")
     (stream / "seg_0.ts").write_bytes(b"\x47" + b"\x00" * 187)
     act = tmp_path / "activity"
     act.mkdir()
-    (act / "index.html").write_text("<!doctype html><title>MyMTS</title><video id=wall></video>")
+    # Include the version placeholder (like the real index.html) so the SHA-injection is
+    # exercised; a `.mjs`/`.css` asset so the no-store static path is exercised too.
+    (act / "index.html").write_text(
+        '<!doctype html><meta name="mymts-version" content="__MYMTS_BUILD_SHA__">'
+        "<title>MyMTS</title><video id=wall></video>"
+    )
     (act / "activity.mjs").write_text("// entry")
+    (act / "activity.css").write_text("html{background:#000}")
     app = create_public_app(
         stream_dir=str(stream), activity_dir=str(act),
         discord_client_id=client_id, discord_client_secret=client_secret,
+        build_sha=build_sha,
     )
     return TestClient(app), stream
 
@@ -171,6 +178,30 @@ def test_passthrough_playlist_has_only_relative_uris(tmp_path):
             assert not ln.startswith("/"), \
                 f"{path}: root-absolute URI escapes /.proxy/: {ln!r}"
         assert uri_lines == ["seg_0.ts"]   # served verbatim (no rewrite to absolute)
+
+
+def test_activity_static_assets_are_no_store(tmp_path):
+    # The Activity's HTML/JS/CSS must be no-store so no edge/proxy cache (Cloudflare,
+    # Discord's proxy) can pin a stale pre-deploy copy — the white-frame class of bug
+    # where a fresh index.html/.mjs loaded a Cloudflare-cached pre-fix .css.
+    c, _ = _public_client(tmp_path, client_id="CID")
+    for path in ("/", "/index.html", "/activity.mjs", "/activity.css"):
+        assert c.get(path).headers.get("cache-control") == "no-store", f"{path} must be no-store"
+    # The HLS media is NOT stamped by this middleware — it keeps the stream router's
+    # own headers (which are already no-store); assert it still serves and is no-store.
+    seg = c.get("/api/stream/seg_0.ts")
+    assert seg.status_code == 200 and seg.headers.get("cache-control") == "no-store"
+
+
+def test_index_carries_the_build_sha_version_stamp(tmp_path):
+    # "Which build is Discord running?" must be answerable by view-source: the running
+    # helper's SHA is injected into the __MYMTS_BUILD_SHA__ placeholder (no placeholder
+    # left behind), on BOTH "/" and "/index.html".
+    c, _ = _public_client(tmp_path, client_id="CID", build_sha="abc1234")
+    for path in ("/", "/index.html"):
+        body = c.get(path).text
+        assert "abc1234" in body, f"{path} missing the injected build sha"
+        assert "__MYMTS_BUILD_SHA__" not in body, f"{path} still has the raw placeholder"
 
 
 def test_public_app_does_not_expose_the_lan_api(tmp_path):

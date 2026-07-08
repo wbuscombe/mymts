@@ -104,6 +104,7 @@ async def _serve(cfg: Config) -> None:
             activity_dir=cfg.discord_activity_dir,
             discord_client_id=cfg.discord_client_id,
             discord_client_secret=cfg.discord_client_secret,
+            build_sha=cfg.build_sha,
         )
         public_cfg = uvicorn.Config(
             app=public_app,

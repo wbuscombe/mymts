@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## fix(discord-activity): asset cache-busting + JS-free failure surface (white-frame fix) (2026-07-07)
+
+After the `/.proxy/` fix deployed, the Activity showed a WHITE frame with no UI and not
+even the new ⓘ badge. Diagnosed from the public origin (no live Discord needed):
+**VERDICT A — stale Cloudflare edge cache.** `wall.3slstudios.com/activity.css` returned
+`cf-cache-status: HIT`, `age: 3290`, `last-modified: Sun, 28 Jun 2026` — a 4h-cached
+**pre-fix** `.css` (missing the `#diagbadge`/`#diag` styles) — while `index.html`/`.mjs`
+were `DYNAMIC` (fresh). Cloudflare default-caches `.css` but not `.mjs`; the origin sent
+no `Cache-Control`, so the edge applied its own TTL. The origin file on the NAS was
+current (deploy was fine). No verdict-B crash: served JS byte-matched the deploy, correct
+`text/javascript` MIME, no top-level throw. Discord-Activity + helper only; native
+untouched, Mercury inert, renderer unchanged.
+
+- **fix: no-store the Activity's static assets.** `create_public_app` stamps
+  `Cache-Control: no-store` on the HTML/CSS/JS (a `_NoStoreStatic` ASGI middleware, keyed
+  on content-type) so no edge/proxy cache (Cloudflare, Discord) can pin a stale copy. The
+  HLS media keeps its own headers (untouched).
+- **feat: build-SHA version stamp in the page source.** index.html is served explicitly
+  with the running helper's git SHA injected into a `__MYMTS_BUILD_SHA__` placeholder
+  (`<meta name="mymts-version">` + comment) — "which build is Discord running?" is now
+  answerable by view-source, forever.
+- **feat: JS-free failure surface — a dead module is never a silent white frame again.**
+  index.html now carries (a) an inline dark background FIRST (never a white void even
+  unstyled/asset-blocked), (b) an inline `window.onerror`/`unhandledrejection` handler
+  FIRST in `<head>` that writes the error text on-screen (dependency-free, runs even when
+  the module fails to load/parse), (c) a static "MyMTS wall — loading…" state + `<noscript>`.
+  The CSP adds `'unsafe-inline'` for script/style so this bootstrap can render;
+  `connect-src 'self'` stays strict.
+- **test:** static assets are `no-store`, the SHA stamp is injected (no placeholder left),
+  and the inline error handler is present + ordered before the module; existing tests green.
+
+> **Operator: purge Cloudflare once.** After this deploy the stale copy can't recur, but
+> the already-cached pre-fix `.css` must be evicted once — Cloudflare dashboard →
+> Caching → Purge (the `wall.3slstudios.com` zone), then relaunch the Activity.
+
 ## fix(discord-activity): stream requests forced through /.proxy/ + in-frame diagnostics (2026-07-07)
 
 The Discord Activity launched and OAuth completed, but the wall stayed black — the

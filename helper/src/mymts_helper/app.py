@@ -325,12 +325,48 @@ class _StripProxyPrefix:
         await self._app(scope, receive, send)  # type: ignore[operator]
 
 
+# Content types that must NEVER be edge-cached: the Activity's own static assets
+# (HTML/CSS/JS). They're tiny, and freshness beats caching — a stale asset (e.g. a
+# Cloudflare-cached pre-deploy .css served alongside a fresh index.html/.mjs) is exactly
+# the white-frame class of bug this closes. The HLS media (video/mp2t, mpegurl) is NOT
+# here — it keeps the stream router's own headers (already no-store).
+_NO_STORE_CONTENT_TYPES = ("text/html", "text/css", "text/javascript", "application/javascript")
+
+
+class _NoStoreStatic:
+    """ASGI middleware that stamps ``Cache-Control: no-store`` on the Activity's static
+    assets (HTML/CSS/JS) so no edge/proxy cache (Cloudflare, Discord's proxy) can serve
+    a stale pre-deploy copy. Keyed on the response content-type, so the HLS passthrough
+    (its own headers) and every non-asset response are untouched."""
+
+    def __init__(self, app: object) -> None:
+        self._app = app
+
+    async def __call__(self, scope: dict, receive: object, send: object) -> None:
+        if scope.get("type") != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        from starlette.datastructures import MutableHeaders
+
+        async def _send(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message["headers"])
+                ct = headers.get("content-type", "")
+                if any(ct.startswith(p) for p in _NO_STORE_CONTENT_TYPES):
+                    headers["cache-control"] = "no-store"
+            await send(message)  # type: ignore[operator]
+
+        await self._app(scope, receive, _send)  # type: ignore[operator]
+
+
 def create_public_app(
     *,
     stream_dir: str,
     activity_dir: str,
     discord_client_id: str | None,
     discord_client_secret: str | None,
+    build_sha: str = "dev",
 ) -> FastAPI:
     """A DEDICATED, MINIMAL public app for the Discord Activity — the only MyMTS
     surface ever exposed to the public internet (behind the operator's Cloudflare
@@ -346,6 +382,7 @@ def create_public_app(
     relay. No DB, no pollers, no lifespan. Mirrors ``create_stream_app``'s
     minimal-surface discipline so there is no second, divergent serving path to
     drift. ``/.proxy/`` tolerance via :class:`_StripProxyPrefix`."""
+    from fastapi.responses import HTMLResponse
     from fastapi.staticfiles import StaticFiles
 
     app = FastAPI(
@@ -364,13 +401,36 @@ def create_public_app(
 
     @app.get("/health")
     def health() -> dict[str, object]:
-        return {"status": "ok", "activity": True}
+        return {"status": "ok", "activity": True, "build_sha": build_sha}
 
-    # The Activity iframe + its assets (vendored SDK/hls.js, css). html=True serves
-    # index.html at "/". Mounted LAST so it can never shadow an /api/* route.
+    # Serve index.html EXPLICITLY (winning over the static mount) so we can inject the
+    # running build SHA into its `__MYMTS_BUILD_SHA__` placeholder — a version stamp
+    # visible in view-source, answering "which build is Discord running?" forever — and
+    # stamp `no-store` so no edge/proxy cache pins a pre-deploy copy. Both "/" and
+    # "/index.html" (Discord may request either) map here.
+    _index_path = Path(activity_dir) / "index.html"
+
+    def _serve_index() -> HTMLResponse:
+        html = _index_path.read_text(encoding="utf-8").replace("__MYMTS_BUILD_SHA__", build_sha)
+        return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
+
+    @app.get("/", include_in_schema=False)
+    def index_root() -> HTMLResponse:
+        return _serve_index()
+
+    @app.get("/index.html", include_in_schema=False)
+    def index_html() -> HTMLResponse:
+        return _serve_index()
+
+    # The Activity's OTHER assets (vendored SDK/hls.js, css, activity.mjs). Mounted LAST
+    # so it can never shadow an /api/* route or the index routes above.
     app.mount("/", StaticFiles(directory=activity_dir, html=True), name="discord-activity")
 
-    # Wrap so a forwarded /.proxy/ prefix resolves to the same routes.
+    # Outer→inner: no-store the static assets (freshness > cache — kills the stale-asset
+    # white-frame class), then tolerate a forwarded /.proxy/ prefix (resolve to the same
+    # routes). Both are no-ops for the HLS passthrough (its own headers / path).
     app.add_middleware(_StripProxyPrefix)
-    log.info("public_activity_app_built", extra={"activity_dir": activity_dir})
+    app.add_middleware(_NoStoreStatic)
+    log.info("public_activity_app_built",
+             extra={"activity_dir": activity_dir, "build_sha": build_sha})
     return app
