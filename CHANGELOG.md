@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **Version note (2026-07-08):** no `v0.5.0` cut this milestone. The semver git tag drives the
+> native APK's `versionName` (`git describe --tags --match 'v*'`), and native production code is
+> byte-identical since `v0.4.0` — cutting a version would re-stamp an unchanged APK. The post-0.4.0
+> helper/renderer/discord work below is a completed milestone tracked by `build_sha` (exact commit);
+> `v0.5.0` is deferred until native next changes.
+
+## chore(cleanup + audit): renderer self-heal, hygiene gate, durable network, deploy tagging, doc currency (2026-07-08)
+
+A cleanup pass closing loose ends from the Discord Activity arc, plus the Discord-Activity-milestone
+professionalization audit. Helper/renderer/discord/tooling + docs only — native untouched.
+
+- **feat(renderer): blank/frozen render self-heal.** The renderer ran ~8 days with Chromium wedged
+  on a white page while ffmpeg happily encoded it (the stale-check only catches a STOPPED stream). A
+  new watchdog samples the live render every ~2 min and, after N consecutive blank/frozen samples,
+  restarts Chromium (then the stack if it recurs). Pure detector, unit-tested (blank/frozen/normal).
+- **chore(docs-hygiene): apex-domain denylist + config-template scan.** The gate now flags the
+  operator's real domain/brand, and scans the committed config templates (`*.env.example`, compose)
+  — closing the gap that let a private tailnet IP slip past a docs-only scan (now redacted, see the
+  `security:` entry). RFC 5737 documentation IPs are exempt (they're the sanctioned placeholders).
+- **security(topology): redact the committed LiveKit tailnet IP** from `.env.example`, the NAS
+  compose default, and a renderer test — a private address in git (low blast radius: tailnet-scoped,
+  Mercury inert). Replaced with placeholders / a documentation IP.
+- **fix(deploy): durable cloudflared↔helper network** — `tunnel-net` declared external + the helper
+  attached to it in compose, so the public Discord origin survives a cloudflared recreate (kills the
+  fragile manual `docker network connect`). ARCHITECTURE §39.
+- **fix(helper): explicit phantom gate + honest public-app docstring** — the public Discord app (the
+  only egress-capable internet surface) never starts in phantom; `create_public_app`'s "exactly
+  three things" corrected to include `/health`.
+- **fix(deploy): image-tag hygiene + apksigner lookup** — image version from semver tags only (never
+  a `pre-professionalization-*` name), rollback handle renamed `:rollback`, stale git tags + NAS
+  images pruned; `deploy-app.sh` now finds apksigner in the SDK build-tools (signing check no longer
+  WARN-skips).
+- **docs(audit): §40 + decision 0005** for the Discord Activity `/.proxy/` + white-frame fix passes
+  (§37 superseded-in-part); README/SECURITY-PRACTICES/CONTRIBUTING/ONBOARDING/charter currency;
+  regenerated the `/control/` Outputs + radar screenshots.
+
 ## fix(discord-activity): asset cache-busting + JS-free failure surface (white-frame fix) (2026-07-07)
 
 After the `/.proxy/` fix deployed, the Activity showed a WHITE frame with no UI and not
