@@ -36,6 +36,8 @@ export const PATTERNS = [
     re: /\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b/g },
   { id: "abs-home-path", why: "an absolute personal home path leaks the operator's filesystem",
     re: /(?:\/Users\/|\/home\/)[A-Za-z0-9._-]+/g },
+  { id: "apex-domain", why: "the operator's real domain/brand leaks the deployment host — use a wall.your-domain.example placeholder",
+    re: /\b(?:[a-z0-9-]+\.)*3slstudios\.[a-z]{2,}\b/gi },
   { id: "device-alias", why: "a last-octet box alias — keep only the deliberate ones (allowlist)",
     re: /(?<![\d.])\.(?:92|158|182)\b/g },
   { id: "location-onn", why: "a location-qualified box instance ('the office Onn') — describe the platform generically",

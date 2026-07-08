@@ -30,6 +30,15 @@ test("planted PERSONAL-CONFIG leaks fail", () => {
   assert.deepEqual(ids("docs/screenshots/device/office-in-situ.png"), ["legacy-room-filename"]);
 });
 
+test("the operator apex domain / brand is flagged (use a placeholder)", () => {
+  assert.deepEqual(ids("served from wall.3slstudios.com over the tunnel"), ["apex-domain"]);
+  assert.deepEqual(ids("purge the 3slstudios.com zone"), ["apex-domain"]);
+  assert.deepEqual(ids("even foo.bar.3slstudios.com is caught"), ["apex-domain"]);
+  // the neutral placeholder convention is NOT flagged
+  assert.deepEqual(ids("served from wall.your-domain.example"), []);
+  assert.deepEqual(ids("the 3sixteen jeans brand is unrelated"), []);   // precision: no bare-token wolf
+});
+
 test("DELIBERATE KEEPS are NOT flagged (precision — no crying wolf)", () => {
   assert.deepEqual(ids("Native Android TV on an Onn 4K box"), []);   // platform fact
   assert.deepEqual(ids("safe for anyone in the room"), []);           // ambient-audience use-case

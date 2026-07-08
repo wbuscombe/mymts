@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 After the `/.proxy/` fix deployed, the Activity showed a WHITE frame with no UI and not
 even the new ⓘ badge. Diagnosed from the public origin (no live Discord needed):
-**VERDICT A — stale Cloudflare edge cache.** `wall.3slstudios.com/activity.css` returned
+**VERDICT A — stale Cloudflare edge cache.** `wall.your-domain.example/activity.css` returned
 `cf-cache-status: HIT`, `age: 3290`, `last-modified: Sun, 28 Jun 2026` — a 4h-cached
 **pre-fix** `.css` (missing the `#diagbadge`/`#diag` styles) — while `index.html`/`.mjs`
 were `DYNAMIC` (fresh). Cloudflare default-caches `.css` but not `.mjs`; the origin sent
@@ -40,7 +40,7 @@ untouched, Mercury inert, renderer unchanged.
 
 > **Operator: purge Cloudflare once.** After this deploy the stale copy can't recur, but
 > the already-cached pre-fix `.css` must be evicted once — Cloudflare dashboard →
-> Caching → Purge (the `wall.3slstudios.com` zone), then relaunch the Activity.
+> Caching → Purge (the `wall.your-domain.example` zone), then relaunch the Activity.
 
 ## fix(discord-activity): stream requests forced through /.proxy/ + in-frame diagnostics (2026-07-07)
 

@@ -115,9 +115,9 @@ test("authenticate failure / empty session surfaces stage=authenticate", async (
 // ----- proxy enforcement: every request forced through Discord's /.proxy/ path -----
 
 const DISCORD_LOC = { hostname: "1234567890.discordsays.com" };
-const BROWSER_LOC = { hostname: "wall.3slstudios.example" };
+const BROWSER_LOC = { hostname: "wall.your-domain.example" };
 const DISCORD_CTX = { origin: "https://1234567890.discordsays.com", inDiscord: true };
-const DIRECT_CTX = { origin: "https://wall.3slstudios.example", inDiscord: false };
+const DIRECT_CTX = { origin: "https://wall.your-domain.example", inDiscord: false };
 
 test("isInsideDiscord detects the *.discordsays.com iframe host, not a direct browser", () => {
   assert.equal(isInsideDiscord(DISCORD_LOC), true);
@@ -137,7 +137,7 @@ test("proxied() maps every path through /.proxy/ inside Discord, plain when dire
   assert.equal(proxied(TOKEN_PATH, DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/discord/token");
   assert.equal(proxied(CONFIG_PATH, DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/discord/config");
   // Direct browser: the plain path at the public origin (no /.proxy/).
-  assert.equal(proxied(STREAM_PLAYLIST, DIRECT_CTX), "https://wall.3slstudios.example/api/stream/playlist.m3u8");
+  assert.equal(proxied(STREAM_PLAYLIST, DIRECT_CTX), "https://wall.your-domain.example/api/stream/playlist.m3u8");
   // A path without a leading slash is normalized (the helper is the single source of truth).
   assert.equal(proxied("api/x", DISCORD_CTX), "https://1234567890.discordsays.com/.proxy/api/x");
   // The constants are leading-slash paths (mapped, never used bare).
@@ -150,7 +150,7 @@ test("rewriteHlsUrl forces any hls.js URL under /.proxy/, idempotently, inside D
   assert.equal(rewriteHlsUrl(proxiedSeg, DISCORD_CTX), proxiedSeg);
   // An absolute URI the manifest could smuggle in (escaping /.proxy/) → re-homed onto the proxy path.
   assert.equal(
-    rewriteHlsUrl("https://wall.3slstudios.example/api/stream/seg_9.ts", DISCORD_CTX),
+    rewriteHlsUrl("https://wall.your-domain.example/api/stream/seg_9.ts", DISCORD_CTX),
     "https://1234567890.discordsays.com/.proxy/api/stream/seg_9.ts",
   );
   // A root path that escaped /.proxy/ → fixed.
@@ -161,8 +161,8 @@ test("rewriteHlsUrl forces any hls.js URL under /.proxy/, idempotently, inside D
   // blob:/data: (MSE source buffers) are never rewritten.
   assert.equal(rewriteHlsUrl("blob:https://x/abc", DISCORD_CTX), "blob:https://x/abc");
   // Outside Discord: a no-op.
-  assert.equal(rewriteHlsUrl("https://wall.3slstudios.example/api/stream/seg_9.ts", DIRECT_CTX),
-    "https://wall.3slstudios.example/api/stream/seg_9.ts");
+  assert.equal(rewriteHlsUrl("https://wall.your-domain.example/api/stream/seg_9.ts", DIRECT_CTX),
+    "https://wall.your-domain.example/api/stream/seg_9.ts");
 });
 
 test("makeProxyLoader rewrites context.url through the proxy before the base loader", () => {
