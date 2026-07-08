@@ -98,7 +98,10 @@ async def _serve(cfg: Config) -> None:
     # Cloudflare tunnel terminates TLS and maps the public hostname to this port.
     # Opt-in via DISCORD_PUBLIC_PORT + DISCORD_ACTIVITY_DIR + STREAM_DIR (see
     # Config.has_discord_public); unset → no public surface. No lifespan (no pollers).
-    if cfg.has_discord_public() and Path(cfg.discord_activity_dir).is_dir():
+    # Phantom mode is a ZERO-EGRESS demo; the public app is the ONLY internet-facing
+    # surface with an egress-capable endpoint (the Discord token exchange calls
+    # discord.com), so it NEVER starts in phantom — see Config.should_start_discord_public.
+    if cfg.should_start_discord_public() and Path(cfg.discord_activity_dir).is_dir():
         public_app = create_public_app(
             stream_dir=cfg.stream_dir,
             activity_dir=cfg.discord_activity_dir,
@@ -116,9 +119,10 @@ async def _serve(cfg: Config) -> None:
         )
         servers.append(uvicorn.Server(public_cfg))
         log.info("listener_discord_public_configured", extra={"port": cfg.discord_public_port})
-    elif cfg.has_discord_public():
+    elif cfg.should_start_discord_public():
         # Configured to start but the Activity static dir is missing (bad mount) —
-        # warn + skip rather than crash the whole helper.
+        # warn + skip rather than crash the whole helper. (In phantom the public app
+        # is intentionally off, so this isn't a misconfiguration to warn about.)
         log.warning("discord_public_skipped_missing_dir", extra={"dir": cfg.discord_activity_dir})
 
     if not servers:

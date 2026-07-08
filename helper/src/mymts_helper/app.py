@@ -370,12 +370,16 @@ def create_public_app(
 ) -> FastAPI:
     """A DEDICATED, MINIMAL public app for the Discord Activity — the only MyMTS
     surface ever exposed to the public internet (behind the operator's Cloudflare
-    tunnel). It serves EXACTLY three things, nothing else:
+    tunnel). It serves ONLY the Activity and its three supporting routes, plus a
+    trivial liveness endpoint:
 
-      1. the Activity static app (``discord-activity/``) at ``/`` (the iframe),
+      1. the Activity static app (``discord-activity/``) at ``/`` (the iframe) — the
+         index injected with the build SHA + ``no-store``, its assets no-store too,
       2. ``/api/discord/config`` + ``/api/discord/token`` (the OAuth exchange),
       3. the hardened ``/api/stream`` passthrough (the SAME symlink-safe router the
-         LAN serves — the HLS the Activity plays, relayed through the public origin).
+         LAN serves — the HLS the Activity plays, relayed through the public origin),
+      4. ``GET /health`` (a static ``{status, build_sha}`` liveness check — no state,
+         no egress).
 
     The full API, ``PUT /api/wall``, ``/control/`` and ``/app/`` are DELIBERATELY
     NOT here — they stay LAN-only. The raw LAN stream is never exposed; only this

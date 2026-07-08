@@ -202,3 +202,11 @@ class Config:
         when the client id/secret are absent — but the surface itself is opt-in via
         these three, so an operator who hasn't enabled Discord publishes NOTHING."""
         return bool(self.discord_public_port and self.discord_activity_dir and self.stream_dir)
+
+    def should_start_discord_public(self) -> bool:
+        """True iff the dedicated PUBLIC Activity listener should actually start:
+        configured (:meth:`has_discord_public`) AND **not phantom_mode**. Phantom is a
+        zero-egress demo and the public app is the ONLY internet-facing surface with an
+        egress-capable endpoint (the Discord token exchange calls discord.com), so it
+        stays off in phantom — gated explicitly, not left to implication."""
+        return self.has_discord_public() and not self.phantom_mode
