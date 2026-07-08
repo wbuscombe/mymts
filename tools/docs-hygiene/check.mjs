@@ -66,9 +66,20 @@ export function parseAllowlist(text) {
   return out;
 }
 
+/** The IANA ranges RESERVED for documentation/examples — RFC 5737 (192.0.2.0/24,
+ *  198.51.100.0/24, 203.0.113.0/24). These ARE the sanctioned placeholders (what the
+ *  full-ipv4 `why` tells authors to use), so the topology check must never flag them —
+ *  else the placeholder convention fails its own gate. A real leak is a routable IP. */
+export function isDocumentationIp(s) {
+  return /^192\.0\.2\.\d{1,3}$/.test(s)
+    || /^198\.51\.100\.\d{1,3}$/.test(s)
+    || /^203\.0\.113\.\d{1,3}$/.test(s);
+}
+
 /** Scan one document's text. Returns [{line, id, match, why}] for every
  *  non-exempt hit. A hit is exempt if its matched string is in `allowSet`
- *  (GLOBAL) or its line carries the INLINE marker. */
+ *  (GLOBAL), its line carries the INLINE marker, or (for full-ipv4) it is a
+ *  reserved documentation IP. */
 export function scanText(text, allowSet = new Set()) {
   const violations = [];
   const lines = text.split(/\r?\n/);
@@ -77,6 +88,7 @@ export function scanText(text, allowSet = new Set()) {
     for (const p of PATTERNS) {
       for (const m of line.matchAll(p.re)) {
         if (allowSet.has(m[0])) continue;     // global exemption
+        if (p.id === "full-ipv4" && isDocumentationIp(m[0])) continue; // RFC 5737 placeholder
         violations.push({ line: i + 1, id: p.id, match: m[0], why: p.why });
       }
     }
@@ -84,10 +96,17 @@ export function scanText(text, allowSet = new Set()) {
   return violations;
 }
 
-/** Tracked public-doc files (markdown + .phantom.yml), excluding the check's
- *  own fixtures and the gitignored ops-local notes. */
+/** Tracked scan targets: public-doc files (markdown + .phantom.yml) AND the committed
+ *  CONFIG TEMPLATES (`*.env.example`, compose files). The config templates are in scope
+ *  because a real topology leak (the LiveKit tailnet IP, 2026-07-08 audit) slipped past a
+ *  docs-only scan — it lived in `.env.example` + the NAS compose. Excludes the check's own
+ *  fixtures + the gitignored ops-local notes. (Benign infra IPs in compose — 127.0.0.1,
+ *  0.0.0.0 — are covered by the allowlist.) */
 export function listDocFiles() {
-  const out = execSync("git ls-files -z -- '*.md' '.phantom.yml'", { cwd: REPO })
+  const out = execSync(
+    "git ls-files -z -- '*.md' '.phantom.yml' '*.env.example' '*compose*.yml' '*compose*.yaml'",
+    { cwd: REPO },
+  )
     .toString("utf8")
     .split("\0")
     .filter(Boolean)

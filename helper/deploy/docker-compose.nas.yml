@@ -239,7 +239,11 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       LIVEKIT_HOST: ${LIVEKIT_HOST:-}
-      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-100.99.182.50}
+      # No baked default — the tailnet media IP is operator topology, supplied via the
+      # gitignored .env alongside the LiveKit key/secret/host when Mercury is enabled
+      # (empty until then; Mercury is inert with no creds, so this is unused). Keeping a
+      # real IP here committed a private tailnet address — redacted (2026-07-08 audit).
+      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-}
       LIVEKIT_BOT_IDENTITY: ${LIVEKIT_BOT_IDENTITY:-mymts-wall-bot}
       # The wall's HLS the publisher captures (render-once — it re-uses the single
       # composite the renderer already produces). Defaults to the helper's plain-HTTP

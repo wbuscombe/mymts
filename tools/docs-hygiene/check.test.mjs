@@ -12,7 +12,7 @@ import { scanText, parseAllowlist } from "./check.mjs";
 const ids = (text, allow) => scanText(text, allow).map((v) => v.id);
 
 test("planted SENSITIVE leaks fail", () => {
-  assert.deepEqual(ids("the box is at 203.0.113.45 on the LAN"), ["full-ipv4"]);
+  assert.deepEqual(ids("the box is at 192.168.1.45 on the LAN"), ["full-ipv4"]);  // routable LAN IP
   assert.deepEqual(ids("MAC aa:bb:cc:dd:ee:ff"), ["mac-address"]);
   assert.deepEqual(ids("see /Users/realname/secrets/key"), ["abs-home-path"]);
   assert.deepEqual(ids("backed up to /home/operator/keys"), ["abs-home-path"]);
@@ -28,6 +28,16 @@ test("planted PERSONAL-CONFIG leaks fail", () => {
   assert.deepEqual(ids("running ambient in the room"), ["ambient-room-deployment"]);
   assert.deepEqual(ids("Operator feedback (2026-06-04 upstairs session)"), ["location-session"]);
   assert.deepEqual(ids("docs/screenshots/device/office-in-situ.png"), ["legacy-room-filename"]);
+});
+
+test("RFC 5737 documentation IPs are NOT flagged (they ARE the sanctioned placeholder)", () => {
+  // the config templates + tests use 192.0.2.x/198.51.100.x/203.0.113.x as example IPs
+  assert.deepEqual(ids("--device 192.0.2.10:5555"), []);
+  assert.deepEqual(ids("NODE_IP=198.51.100.7"), []);
+  assert.deepEqual(ids("the gateway 203.0.113.1"), []);
+  // a REAL routable IP still fails (the leak class this protects)
+  assert.deepEqual(ids("the tailnet host 100.99.182.50"), ["full-ipv4"]);
+  assert.deepEqual(ids("LAN box 192.168.1.42"), ["full-ipv4"]);
 });
 
 test("the operator apex domain / brand is flagged (use a placeholder)", () => {
@@ -53,7 +63,7 @@ test("GLOBAL allowlist exempts a literal match", () => {
   assert.deepEqual(ids("the helper at 10.0.2.2", allow), []);          // emulator IP exempt
   assert.deepEqual(ids("never disrupt the .182 box", allow), []);      // alias exempt
   // but a NON-allowlisted IP still fails even with the allowlist loaded
-  assert.deepEqual(ids("a real one 198.51.100.7", allow), ["full-ipv4"]);
+  assert.deepEqual(ids("a real one 172.16.9.9", allow), ["full-ipv4"]);  // routable, non-allowlisted, non-doc
 });
 
 test("INLINE marker exempts that line only", () => {

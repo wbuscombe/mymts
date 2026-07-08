@@ -108,18 +108,18 @@ class HostResolver(unittest.TestCase):
         env = {
             mercury.ENV_API_KEY: "k", mercury.ENV_API_SECRET: "s",
             mercury.ENV_HOST: "wss://chat.mercurychat.net:7095/livekit-proxy",
-            mercury.ENV_NODE_IP: "100.99.182.50",
+            mercury.ENV_NODE_IP: "192.0.2.50",
         }
         pub = mercury.RealMercuryPublisher(env=env, log=lambda *_: None)
         pub.configure({"enabled": True, "channel_guid": "g"})
         self.assertEqual(
             pub._host_resolver_arg(),
-            "--host-resolver-rules=MAP chat.mercurychat.net 100.99.182.50",
+            "--host-resolver-rules=MAP chat.mercurychat.net 192.0.2.50",
         )
 
     def test_dev_host_no_mapping(self):
         env = {mercury.ENV_API_KEY: "k", mercury.ENV_API_SECRET: "s",
-               mercury.ENV_HOST: "ws://127.0.0.1:7880", mercury.ENV_NODE_IP: "100.99.182.50"}
+               mercury.ENV_HOST: "ws://127.0.0.1:7880", mercury.ENV_NODE_IP: "192.0.2.50"}
         pub = mercury.RealMercuryPublisher(env=env, log=lambda *_: None)
         pub.configure({"enabled": True, "channel_guid": "g"})
         self.assertIsNone(pub._host_resolver_arg())
@@ -132,8 +132,8 @@ class HostResolver(unittest.TestCase):
             raise OSError("refused")     # we only care WHICH host it dials
 
         with mock.patch("socket.create_connection", side_effect=fake_conn):
-            mercury._tcp_probe("wss://chat.mercurychat.net:7095/x", node_ip="100.99.182.50")
-        self.assertEqual(seen["host"], "100.99.182.50")
+            mercury._tcp_probe("wss://chat.mercurychat.net:7095/x", node_ip="192.0.2.50")
+        self.assertEqual(seen["host"], "192.0.2.50")
 
 
 class StatusStateMachine(unittest.TestCase):
