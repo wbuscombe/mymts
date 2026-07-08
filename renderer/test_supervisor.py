@@ -366,5 +366,65 @@ class StatusFile(unittest.TestCase):
         self.assertEqual(data["render"]["resolution"], "1080p")
 
 
+class BlankFrozenDetection(unittest.TestCase):
+    """The blank/frozen render watchdog (the 8-days-of-white lesson) — pure logic,
+    tested on synthetic probe frames (blank, frozen pair, normal)."""
+
+    N = 32 * 18   # the runtime's probe-frame size (BLANK_PROBE_W * H)
+
+    def _normal(self, seed=37):
+        # a high-spread frame (stands in for a real wall: tiles + text + ticker)
+        return bytes([(i * seed) % 256 for i in range(self.N)])
+
+    def test_blank_frames_are_uniform_normal_are_not(self):
+        for fill in (0, 128, 255):          # black / gray / white solid fills
+            solid = bytes([fill]) * self.N
+            self.assertEqual(sup.frame_variance(solid), 0.0)
+            self.assertTrue(sup.frame_is_blank(solid))
+        normal = self._normal()
+        self.assertGreater(sup.frame_variance(normal), sup.DEFAULT_BLANK_MAX_VARIANCE)
+        self.assertFalse(sup.frame_is_blank(normal))
+
+    def test_frozen_pair_vs_moving_pair(self):
+        a = self._normal(53)
+        self.assertTrue(sup.frames_are_frozen(a, bytes(a)))          # identical → frozen
+        self.assertFalse(sup.frames_are_frozen(a, self._normal(97)))  # different → not frozen
+        self.assertFalse(sup.frames_are_frozen(a, a[:100]))          # size mismatch → False
+        self.assertFalse(sup.frames_are_frozen(b"", b""))            # empty → False
+
+    def test_detector_trips_after_N_consecutive_blank(self):
+        d = sup.BlankOutputDetector(trip_after=3)
+        blank = bytes([255]) * self.N
+        self.assertFalse(d.record(blank))   # 1
+        self.assertFalse(d.record(blank))   # 2
+        self.assertTrue(d.record(blank))    # 3 → trip
+
+    def test_detector_trips_on_a_frozen_render(self):
+        d = sup.BlankOutputDetector(trip_after=3)
+        f = self._normal()                  # non-blank content, but unchanging
+        self.assertFalse(d.record(f))       # seeds prev (can't compare yet)
+        self.assertFalse(d.record(f))       # frozen streak 1
+        self.assertFalse(d.record(f))       # frozen streak 2
+        self.assertTrue(d.record(f))        # frozen streak 3 → trip
+
+    def test_a_normal_sample_resets_the_streak(self):
+        d = sup.BlankOutputDetector(trip_after=3)
+        blank = bytes([255]) * self.N
+        self.assertFalse(d.record(blank))   # streak 1
+        self.assertFalse(d.record(blank))   # streak 2
+        self.assertFalse(d.record(self._normal()))  # good sample → reset
+        self.assertFalse(d.record(blank))   # streak 1
+        self.assertFalse(d.record(blank))   # streak 2
+        self.assertTrue(d.record(blank))    # streak 3 → trip (proves it wasn't already at 2)
+
+    def test_reset_clears_streak_and_prev(self):
+        d = sup.BlankOutputDetector(trip_after=2)
+        blank = bytes([0]) * self.N
+        self.assertFalse(d.record(blank))
+        d.reset()
+        self.assertFalse(d.record(blank))   # restarted → needs trip_after again
+        self.assertTrue(d.record(blank))
+
+
 if __name__ == "__main__":
     unittest.main()

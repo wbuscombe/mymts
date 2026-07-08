@@ -51,6 +51,11 @@ BUFSIZE = os.environ.get("RENDER_BUFSIZE", "16M")
 AUDIO_BITRATE = os.environ.get("RENDER_AUDIO_BITRATE", "128k")
 # How often the supervise loop re-checks the configured resolution (seconds).
 RESOLUTION_POLL_S = 12
+# Blank/frozen render detection (the 8-days-of-white lesson): sample the live X11
+# render this often. A tiny grayscale probe frame is enough to measure uniformity;
+# N consecutive blank/frozen samples (minutes apart) restart the render.
+BLANK_SAMPLE_INTERVAL_S = int(os.environ.get("RENDER_BLANK_SAMPLE_S", "120"))
+BLANK_PROBE_W, BLANK_PROBE_H = 32, 18
 # The wall config the renderer reads its resolution from (derived from HELPER_URL).
 API_WALL_URL = os.environ.get(
     "RENDER_API_WALL_URL", "https://mymts-helper:8443/api/wall"
@@ -346,6 +351,27 @@ def ffmpeg_cmd() -> list[str]:
     ]
 
 
+def sample_render_frame() -> bytes | None:
+    """Grab ONE frame straight from the live X11 display, downscaled to a tiny
+    grayscale buffer, for blank/frozen detection. This sees what Chromium is ACTUALLY
+    rendering (the white-wedge symptom), independent of the HLS output. Returns the
+    raw gray bytes (BLANK_PROBE_W*H), or None on any ffmpeg error (a failed probe is
+    NOT evidence — the caller skips that round rather than acting on nothing)."""
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+             "-f", "x11grab", "-video_size", f"{WIDTH}x{HEIGHT}", "-i", DISPLAY,
+             "-frames:v", "1", "-vf", f"scale={BLANK_PROBE_W}:{BLANK_PROBE_H},format=gray",
+             "-f", "rawvideo", "-"],
+            capture_output=True, timeout=15,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if out.returncode == 0 and len(out.stdout) == BLANK_PROBE_W * BLANK_PROBE_H:
+        return out.stdout
+    return None
+
+
 class Child:
     """A supervised stream process (chromium / ffmpeg) + its restart tracker."""
 
@@ -430,6 +456,13 @@ def main() -> int:
     write_status_file(outputs, render_res, ffmpeg is not None, publisher)
     last_fresh = None   # monotonic time the stream was last HEALTHY (advancing)
     next_check = time.monotonic() + RESOLUTION_POLL_S
+    # Blank/frozen render watchdog: sample the live render every ~2 min; N consecutive
+    # blank/frozen samples restart Chromium (then the whole stack if it recurs) —
+    # catching a wedged white/static page ffmpeg is happily encoding (the 8-day
+    # incident the stale check missed, because that blank stream stayed 'fresh').
+    blank_detector = supervisor.BlankOutputDetector()
+    blank_tracker = supervisor.RestartTracker(window_seconds=1800.0, max_in_window=3)
+    next_blank_check = time.monotonic() + BLANK_SAMPLE_INTERVAL_S
     while not _stop:
         # Xvfb is foundational — if it dies, the whole stack is broken; exit so
         # the container restarts cleanly (compose restart: unless-stopped).
@@ -484,6 +517,29 @@ def main() -> int:
                 for c in children:
                     c.terminate()
                 return 1
+        # BLANK/FROZEN render detection: complements the wedge check above (which only
+        # catches a stream that STOPS advancing). A blank-BUT-advancing stream — Chromium
+        # wedged on a white/frozen page ffmpeg happily encodes — is exactly the 8-day
+        # incident. Only sampled when an encoder is running AND the stream is advancing
+        # (otherwise the stale-wedge path owns it). N consecutive blank/frozen samples
+        # restart Chromium first, escalating to the full stack if it recurs.
+        if ffmpeg and time.monotonic() >= next_blank_check:
+            next_blank_check = time.monotonic() + BLANK_SAMPLE_INTERVAL_S
+            if supervisor.is_stream_healthy(STREAM_DIR, time.time()):
+                frame = sample_render_frame()
+                if frame is not None and blank_detector.record(frame):
+                    blank_tracker.record(time.monotonic())
+                    if blank_tracker.is_crash_looping(time.monotonic()):
+                        log("render blank/frozen recurring after Chromium restarts — restarting the container stack")
+                        for c in children:
+                            c.terminate()
+                        return 1
+                    log("render blank/frozen (Chromium wedged on a uniform/static page) — restarting Chromium")
+                    chromium.terminate()
+                    chromium.start()
+                    blank_detector.reset()
+            else:
+                blank_detector.reset()   # not advancing → the stale-wedge path owns it
         for c in children:
             rc = c.poll()
             if rc is not None:

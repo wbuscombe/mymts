@@ -367,3 +367,96 @@ class RestartTracker:
         """True iff the child has restarted >= max_in_window times within the
         window — a signal to escalate (restart the foundational stack)."""
         return self.count_in_window(now) >= self.max_in_window
+
+
+# ---- blank / frozen render detection (the 8-days-of-white lesson) ----
+# The stale-restart above catches a stream that STOPS advancing. But Chromium can
+# wedge on a WHITE (or frozen) page while ffmpeg happily encodes it — a perfectly
+# "fresh" stream of blank frames that went undetected for ~8 days until a viewer
+# appeared. So we also sample the LIVE render (a tiny grayscale probe frame) and
+# trip when it is effectively UNIFORM (blank/white/black) or FROZEN (unchanging)
+# across several samples minutes apart. Multiple consecutive bad samples are
+# required so legitimately-dark/static content can't false-positive. Pure: the
+# runtime grabs the frame; these decide.
+
+# A grayscale probe frame with variance at/below this is "blank" (a solid fill).
+# Deliberately LOW: a real wall (tiles + text + a crawling ticker) has variance far
+# above this, so only a near-uniform frame trips — biasing against false positives.
+DEFAULT_BLANK_MAX_VARIANCE = 4.0
+# Two probe frames whose mean per-pixel absolute difference is at/below this are
+# "frozen" (the render is not changing). A live wall differs frame-to-frame by far
+# more; ~0 means nothing moved between two samples minutes apart.
+DEFAULT_FROZEN_MAX_MEAN_DIFF = 2.0
+# Consecutive bad (blank OR frozen) samples before tripping a restart. At the
+# runtime's minutes-apart cadence this is several minutes of continuously-bad render.
+DEFAULT_BLANK_TRIP_AFTER = 3
+
+
+def frame_variance(frame: bytes) -> float:
+    """Population variance of a grayscale probe frame's pixel bytes. ~0 for a solid
+    fill (blank/white/black); large for any real content. Pure. Empty → 0.0."""
+    n = len(frame)
+    if n == 0:
+        return 0.0
+    mean = sum(frame) / n
+    return sum((b - mean) ** 2 for b in frame) / n
+
+
+def frame_is_blank(frame: bytes, max_variance: float = DEFAULT_BLANK_MAX_VARIANCE) -> bool:
+    """True iff the probe frame is effectively uniform (a solid blank/white/black
+    fill) — its variance is at/below ``max_variance``. Pure."""
+    return frame_variance(frame) <= max_variance
+
+
+def frames_are_frozen(
+    a: bytes, b: bytes, max_mean_diff: float = DEFAULT_FROZEN_MAX_MEAN_DIFF
+) -> bool:
+    """True iff two same-size grayscale probe frames are effectively identical (the
+    render is frozen) — their mean per-pixel absolute difference is at/below
+    ``max_mean_diff``. Different sizes or an empty frame → not comparable → False.
+    Pure."""
+    if not a or not b or len(a) != len(b):
+        return False
+    total = sum(abs(x - y) for x, y in zip(a, b))
+    return (total / len(a)) <= max_mean_diff
+
+
+class BlankOutputDetector:
+    """Tracks CONSECUTIVE bad (blank OR frozen) render samples so a wedged Chromium
+    (a white/static page ffmpeg is happily encoding) is caught even though the stream
+    stays 'fresh'. Pure: the runtime feeds a sampled probe frame every interval; a
+    restart is signalled only after ``trip_after`` consecutive bad samples (minutes
+    apart), so a legitimately-dark/static moment can't false-positive. Any good sample
+    resets the streak."""
+
+    def __init__(
+        self,
+        trip_after: int = DEFAULT_BLANK_TRIP_AFTER,
+        max_variance: float = DEFAULT_BLANK_MAX_VARIANCE,
+        max_mean_diff: float = DEFAULT_FROZEN_MAX_MEAN_DIFF,
+    ) -> None:
+        self.trip_after = trip_after
+        self.max_variance = max_variance
+        self.max_mean_diff = max_mean_diff
+        self._bad_streak = 0
+        self._prev: bytes | None = None
+
+    def record(self, frame: bytes) -> bool:
+        """Feed one sampled probe frame; returns True iff a restart should fire NOW
+        (``trip_after`` consecutive bad samples reached). The caller gates WHEN to
+        sample (only when live tiles are expected + the stream is advancing)."""
+        blank = frame_is_blank(frame, self.max_variance)
+        frozen = self._prev is not None and frames_are_frozen(
+            self._prev, frame, self.max_mean_diff
+        )
+        self._prev = frame
+        if blank or frozen:
+            self._bad_streak += 1
+        else:
+            self._bad_streak = 0
+        return self._bad_streak >= self.trip_after
+
+    def reset(self) -> None:
+        """Clear the streak + last frame (after a restart, or when sampling pauses)."""
+        self._bad_streak = 0
+        self._prev = None
