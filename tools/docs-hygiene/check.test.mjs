@@ -35,8 +35,9 @@ test("RFC 5737 documentation IPs are NOT flagged (they ARE the sanctioned placeh
   assert.deepEqual(ids("--device 192.0.2.10:5555"), []);
   assert.deepEqual(ids("NODE_IP=198.51.100.7"), []);
   assert.deepEqual(ids("the gateway 203.0.113.1"), []);
-  // a REAL routable IP still fails (the leak class this protects)
-  assert.deepEqual(ids("the tailnet host 100.99.182.50"), ["full-ipv4"]);
+  // a REAL routable IP still fails (the leak class this protects) — use a GENERIC
+  // CGNAT/LAN address, never the operator's actual tailnet host, in the fixture itself.
+  assert.deepEqual(ids("a tailnet-class host 100.64.1.1"), ["full-ipv4"]);
   assert.deepEqual(ids("LAN box 192.168.1.42"), ["full-ipv4"]);
 });
 
