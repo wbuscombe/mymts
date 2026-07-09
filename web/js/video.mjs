@@ -150,7 +150,18 @@ export function attachStream(videoEl, url, onState) {
     // every MSE browser) gets the working demuxer; native HLS is reserved for the
     // ONE engine with no MSE for hls.js to use (iOS Safari).
     // subtitleDisplay:false → don't auto-render a default subtitle track (the regression).
-    hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, maxBufferLength: 12, backBufferLength: 12, subtitleDisplay: false });
+    //
+    // capLevelToPlayerSize:true is THE render-smoothness lever (ARCHITECTURE §41,
+    // measured): a wall cell paints into ~700 device-px, but ABR would otherwise load
+    // each stream's FULL-RES (often 1080p) variant — so the GPU-less renderer
+    // software-decodes ~6× the pixels it displays, N tiles at once, and drops 15-40%
+    // of frames (the judder mpdecimate can't see). Capping the level to the element's
+    // size makes a ~700px cell load a ~480p rendition instead — ~5× less decode work —
+    // so tiles hold their source fps with <5% drop. It is size-driven, so a LARGER
+    // element (a maximised/fullscreen tile, or the laptop /app/ at full window) still
+    // gets a high-res variant automatically — no special-case needed. The renderer's
+    // Chromium runs devicePixelRatio=1, so the cap tracks the real cell px exactly.
+    hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, capLevelToPlayerSize: true, maxBufferLength: 12, backBufferLength: 12, subtitleDisplay: false });
     // Expose the hls instance to the (opt-in) fpsmeter so it can read which LEVEL
     // (resolution) this tile actually loaded vs the cell it paints into — the
     // variant-vs-cell overdraw number. Non-enumerable, cleared on teardown; a
