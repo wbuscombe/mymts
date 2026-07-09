@@ -41,9 +41,13 @@ start() {
   # construction); the centered running timecode makes every frame provably unique
   # and human-readable in the captured tile. split into 3, scale to the ladder,
   # encode 3 renditions + a shared tone, emit a live master + rolling segments.
+  # -re paces GENERATION to real-time (1x). Without it a lavfi source races ahead
+  # (speed>1x), the live-HLS edge advances faster than wall-clock, and hls.js skips
+  # frames chasing the edge — a real 30fps stream then plays at ~18fps on the wall.
+  # -re makes it a faithful live source, so the tile decodes the full 30fps.
   ffmpeg -hide_banner -loglevel error -nostdin \
-    -f lavfi -i "testsrc2=size=1920x1080:rate=30" \
-    -f lavfi -i "sine=frequency=1000:sample_rate=48000" \
+    -re -f lavfi -i "testsrc2=size=1920x1080:rate=30" \
+    -re -f lavfi -i "sine=frequency=1000:sample_rate=48000" \
     -filter_complex "\
 [0:v]drawtext=fontfile=${FONT}:text='f=%{n}':fontsize=120:fontcolor=white:borderw=6:bordercolor=black:x=(w-tw)/2:y=(h-th)/2,\
 split=3[v0][v1][v2];\
