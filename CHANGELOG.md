@@ -22,6 +22,12 @@ professionalization audit. Helper/renderer/discord/tooling + docs only — nativ
   on a white page while ffmpeg happily encoded it (the stale-check only catches a STOPPED stream). A
   new watchdog samples the live render every ~2 min and, after N consecutive blank/frozen samples,
   restarts Chromium (then the stack if it recurs). Pure detector, unit-tested (blank/frozen/normal).
+- **fix(renderer): pin chromium to bookworm-main (147).** The self-heal rebuild pulled Debian
+  bookworm-security's chromium 150, which DUMPS CORE on startup under this headful Xvfb (the wall went
+  black); 147/149 render fine. An apt-preferences version pin holds chromium at 147 (no snapshot
+  archive needed). The renderer only loads our own trusted `/app/` in an isolated container, so the
+  reduced update cadence is an acceptable trade; revisit when Debian's newer chromium stops crashing
+  headful. (Prod was restored to the last-good image during the incident, then rebuilt clean on 147.)
 - **chore(docs-hygiene): apex-domain denylist + config-template scan.** The gate now flags the
   operator's real domain/brand, and scans the committed config templates (`*.env.example`, compose)
   — closing the gap that let a private tailnet IP slip past a docs-only scan (now redacted, see the
