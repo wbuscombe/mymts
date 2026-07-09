@@ -36,6 +36,7 @@ from .health import FreshnessSnapshotter, HealthState
 from .log import configure_logging
 from .playlist.api import get_router as playlist_router
 from .playlist.profiles import load_profiles
+from .render_telemetry import get_router as render_telemetry_router
 from .stream.api import get_router as stream_router
 from .ticker.api import get_router as ticker_router
 from .ticker.pollers import MarketsPoller, SportsPoller
@@ -223,6 +224,10 @@ def create_app(
     # mode / the SSRF posture is respected (no egress in phantom → honest-offline).
     app.include_router(weather_router(RadarFrameCache(), resolver=active_resolver))
     log.info("weather_radar_route_mounted")
+    # Opt-in render instrumentation sink (LAN-only; NEVER on create_public_app):
+    # the render page's ?fpsmeter=1 telemetry lands here for the bench harness to
+    # scrape. Inert until a measurement points the renderer at fpsmeter=1.
+    app.include_router(render_telemetry_router())
     # Renderer HLS stream (headless-container version, second half): serve the
     # playlist + segments the renderer writes to the shared volume, so VLC /
     # Apple TV opens one URL. Opt-in via STREAM_DIR; absent → no route added.

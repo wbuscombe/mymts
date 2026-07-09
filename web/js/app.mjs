@@ -26,6 +26,7 @@ import {
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 import { normalizeConfig } from "./wallConfig.mjs";
+import { meterRequested, startFpsMeter } from "./fpsmeter.mjs";
 
 const FEED_POLL_MS = 60_000, CHANNELS_POLL_MS = 60_000, TICKER_POLL_MS = 60_000;
 // Server-side wall config (headless-container version): poll it so a change made
@@ -1657,6 +1658,19 @@ function main() {
   startLoop(pollTicker, TICKER_POLL_MS);
   startLoop(pollFeed, FEED_POLL_MS);
   startLoop(pollChannels, CHANNELS_POLL_MS);
+  // Opt-in render instrumentation (`?fpsmeter=1`, off by default): per-tile decode/
+  // present fps + drop-% + variant-vs-cell overdraw, drawn as an overlay and POSTed
+  // to the LAN telemetry endpoint for the bench harness. Zero cost when not asked.
+  if (meterRequested(location.search)) {
+    startFpsMeter({
+      videos: () => Array.from(document.querySelectorAll(".tile video")),
+      labelOf: (v) => {
+        const t = v.closest(".tile");
+        const lab = t && t.querySelector(".tile-label");
+        return (lab && lab.textContent) || "";
+      },
+    });
+  }
   pollPresets();   // server-authoritative presets (rarely change → fetch once)
   // Server-side wall config: render FROM it (headless-container version). Polled
   // so a /control/ picker change appears here within WALL_POLL_MS; a stored

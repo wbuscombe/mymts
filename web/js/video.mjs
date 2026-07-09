@@ -151,6 +151,11 @@ export function attachStream(videoEl, url, onState) {
     // ONE engine with no MSE for hls.js to use (iOS Safari).
     // subtitleDisplay:false → don't auto-render a default subtitle track (the regression).
     hls = new (Hls())({ lowLatencyMode: false, enableWorker: false, maxBufferLength: 12, backBufferLength: 12, subtitleDisplay: false });
+    // Expose the hls instance to the (opt-in) fpsmeter so it can read which LEVEL
+    // (resolution) this tile actually loaded vs the cell it paints into — the
+    // variant-vs-cell overdraw number. Non-enumerable, cleared on teardown; a
+    // pure back-reference, no behaviour change when the meter is off.
+    try { videoEl.__mymtsHls = hls; } catch { /* frozen element — skip */ }
     hls.on(Hls().Events.MANIFEST_PARSED, () => tryPlay());
     // Re-assert the desired caption state whenever the subtitle track set changes,
     // so hls.js can't silently select a manifest default when captions are off.
