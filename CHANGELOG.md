@@ -13,7 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > helper/renderer/discord work below is a completed milestone tracked by `build_sha` (exact commit);
 > `v0.5.0` is deferred until native next changes.
 
-## chore(cleanup + audit): renderer self-heal, hygiene gate, durable network, deploy tagging, doc currency (2026-07-08)
+## perf(renderer): true-motion 1080p30 across the wall — per-tile ABR capping (measured) (2026-07-09)
+
+The wall genuinely moves now, proven per-tile. Renderer render-path + a reusable measurement
+harness; native untouched, no version cut (see the version note above).
+
+- **perf(renderer): cap hls.js level to player size.** MEASURED root cause (ARCHITECTURE §41): each
+  wall tile paints into ~700 device-px but hls.js ABR loaded the stream's full-res variant — LiveNOW/
+  CBS 1080p into a 703×463 cell = **6.4× overdraw**, BBC 720p = 2.8× — so the GPU-less renderer
+  software-decoded N oversized streams at once and **dropped 11/33/40 % of frames per tile** (the
+  judder the encoder's perfect 30 CFR and mpdecimate-on-output both hide). `capLevelToPlayerSize:true`
+  → a ~700px cell loads a ~480p rendition (~5× less decode) → drops fall to **0/0/~0–5 %**, overdraw
+  to ~1.3×. Size-driven, so a maximised/fullscreen tile still gets full res automatically. No
+  Chrome-flag change (the compositor was already healthy at 50–60fps rAF) — web-only, renderer image
+  untouched (the chromium-147 pin holds).
+- **feat(renderer): per-tile fpsmeter + LAN telemetry sink** (opt-in `?fpsmeter=1`, inert in prod) —
+  the missing measurement: per-tile decode/present fps + drop-% + variant-vs-cell overdraw, POSTed to
+  a LAN-only `/api/render/telemetry` (never on the Discord public app). The tool for every future
+  smoothness question, replacing the misleading mpdecimate-on-output number (which for a multi-tile
+  wall is blind to per-tile loss — tile motion is a fraction of the frame + H.264 smooths it).
+- **test(renderer): render-bench harness + synthetic high-motion control** (`tools/render-bench/`) —
+  a per-stage collector + a deterministic multi-variant 30fps moving-clock control (injected via an
+  fpsmeter-gated hook, served HTTPS from a sidecar), so content-limit vs pipeline-limit is separable
+  by construction. Documented + runnable on demand; inert on every normal render.
 
 A cleanup pass closing loose ends from the Discord Activity arc, plus the Discord-Activity-milestone
 professionalization audit. Helper/renderer/discord/tooling + docs only — native untouched.

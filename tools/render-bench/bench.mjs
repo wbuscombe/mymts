@@ -32,6 +32,12 @@ const RENDERER = process.env.BENCH_RENDERER || "mymts-renderer";
 const HELPER = process.env.BENCH_HELPER || "mymts-helper";
 const HELPER_ORIGIN = process.env.BENCH_HELPER_ORIGIN || "https://127.0.0.1:8443";
 const LABEL = process.env.BENCH_LABEL || "run";
+// Skip the ffmpeg unique-frame probes (encoder-unique + x11 page-paint). Those run
+// ffmpeg INSIDE the renderer and, at 60fps, contend with Chromium's compositing —
+// which perturbs the very per-tile numbers they sit beside. For the authoritative
+// per-tile smoothness read (esp. the synthetic control, whose local source is
+// scheduling-sensitive), set BENCH_NO_PROBES=1: telemetry + CPU only, no contention.
+const NO_PROBES = process.env.BENCH_NO_PROBES === "1";
 
 const sh = (cmd) => execSync(cmd, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 // async variant so the 60s ffmpeg probes DON'T block the event loop — they must run
@@ -164,10 +170,15 @@ async function main() {
   // Run the two ffmpeg unique-frame probes + CPU sampling TRULY concurrently over the
   // window (async spawn, not blocking execSync — else they serialise and stretch the
   // telemetry window). The tile fps then divides by the page's OWN measured interval.
-  const encoderP = ffprobeUnique("/stream/playlist.m3u8", "", WINDOW_S);
-  const paintP = ffprobeUnique(":99", "-f x11grab -framerate 30 -video_size 1920x1080", WINDOW_S);
+  // BENCH_NO_PROBES skips the ffmpeg probes (telemetry + CPU only) to avoid contending
+  // with the render — the clean per-tile read.
+  const nullProbe = { uniqueFps: null, cfrFps: null };
+  const encoderP = NO_PROBES ? Promise.resolve(nullProbe) : ffprobeUnique("/stream/playlist.m3u8", "", WINDOW_S);
+  const paintP = NO_PROBES ? Promise.resolve(nullProbe) : ffprobeUnique(":99", "-f x11grab -framerate 30 -video_size 1920x1080", WINDOW_S);
   const loadP = sampleLoad(WINDOW_S);
-  const [encoder, paint, load] = await Promise.all([encoderP, paintP, loadP]);
+  // With probes off, the window has no natural 60s pacer — hold it open explicitly.
+  const holdP = NO_PROBES ? new Promise((r) => setTimeout(r, WINDOW_S * 1000)) : Promise.resolve();
+  const [encoder, paint, load] = await Promise.all([encoderP, paintP, loadP, holdP]);
 
   const t1 = telemetry();
   // TRUE window = the page's elapsedS delta (falls back to wall-clock, then nominal).

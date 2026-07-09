@@ -66,31 +66,50 @@ is exercised unchanged. The clock serves **HTTPS self-signed** (the render Chrom
 `--ignore-certificate-errors`; the render page is HTTPS, so an HTTP source would be
 mixed-content-blocked) with permissive CORS (hls.js fetches it cross-origin).
 
-```sh
-# copy + start the clock inside the renderer container (ffmpeg + a tiny HTTPS server):
-docker exec mymts-renderer mkdir -p /app/render-bench
-docker cp make-clock-hls.sh mymts-renderer:/app/render-bench/make-clock-hls.sh
-docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh start
-# → serves https://mymts-renderer:8099/master.m3u8
+Run the clock as a **sidecar container** (its own cgroup, so it stands in for an
+external CDN and doesn't steal the renderer's cores — and it survives renderer
+recreates). Point cells 2 & 3 at it via the render URL:
 
-# point cells 2 & 3 at it by adding benchclock to the render URL + recreate the renderer:
-RENDER_HELPER_URL='https://mymts-helper:8443/app/?render=1&fpsmeter=1&benchclock=https://mymts-renderer:8099/master.m3u8&benchcells=2,3' \
+```sh
+# 1. sidecar clock on mymts-net (reachable by the render Chrome as bench-clock:8099):
+docker create --name bench-clock --network mymts-net --entrypoint sleep mymts-renderer:<ver> infinity
+docker start bench-clock && docker exec bench-clock mkdir -p /app/render-bench
+docker cp make-clock-hls.sh bench-clock:/app/render-bench/make-clock-hls.sh
+docker exec bench-clock sh /app/render-bench/make-clock-hls.sh start
+
+# 2. point cells 2 & 3 at it (recreate the renderer with the bench hook):
+RENDER_HELPER_URL='https://mymts-helper:8443/app/?render=1&fpsmeter=1&benchclock=https://bench-clock:8099/master.m3u8&benchcells=2,3' \
   docker compose -f docker-compose.nas.yml up -d --no-deps --no-build renderer
 
-BENCH_WINDOW_S=60 BENCH_LABEL=control-before node bench.mjs
+# 3. the CLEAN per-tile read — telemetry only, no ffmpeg probes (see below):
+BENCH_NO_PROBES=1 BENCH_WINDOW_S=60 BENCH_LABEL=control node bench.mjs
 ```
 
 **Teardown (revert everything):**
 
 ```sh
-# back to the plain fpsmeter URL (or drop fpsmeter entirely for prod):
 RENDER_HELPER_URL='https://mymts-helper:8443/app/?render=1' \
-  docker compose -f docker-compose.nas.yml up -d --no-deps --no-build renderer
-docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh stop
+  docker compose -f docker-compose.nas.yml up -d --no-deps --no-build renderer   # back to prod
+docker rm -f bench-clock
 ```
 
 The bench hook is inert on every normal render — it fires only when `?fpsmeter=1`
 AND `benchclock=…` are both present (regression-tested in `web/test/fpsmeter.test.mjs`).
+
+### `BENCH_NO_PROBES=1` — the clean per-tile read
+
+The two ffmpeg probes run INSIDE the renderer and, at 60fps, contend with Chromium's
+compositing — which perturbs the very per-tile numbers they sit beside (a tile can
+read 16% drop under the probe load and ~0% without it). For the authoritative per-tile
+smoothness read, set `BENCH_NO_PROBES=1`: telemetry + CPU only, no contention. Use the
+full probes when you want the page-paint / encoder-unique stages too.
+
+**Reading the synthetic control:** a locally-generated `-re` HLS live stream has some
+live-edge jitter that a real CDN doesn't, so the clock tiles' *presented-fps* can dip
+below the source's 30 — but **drop-% stays ~0 during those dips** (the pipeline
+presents every frame it receives; the source under-delivered), and a REAL stream in
+the same run (LiveNOW) holds a full 30fps/0%. So drop-% is the pipeline signal;
+a low presented-fps at ~0 drop is source-side, not the render path.
 
 ## Interpreting it
 
