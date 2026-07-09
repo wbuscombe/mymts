@@ -30,7 +30,19 @@ ENV BUILD_SHA=${BUILD_SHA} \
 # pulseaudio-utils, the null sink), ffmpeg (x11grab + pulse capture → HLS),
 # tini (PID 1), fonts + ca-certificates (correct rendering + TLS), procps
 # (the supervisor inspects processes). --no-install-recommends keeps it lean.
-RUN apt-get update \
+#
+# CHROMIUM IS PINNED to the bookworm-MAIN version (147.x), NOT the bookworm-SECURITY
+# 150.x: Chromium 150 DUMPS CORE on startup under this headful Xvfb (verified 2026-07-08
+# — the wall went entirely black), while 147/149 render fine. The apt-preferences pin
+# below forces chromium* from bookworm main (147) over the security pocket (150). The
+# renderer only ever loads OUR OWN trusted /app/ (no untrusted web content) in an
+# isolated, --no-sandbox, cap-dropped container, so the reduced chromium
+# security-update cadence is an acceptable trade for a render that actually works.
+# REVISIT: drop the pin (or bump to a specific version) once Debian's newer chromium no
+# longer crashes headful — retest with a throwaway container before removing this.
+RUN printf 'Package: chromium*\nPin: version 147.*\nPin-Priority: 1001\n' \
+        > /etc/apt/preferences.d/pin-chromium-main \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         chromium \
         xvfb \
