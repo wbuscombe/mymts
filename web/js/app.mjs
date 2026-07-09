@@ -26,7 +26,11 @@ import {
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 import { normalizeConfig } from "./wallConfig.mjs";
-import { meterRequested, startFpsMeter } from "./fpsmeter.mjs";
+import { meterRequested, startFpsMeter, benchClockConfig, benchUrlFor } from "./fpsmeter.mjs";
+
+// Bench high-motion control (inert unless ?fpsmeter=1&benchclock=…): which cells
+// get the synthetic clock instead of their real channel. Computed once from the URL.
+const BENCH_CLOCK = benchClockConfig(typeof location !== "undefined" ? location.search : "");
 
 const FEED_POLL_MS = 60_000, CHANNELS_POLL_MS = 60_000, TICKER_POLL_MS = 60_000;
 // Server-side wall config (headless-container version): poll it so a change made
@@ -949,7 +953,10 @@ function renderCell(cell, slug, ch, bp) {
   let playOverlay = null;
   const clearOverlay = () => { if (playOverlay) { playOverlay.remove(); playOverlay = null; } };
 
-  const handle = attachStream(video, ch.current_url, (state, detail) => {
+  // Bench control: cells in the override set play the synthetic high-motion clock
+  // instead of their real channel (no-op on every normal render).
+  const streamUrl = benchUrlFor(BENCH_CLOCK, cell.index, ch.current_url);
+  const handle = attachStream(video, streamUrl, (state, detail) => {
     if (myGen !== cell.gen) return;   // stale handle from a prior attach — ignore
     if (state === "live") {
       cell.videoAttempt = 0;          // a clean (re)connect refills the retry budget

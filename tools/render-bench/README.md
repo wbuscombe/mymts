@@ -58,23 +58,24 @@ known: a synthetic **multi-variant** (1080p/720p/480p) 30fps moving-clock — ev
 frame provably unique, and multi-variant so `capLevelToPlayerSize` has renditions to
 choose (a faithful analog of the real CDN streams).
 
+The clock is injected via the **fpsmeter-gated bench hook** (`?benchclock=<url>`),
+NOT the channel registry — the registry rightly rejects an internal clock (https-only
++ trusted-CA + must-probe-live, the SSRF/TLS shield). The hook swaps a cell's stream
+URL client-side, so the real wall (grid, cell sizing, `video.mjs` capping, fpsmeter)
+is exercised unchanged. The clock serves **HTTPS self-signed** (the render Chrome runs
+`--ignore-certificate-errors`; the render page is HTTPS, so an HTTP source would be
+mixed-content-blocked) with permissive CORS (hls.js fetches it cross-origin).
+
 ```sh
-# copy + start the clock inside the renderer container (ffmpeg + a static server):
+# copy + start the clock inside the renderer container (ffmpeg + a tiny HTTPS server):
 docker exec mymts-renderer mkdir -p /app/render-bench
 docker cp make-clock-hls.sh mymts-renderer:/app/render-bench/make-clock-hls.sh
-docker exec -d mymts-renderer sh /app/render-bench/make-clock-hls.sh start
-# → serves http://mymts-renderer:8099/master.m3u8 (reachable by the render Chrome AND
-#   the helper prober via compose DNS)
+docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh start
+# → serves https://mymts-renderer:8099/master.m3u8
 
-# point 2 tiles at it WITHOUT touching the wall layout: override two channels'
-# source_url via the gitignored operator lineup file, then re-seed (helper restart):
-cat > /path/to/mymts-helper-data/lineup.local.json <<'JSON'
-{ "override": {
-    "bbc-news":      { "source_url": "http://mymts-renderer:8099/master.m3u8" },
-    "cbs-sports-hq": { "source_url": "http://mymts-renderer:8099/master.m3u8" } } }
-JSON
-docker restart mymts-helper           # re-seed picks up the override
-# the render page's channel poll swaps those tiles to the clock within ~seconds
+# point cells 2 & 3 at it by adding benchclock to the render URL + recreate the renderer:
+RENDER_HELPER_URL='https://mymts-helper:8443/app/?render=1&fpsmeter=1&benchclock=https://mymts-renderer:8099/master.m3u8&benchcells=2,3' \
+  docker compose -f docker-compose.nas.yml up -d --no-deps --no-build renderer
 
 BENCH_WINDOW_S=60 BENCH_LABEL=control-before node bench.mjs
 ```
@@ -82,13 +83,14 @@ BENCH_WINDOW_S=60 BENCH_LABEL=control-before node bench.mjs
 **Teardown (revert everything):**
 
 ```sh
-rm -f /path/to/mymts-helper-data/lineup.local.json
-docker restart mymts-helper                                   # channels revert to real URLs
+# back to the plain fpsmeter URL (or drop fpsmeter entirely for prod):
+RENDER_HELPER_URL='https://mymts-helper:8443/app/?render=1' \
+  docker compose -f docker-compose.nas.yml up -d --no-deps --no-build renderer
 docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh stop
 ```
 
-The override file is gitignored operator config (never committed); removing it +
-re-seed reverts the lineup exactly (the override machinery prunes cleanly).
+The bench hook is inert on every normal render — it fires only when `?fpsmeter=1`
+AND `benchclock=…` are both present (regression-tested in `web/test/fpsmeter.test.mjs`).
 
 ## Interpreting it
 

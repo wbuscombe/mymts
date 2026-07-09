@@ -130,6 +130,39 @@ export function meterRequested(search) {
   }
 }
 
+/**
+ * The bench high-motion control hook. When the meter is armed, `?benchclock=<url>`
+ * injects a KNOWN-motion source (the synthetic multi-variant clock) into specific
+ * cells so a run separates content-limit from pipeline-limit by construction —
+ * WITHOUT the channel registry (whose https/probe/SSRF rules rightly reject an
+ * internal clock). `?benchcells=2,3` picks which cell indices to override (default
+ * 2,3). Returns { url: string|null, cells: Set<number> }; url=null ⇒ inert, so this
+ * is a no-op on every normal render (it only fires under ?fpsmeter=1&benchclock=…).
+ */
+export function benchClockConfig(search) {
+  try {
+    const p = new URLSearchParams(search || "");
+    if (p.get("fpsmeter") !== "1") return { url: null, cells: new Set() };
+    const url = p.get("benchclock");
+    if (!url) return { url: null, cells: new Set() };
+    const raw = p.get("benchcells");
+    const cells = new Set(
+      (raw ? raw.split(",") : ["2", "3"])
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isInteger(n) && n >= 0),
+    );
+    return { url, cells };
+  } catch {
+    return { url: null, cells: new Set() };
+  }
+}
+
+/** Resolve a cell's effective stream URL: the bench clock when this cell is in the
+ *  override set, else the channel's real URL. Pure — the caller passes the config. */
+export function benchUrlFor(cfg, cellIndex, realUrl) {
+  return cfg && cfg.url && cfg.cells.has(cellIndex) ? cfg.url : realUrl;
+}
+
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
 /** Read a tile's hls.js loaded level {w,h} via the reference video.mjs stashes on

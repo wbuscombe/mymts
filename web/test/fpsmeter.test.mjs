@@ -13,6 +13,8 @@ import {
   summarizeTiles,
   wallVerdict,
   meterRequested,
+  benchClockConfig,
+  benchUrlFor,
   OVERDRAW_WASTE_X,
 } from "../js/fpsmeter.mjs";
 
@@ -128,4 +130,29 @@ test("meterRequested: only ?fpsmeter=1 arms it", () => {
 
 test("OVERDRAW_WASTE_X is a sane threshold (>1, the nearest-larger-variant allowance)", () => {
   assert.ok(OVERDRAW_WASTE_X > 1 && OVERDRAW_WASTE_X <= 2);
+});
+
+test("benchClockConfig: inert unless BOTH fpsmeter=1 AND benchclock are set", () => {
+  assert.deepEqual(benchClockConfig("?render=1"), { url: null, cells: new Set() });
+  assert.deepEqual(benchClockConfig("?fpsmeter=1"), { url: null, cells: new Set() });          // no clock url
+  assert.deepEqual(benchClockConfig("?benchclock=https://x/m.m3u8"), { url: null, cells: new Set() }); // meter off
+});
+
+test("benchClockConfig: fpsmeter=1 + benchclock arms it; default cells 2,3", () => {
+  const c = benchClockConfig("?render=1&fpsmeter=1&benchclock=https://r:8099/master.m3u8");
+  assert.equal(c.url, "https://r:8099/master.m3u8");
+  assert.deepEqual([...c.cells].sort(), [2, 3]);
+});
+
+test("benchClockConfig: explicit benchcells override the default set", () => {
+  const c = benchClockConfig("?fpsmeter=1&benchclock=https://r/m.m3u8&benchcells=0,1");
+  assert.deepEqual([...c.cells].sort(), [0, 1]);
+});
+
+test("benchUrlFor: overrides only the selected cells; real URL elsewhere / when inert", () => {
+  const cfg = { url: "CLOCK", cells: new Set([2, 3]) };
+  assert.equal(benchUrlFor(cfg, 2, "REAL"), "CLOCK");
+  assert.equal(benchUrlFor(cfg, 0, "REAL"), "REAL");
+  // inert config never overrides
+  assert.equal(benchUrlFor({ url: null, cells: new Set() }, 2, "REAL"), "REAL");
 });

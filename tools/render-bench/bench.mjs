@@ -24,7 +24,8 @@
 //        BENCH_LABEL (free text, e.g. "news-before").
 //   Out: a human table on stdout + a single BENCH_JSON:{...} line for capture.
 
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 
 const WINDOW_S = Number(process.env.BENCH_WINDOW_S || 60);
 const RENDERER = process.env.BENCH_RENDERER || "mymts-renderer";
@@ -33,6 +34,11 @@ const HELPER_ORIGIN = process.env.BENCH_HELPER_ORIGIN || "https://127.0.0.1:8443
 const LABEL = process.env.BENCH_LABEL || "run";
 
 const sh = (cmd) => execSync(cmd, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+// async variant so the 60s ffmpeg probes DON'T block the event loop — they must run
+// concurrently, and CPU sampling + the telemetry-window clock must keep ticking.
+const shA = (cmd) => new Promise((resolve) => {
+  exec(cmd, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => resolve(stdout || ""));
+});
 const num = (x) => (typeof x === "number" && isFinite(x) ? x : null);
 const f1 = (x) => (num(x) == null ? "  –  " : x.toFixed(1).padStart(5));
 
@@ -53,7 +59,7 @@ function telemetry() {
 }
 
 // --- an ffmpeg probe inside the renderer container; returns {frames, unique} over W ---
-function ffprobeUnique(input, extraIn, windowS) {
+async function ffprobeUnique(input, extraIn, windowS) {
   // -vf mpdecimate drops near-duplicate frames; the SURVIVING count / window = the
   // rate of genuinely-changed frames. A second plain count (no mpdecimate) gives the
   // CFR the encoder emits. Both from one container exec to keep the window aligned.
@@ -65,7 +71,7 @@ function ffprobeUnique(input, extraIn, windowS) {
     `docker exec ${RENDERER} sh -c ${JSON.stringify(
       `( ${lastFrame(`${base} -an -vf mpdecimate -f null -`)} ; echo '@@' ; ${lastFrame(`${base} -an -f null -`)} )`,
     )}`;
-  const out = sh(cmd);
+  const out = await shA(cmd);
   const [dec, cfr] = out.split("@@");
   const framesOf = (s) => {
     const m = (s || "").match(/frame=\s*(\d+)/);
@@ -118,6 +124,10 @@ async function sampleLoad(windowS) {
 }
 
 // --- per-tile deltas between two telemetry reads over the window ---
+// windowS here is the TRUE interval between the two telemetry snapshots (measured
+// from the page's own elapsedS clock by the caller), NOT the nominal probe window —
+// the ffmpeg probes can stretch wall-time, and dividing by the nominal window would
+// inflate every fps. Ratios (drop-%) are interval-independent and unaffected.
 function tileDeltas(t0, t1, windowS) {
   const a = (t0.latest && t0.latest.tiles) || [];
   const b = (t1.latest && t1.latest.tiles) || [];
@@ -151,14 +161,21 @@ async function main() {
   const t0 = telemetry();
   if (!t0.latest) console.log(`! no fpsmeter telemetry (age=${t0.age_s}) — is the renderer on ?render=1&fpsmeter=1? ${t0._error || ""}`);
 
-  // Run the two ffmpeg unique-frame probes + CPU sampling concurrently over the window.
-  const encoderP = Promise.resolve().then(() => ffprobeUnique("/stream/playlist.m3u8", "", WINDOW_S));
-  const paintP = Promise.resolve().then(() => ffprobeUnique(":99", "-f x11grab -framerate 30 -video_size 1920x1080", WINDOW_S));
+  // Run the two ffmpeg unique-frame probes + CPU sampling TRULY concurrently over the
+  // window (async spawn, not blocking execSync — else they serialise and stretch the
+  // telemetry window). The tile fps then divides by the page's OWN measured interval.
+  const encoderP = ffprobeUnique("/stream/playlist.m3u8", "", WINDOW_S);
+  const paintP = ffprobeUnique(":99", "-f x11grab -framerate 30 -video_size 1920x1080", WINDOW_S);
   const loadP = sampleLoad(WINDOW_S);
   const [encoder, paint, load] = await Promise.all([encoderP, paintP, loadP]);
 
   const t1 = telemetry();
-  const tiles = tileDeltas(t0, t1, WINDOW_S);
+  // TRUE window = the page's elapsedS delta (falls back to wall-clock, then nominal).
+  const e0 = t0.latest && num(t0.latest.elapsedS);
+  const e1 = t1.latest && num(t1.latest.elapsedS);
+  const trueWindow = (e0 != null && e1 != null && e1 - e0 > 1) ? e1 - e0 : WINDOW_S;
+  const tiles = tileDeltas(t0, t1, trueWindow);
+  console.log(`  (telemetry window: ${trueWindow.toFixed(1)}s from the page clock)`);
   const pageRaf = t1.latest && t1.latest.page ? num(t1.latest.page.rafFps) : null;
 
   // ---- tables ----

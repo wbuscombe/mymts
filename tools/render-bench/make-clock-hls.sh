@@ -15,8 +15,14 @@
 # everything lives under /tmp (tmpfs) and is torn down by `stop`.
 #
 #   Usage (from the NAS host):
-#     docker exec -d mymts-renderer sh /app/render-bench/make-clock-hls.sh start
-#     docker exec    mymts-renderer sh /app/render-bench/make-clock-hls.sh stop
+#     docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh start
+#     docker exec mymts-renderer sh /app/render-bench/make-clock-hls.sh stop
+#
+# Served over HTTPS (self-signed) with CORS: the render page is HTTPS, so an HTTP
+# subresource would be mixed-content-blocked, and hls.js fetches the manifest/
+# segments cross-origin (needs Access-Control-Allow-Origin). The render Chrome runs
+# --ignore-certificate-errors, so the self-signed cert is accepted for the fetch;
+# no channel-registry / prober is involved (the bench hook injects this URL directly).
 #
 # (The bench README copies this script into the container; it is NOT baked into the
 # image — it is a measurement tool, not a runtime dependency.)
@@ -59,16 +65,37 @@ split=3[v0][v1][v2];\
     "$DIR/stream_%v.m3u8" >"$DIR/ffmpeg.log" 2>&1 &
   echo $! > "$PIDDIR/ffmpeg.pid"
 
-  # A dead-simple static server for the segments (no CORS needed — the tiles fetch
-  # same-scheme http; hls.js handles it). Bound to all interfaces so the helper
-  # prober + render Chrome reach it via the container DNS name.
-  ( cd "$DIR" && python3 -m http.server "$PORT" --bind 0.0.0.0 >"$DIR/http.log" 2>&1 & echo $! > "$PIDDIR/http.pid" )
+  # Self-signed cert for the HTTPS server (the render Chrome ignores cert errors).
+  openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "$DIR/key.pem" -out "$DIR/cert.pem" \
+    -subj "/CN=mymts-renderer" >"$DIR/openssl.log" 2>&1
+
+  # A tiny HTTPS static server with permissive CORS (the HTTPS render page fetches
+  # the manifest/segments cross-origin via hls.js). Bound to all interfaces so the
+  # render Chrome reaches it by the container DNS name.
+  cat > "$DIR/serve.py" <<PY
+import http.server, ssl, os, sys
+port = int(sys.argv[1]); root = sys.argv[2]
+os.chdir(root)
+class H(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+    def log_message(self, *a): pass
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain(os.path.join(root, "cert.pem"), os.path.join(root, "key.pem"))
+httpd = http.server.HTTPServer(("0.0.0.0", port), H)
+httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+httpd.serve_forever()
+PY
+  ( python3 "$DIR/serve.py" "$PORT" "$DIR" >"$DIR/http.log" 2>&1 & echo $! > "$PIDDIR/http.pid" )
 
   # Wait for the master to appear so the caller can wire the channel immediately.
   i=0
   while [ ! -f "$DIR/master.m3u8" ] && [ "$i" -lt 30 ]; do i=$((i+1)); sleep 0.5; done
   if [ -f "$DIR/master.m3u8" ]; then
-    echo "clock up: http://mymts-renderer:${PORT}/master.m3u8 (dir=$DIR)"
+    echo "clock up: https://mymts-renderer:${PORT}/master.m3u8 (dir=$DIR)"
   else
     echo "clock FAILED to start — see $DIR/ffmpeg.log" >&2
     tail -5 "$DIR/ffmpeg.log" >&2 || true
@@ -82,7 +109,7 @@ stop() {
   done
   # belt-and-suspenders: kill any stray clock ffmpeg / server on our dir/port
   pkill -f "master_pl_name master.m3u8" 2>/dev/null || true
-  pkill -f "http.server ${PORT}" 2>/dev/null || true
+  pkill -f "serve.py ${PORT}" 2>/dev/null || true
   rm -rf "$DIR"
   echo "clock stopped + cleaned ($DIR)"
 }
