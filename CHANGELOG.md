@@ -7,11 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **Version note (2026-07-08):** no `v0.5.0` cut this milestone. The semver git tag drives the
-> native APK's `versionName` (`git describe --tags --match 'v*'`), and native production code is
-> byte-identical since `v0.4.0` — cutting a version would re-stamp an unchanged APK. The post-0.4.0
-> helper/renderer/discord work below is a completed milestone tracked by `build_sha` (exact commit);
-> `v0.5.0` is deferred until native next changes.
+> **Version note (2026-07-08, amended 2026-07-13):** the post-0.4.0 helper/renderer/discord/
+> web-smoothness work in this section is **non-native** and remains a completed-but-unreleased
+> milestone tracked by `build_sha` — no `v0.5.0` cut for it (the semver tag drives only the native
+> APK's `versionName`, and a cut would re-stamp an APK those changes don't touch). A **native**
+> crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
+> unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
 ## perf(renderer): true-motion 1080p30 across the wall — per-tile ABR capping (measured) (2026-07-09)
 
@@ -134,6 +135,35 @@ helper only — native untouched (no APK/tag), Mercury inert, renderer unchanged
 - **test/helper: the passthrough M3U8 is verified relative-URI-only** (an absolute URI
   would escape `/.proxy/`); `/.proxy/` prefix tolerance + path-safety unchanged. The
   renderer already emits relative URIs (verified live), so no ffmpeg change was needed.
+
+## [0.4.1] - 2026-07-13
+
+Native patch — response to an overnight **native heap-corruption crash** on the dedicated box
+(a use-after-free surfacing as a SIGSEGV inside ART's GC on `0xebebebeb` freed-poison). Evidence
+first: uptime proved an app-only crash (no reboot); the failure mode is **corruption, not the
+hypothesised leak→OOM** (no OOM/LMK, 5.9 MB cached process, irregular ~43 h interval). The specific
+overnight trace was lost to rotation (dropbox disabled on this Google TV build, logcat rotates in
+~2 days, non-debuggable release), so a multi-lens post-mortem ruled out the ExoPlayer path (v0.4.0
+touched zero player files; it ran crash-free Jun 22→Jul 6) and — the app shipping no first-party
+JNI and never calling `Bitmap.recycle()` — pointed by elimination + timing at v0.4.0's only new
+in-process native decode: the radar tile's Coil `GifDecoder` (`android.graphics.Movie`). Attribution
+is **inferred, not proven** (the GC-victim trace names no culprit frame), so this does both — fix
+the leading suspect and harden so the next incident is captured.
+
+- **fix(app): retire the deprecated `Movie` GIF decode path.** `MyMtsApp` is now a Coil
+  `ImageLoaderFactory` with ONE shared `ImageLoader`, choosing the decoder once: the platform
+  `ImageDecoderDecoder` on API 28+ (the box is API 34), legacy `GifDecoder` only for the minSdk-23
+  floor. Removes `Movie`/`MovieDrawable` (and its unsynchronised `softwareBitmap.recycle()`) from
+  the box entirely. `RadarImage` drops its per-composable `ImageLoader` (a leak — Coil roots it on
+  the Application) for the singleton, and disables Coil caching for the radar (the helper already
+  region-caches server-side) so the per-refresh tick no longer mints unbounded distinct cache keys.
+- **feat(app): durable, retrievable crash record** (the long-promised "Stage 6" handler). A global
+  `UncaughtExceptionHandler` appends a full record before chaining to the platform handler; the
+  event log now writes to the **external files dir** (`adb pull`-able without root on a
+  non-debuggable release — the gap that lost the overnight evidence) with `SESSION_START` +
+  per-radar-refresh breadcrumbs, so even a native crash leaves the restart timeline + last activity.
+- Tests: `+5` native unit tests (decoder-threshold + crash-record formatter/caps); all 397 green.
+- No `.182`/`.158` touched; PIA untouched; no server/helper change.
 
 ## [0.4.0] - 2026-07-06
 
