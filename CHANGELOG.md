@@ -163,7 +163,7 @@ the leading suspect and harden so the next incident is captured.
   non-debuggable release — the gap that lost the overnight evidence) with `SESSION_START` +
   per-radar-refresh breadcrumbs, so even a native crash leaves the restart timeline + last activity.
 - Tests: `+5` native unit tests (decoder-threshold + crash-record formatter/caps); all 397 green.
-- No `.182`/`.158` touched; PIA untouched; no server/helper change.
+- Scoped to the one dedicated box only; no other device, server, or network changed.
 
 ## [0.4.0] - 2026-07-06
 
