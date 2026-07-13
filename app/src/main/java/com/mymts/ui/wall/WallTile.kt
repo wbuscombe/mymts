@@ -28,11 +28,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.ExoPlayer
-import coil.ImageLoader
 import coil.compose.SubcomposeAsyncImage
-import coil.decode.GifDecoder
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.mymts.data.helper.Channel
+import com.mymts.util.CrashLog
 import com.mymts.player.StreamPlayer
 import com.mymts.ui.components.StreamSurface
 import kotlinx.coroutines.delay
@@ -152,24 +152,27 @@ private const val RADAR_REFRESH_MS = 5 * 60 * 1000L
 @Composable
 private fun RadarImage(imageUrl: String, label: String) {
     val context = LocalContext.current
-    // One Coil ImageLoader with the GIF decoder (GifDecoder works on all API levels,
-    // so the loop animates on the Onn box's minSdk-23 floor). Remembered on the app
-    // context so tiles don't rebuild it each recomposition.
-    val loader = remember(context.applicationContext) {
-        ImageLoader.Builder(context)
-            .components { add(GifDecoder.Factory()) }
-            .build()
-    }
+    // The decoder + a SINGLE shared ImageLoader live in MyMtsApp (ImageLoaderFactory):
+    // on API 28+ that's the platform ImageDecoderDecoder, NOT the legacy Movie-based
+    // GifDecoder — retiring the deprecated software GIF path (the 2026-07 crash
+    // hardening). SubcomposeAsyncImage below defaults imageLoader to that app
+    // singleton, so we no longer build (and leak) a per-tile loader.
+
     // Bump a refresh tick every RADAR_REFRESH_MS so the tile pulls the next scan.
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(imageUrl) {
         while (true) {
             delay(RADAR_REFRESH_MS)
             tick++
+            // Forensic breadcrumb (durable, adb-pullable log): if a later native
+            // crash happens, the trail shows the radar was decoding right before.
+            CrashLog.log(context, "RADAR_REFRESH | ${label.take(24)} | tick=$tick")
         }
     }
-    // Cache-bust so a refresh actually refetches (distinct URL → new Coil cache key);
-    // the helper's region-keyed cache means NWS isn't re-hit per pull.
+    // Re-fetch on each tick with caching DISABLED — the helper already region-caches
+    // server-side (no NWS re-hit), and disabling Coil's memory+disk cache means the
+    // per-tick key never accumulates distinct cache entries (the prior monotonic
+    // "?t=" cache-bust minted unbounded keys). tick is only a request-change trigger.
     val model = remember(imageUrl, tick) {
         val sep = if (imageUrl.contains('?')) "&" else "?"
         "$imageUrl${sep}t=$tick"
@@ -178,9 +181,10 @@ private fun RadarImage(imageUrl: String, label: String) {
     SubcomposeAsyncImage(
         model = ImageRequest.Builder(context)
             .data(model)
+            .memoryCachePolicy(CachePolicy.DISABLED)
+            .diskCachePolicy(CachePolicy.DISABLED)
             .crossfade(false)
             .build(),
-        imageLoader = loader,
         contentDescription = label,
         contentScale = ContentScale.Fit,
         modifier = Modifier.fillMaxSize(),
