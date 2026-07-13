@@ -55,6 +55,15 @@ the device, and gates promotion on telemetry.
 EOF
 }
 
+# JAVA_HOME for the WHOLE script (not just the gradle subshell): `apksigner` is a
+# wrapper that needs `java`, and the signing-identity verify (verify_signed_release)
+# runs it in the main shell. Without java on PATH there, apksigner emitted nothing and
+# the check FALSELY failed a correctly-signed release ("could not read the certificate").
+# Default to the operator's Homebrew JDK 17 (matches build_release); an exported
+# JAVA_HOME still wins.
+export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
+export PATH="$JAVA_HOME/bin:$PATH"
+
 DEVICE="${MYMTS_DEPLOY_DEVICE:-192.0.2.10:5555}"
 ARCHIVE_DIR="${MYMTS_ARCHIVE_DIR:-$HOME/.mymts/release}"
 DRY_RUN=0
