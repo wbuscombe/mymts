@@ -41,7 +41,20 @@ services:
     tmpfs:
       - /tmp:size=8m,uid=10001,gid=10001
     cpus: 1.0
-    mem_limit: 384m
+    # 384m → 512m (2026-07-13). The "2 VLC viewers crashed something" investigation
+    # found NO crash (RestartCount=0, no OOM) and proved the stream path is cleanly
+    # concurrent (N=1–4 readers: 0 errors, 0 restarts, memory flat) — so this is NOT a
+    # concurrency fix. But it surfaced that the helper runs permanently at ~353 MiB
+    # ANONYMOUS (unreclaimable) heap, i.e. `memory.current` ≈ 379/384 MiB = 98.7% with
+    # only ~5 MiB headroom, touching 98.45% under 4 concurrent readers. Running a
+    # service that tight to its OOM cap is fragile: any transient spike (GC timing, a
+    # large feed parse, a new radar region) could trip an OOM-kill — which WOULD look
+    # exactly like the reported "crash" (the stream dies for every viewer at once).
+    # With 2+ simultaneous viewers now an expected use case, give it real headroom.
+    # Low-risk: the NAS has ample RAM (the renderer alone gets 4g); still bounded so
+    # the helper can never starve the host. Watch for slow creep toward 512m (would
+    # indicate a real leak worth profiling, distinct from this steady working set).
+    mem_limit: 512m
     environment:
       PHANTOM_MODE: ${PHANTOM_MODE:-0}
       LOG_LEVEL: ${LOG_LEVEL:-info}

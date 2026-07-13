@@ -14,7 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
-## perf(renderer): true-motion 1080p30 across the wall — per-tile ABR capping (measured) (2026-07-09)
+## chore(helper): raise memory ceiling for multi-viewer headroom + concurrency regression test (2026-07-13)
+
+Outcome of the "2 VLC viewers crashed something" investigation. **No server-side crash occurred**
+and **concurrency did not reproduce a problem**: both containers had `RestartCount=0` (up since
+Jul 9, no OOM); a controlled load of N=1→4 simultaneous HLS readers on `:8082` and `:8443`
+(2597 requests) returned **0 non-2xx, 0 restarts, memory flat**; the stream passthrough is stateless
+(a `FileResponse` per request, no shared/mutable state). The reported "crash" was almost certainly an
+independent client-side event (a specific TV's VLC / a wifi blip), which the operator already suspected.
+
+- **chore(helper): `mem_limit` 384m → 512m** — precautionary, NOT a confirmed fix. The investigation
+  surfaced that the helper runs permanently at ~353 MiB anonymous heap ≈ **98.7% of the 384 MiB cap
+  (~5 MiB headroom)**, touching 98.45% under 4 readers. An OOM there is the one server-side failure
+  that would look like the reported symptom, and 2+ simultaneous viewers is now an expected use case;
+  512m gives real headroom. Low-risk (the NAS has ample RAM; still bounded). Renderer untouched.
+- **test(helper): concurrent-passthrough regression test** — 72 simultaneous in-flight requests on one
+  event loop, each asserted to receive its own correct bytes (guards the stateless-concurrency property).
 
 The wall genuinely moves now, proven per-tile. Renderer render-path + a reusable measurement
 harness; native untouched, no version cut (see the version note above).

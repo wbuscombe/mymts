@@ -172,6 +172,46 @@ def test_stream_app_reuses_the_symlink_guard(tmp_path: Path):
     assert "TOP-SECRET-PRIVATE-KEY" not in r.text
 
 
+async def test_concurrent_readers_get_correct_independent_responses(tmp_path: Path):
+    """The "2 VLC TVs watching at once" case (2026-07-13 investigation): many
+    SIMULTANEOUS in-flight requests to the passthrough on ONE event loop — the exact
+    production model (a single asyncio process serves every reader). Each request must
+    succeed AND receive ITS OWN correct bytes. If the router held shared/mutable
+    per-request state (e.g. a global "last resolved path" cache), concurrent readers
+    would cross-contaminate here; the stateless FileResponse-per-request design must
+    hold. Regression guard for the concurrency-safety the investigation relied on."""
+    import asyncio
+
+    import httpx
+
+    sd = tmp_path / "stream"
+    sd.mkdir()
+    (sd / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:4.0,\nseg_00001.ts\n")
+    # DISTINCT per-segment content so a cross-contaminated response is detectable.
+    segs = {f"seg_{i:05d}.ts": bytes([0x47, i]) + bytes([i]) * 186 for i in range(1, 9)}
+    for name, blob in segs.items():
+        (sd / name).write_bytes(blob)
+
+    app = create_stream_app(str(sd))  # the actual :8082 VLC-facing app
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        # 8 distinct segments × 8 readers + the playlist × 8 = 72 concurrent requests.
+        names = list(segs) * 8 + ["playlist.m3u8"] * 8
+
+        async def fetch(n: str) -> tuple[str, int, bytes]:
+            r = await client.get(f"/api/stream/{n}")
+            return n, r.status_code, r.content
+
+        results = await asyncio.gather(*[fetch(n) for n in names])
+
+    for n, code, content in results:
+        assert code == 200, f"{n} -> {code} under concurrency"
+        if n == "playlist.m3u8":
+            assert content.startswith(b"#EXTM3U")
+        else:
+            assert content == segs[n], f"{n} received cross-contaminated bytes under concurrency"
+
+
 def test_stream_app_head_and_media_types(tmp_path: Path):
     client, sd = _stream_client(tmp_path)
     (sd / "playlist.m3u8").write_text("#EXTM3U\n")
