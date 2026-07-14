@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## fix(renderer): stop the encoder-respawn churn on a helper blip (2026-07-14)
+
+Root-caused from a cross-project NAS-load incident (WyzeGrid's Frigate crash-looping on the shared
+NAS). Investigation verdict: the renderer's STEADY ~2.5-core 1080p cost is this project's own
+established/accepted baseline (ARCHITECTURE §31: "~3 cores at the 1080p default") and the box is
+**I/O-bound, not CPU-bound** (measured `%wa` 37-85%, ~52-63% CPU) — so the renderer is *not* the
+primary load driver (with it stopped, load stayed 14-18 at 45-59% iowait; the drivers are Frigate's
+own crash-loop I/O + a periodic Kometa run + general multi-tenant density). **No CPU ceiling was
+added** — the existing `cpus: 6.0` cap already bounds it, and capping below its established need
+would degrade the wall without fixing an I/O-bound box.
+
+But the investigation DID find a real bug: the poll loop's `read_outputs()` fell back to a *different*
+config (single-HLS, 8000 kbps/epoch0, dropping the discord encoder) on any failed helper read, which
+`plan_output_restart` read as an encoder change → respawn; the next good read differed from the
+fallback → respawn again → **flap every poll** (127 ffmpeg respawns + 7 stack restarts + 20
+blank-self-heal Chromium restarts / 6h) → a self-amplifying load spiral under NAS load. Fix:
+`fetch_outputs()` returns None on a blip and the loop keeps the running pipeline untouched (the loop's
+own stated intent); the divergent fallback is confined to the startup canvas-sizing path. Verified:
+0 respawns, RestartCount stable at 0. Renderer suite 66 python + node green.
+
 ## chore(helper): raise memory ceiling for multi-viewer headroom + concurrency regression test (2026-07-13)
 
 Outcome of the "2 VLC viewers crashed something" investigation. **No server-side crash occurred**
