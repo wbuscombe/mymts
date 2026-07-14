@@ -160,14 +160,34 @@ def get_json(url: str, timeout_s: float = 5.0) -> dict | None:
         return None
 
 
-def read_outputs() -> dict:
-    """The `outputs` block from the wall config. On an unreachable helper / absent
-    block, fall back to a single enabled HLS output at the current canvas — so a
-    helper blip never changes the running pipeline. Config > env > default."""
+def fetch_outputs() -> dict | None:
+    """The live `outputs` block from the wall config, or **None** when the helper is
+    unreachable / returns no usable outputs. The POLL LOOP uses this so a helper blip
+    leaves the running pipeline UNTOUCHED (the documented intent) — see below.
+
+    THE BUG THIS FIXES (2026-07-14): the prior `read_outputs()` fell back to a
+    single-HLS DEFAULT on any failed read. During the poll loop that default DIFFERS
+    from the live config (its bitrate/epoch, and it drops the discord encoder output),
+    so `plan_output_restart` saw a "change" and RESPAWNED the encoder — then the next
+    successful read differed from the fallback and respawned again. Under NAS load the
+    1-CPU helper answers slowly, so failed reads recur and the encoder flapped every
+    poll (127 respawns / 6h observed) → stream wedges → full-stack restarts → a
+    self-amplifying load spiral. Returning None (not a divergent config) on a blip and
+    having the loop SKIP reconfiguration matches the loop's own comment: "An
+    unreachable helper → no change → no restart." """
     cfg = get_json(API_WALL_URL)
     if isinstance(cfg, dict) and isinstance(cfg.get("outputs"), dict) and cfg["outputs"]:
         return cfg["outputs"]
-    return {
+    return None
+
+
+def read_outputs() -> dict:
+    """STARTUP read: the live outputs, or a safe single-enabled-HLS fallback so the
+    renderer can boot even before the helper answers (Config > env > default). The
+    poll loop uses `fetch_outputs()` + skips reconfiguration on a None, so a later
+    blip never flaps the running pipeline (unlike this fallback, which is a DIFFERENT
+    config used only for the cold-start canvas)."""
+    return fetch_outputs() or {
         "hls": {
             "enabled": True, "resolution": supervisor.DEFAULT_RESOLUTION,
             "bitrate_kbps": DEFAULT_BITRATE_KBPS, "audio": True, "restart_epoch": 0,
@@ -478,33 +498,38 @@ def main() -> int:
         # cycles only the publisher. An unreachable helper → no change → no restart.
         if time.monotonic() >= next_check:
             next_check = time.monotonic() + RESOLUTION_POLL_S
-            new_outputs = read_outputs()
-            plan = supervisor.plan_output_restart(outputs, new_outputs)
-            if plan["render_restart"]:
-                new_res = supervisor.derive_render_resolution(new_outputs)
-                log(f"render canvas changed {render_res} → {new_res} — restarting the container stack")
-                for c in children:
-                    c.terminate()
-                if xvfb.poll() is None:
-                    xvfb.terminate()
-                return 1
-            if plan["encoder_restart"]:
-                log("encoder outputs changed — respawning the capture/encode (render untouched)")
-                if ffmpeg:
-                    ffmpeg.terminate()
-                specs = encoder_specs(new_outputs)
-                ffmpeg = Child("ffmpeg", fanout_cmd(new_outputs), env) if specs else None
-                if ffmpeg:
-                    ffmpeg.start()
-                children = [chromium] + ([ffmpeg] if ffmpeg else [])
-            if plan["publisher_restart"]:
-                publisher.configure(new_outputs.get("mercury", {}))
-                if new_outputs.get("mercury", {}).get("enabled"):
-                    publisher.restart()   # inert
-                else:
-                    publisher.stop()      # inert
-            outputs = new_outputs
-            write_status_file(outputs, render_res, ffmpeg is not None, publisher)
+            # A helper blip returns None → keep the running pipeline UNTOUCHED (no
+            # plan, no respawn). ONLY a real, freshly-read config drives a restart —
+            # so a slow/unreachable helper can never flap the encoders (the 2026-07-14
+            # churn fix; see fetch_outputs).
+            new_outputs = fetch_outputs()
+            if new_outputs is not None:
+                plan = supervisor.plan_output_restart(outputs, new_outputs)
+                if plan["render_restart"]:
+                    new_res = supervisor.derive_render_resolution(new_outputs)
+                    log(f"render canvas changed {render_res} → {new_res} — restarting the container stack")
+                    for c in children:
+                        c.terminate()
+                    if xvfb.poll() is None:
+                        xvfb.terminate()
+                    return 1
+                if plan["encoder_restart"]:
+                    log("encoder outputs changed — respawning the capture/encode (render untouched)")
+                    if ffmpeg:
+                        ffmpeg.terminate()
+                    specs = encoder_specs(new_outputs)
+                    ffmpeg = Child("ffmpeg", fanout_cmd(new_outputs), env) if specs else None
+                    if ffmpeg:
+                        ffmpeg.start()
+                    children = [chromium] + ([ffmpeg] if ffmpeg else [])
+                if plan["publisher_restart"]:
+                    publisher.configure(new_outputs.get("mercury", {}))
+                    if new_outputs.get("mercury", {}).get("enabled"):
+                        publisher.restart()   # inert
+                    else:
+                        publisher.stop()      # inert
+                outputs = new_outputs
+                write_status_file(outputs, render_res, ffmpeg is not None, publisher)
         # WEDGE detection: ffmpeg/Chromium can hang (alive but the stream stops
         # advancing). Only meaningful when an HLS encoder is running (it writes the
         # playlist this checks). Once healthy, a stale-past-threshold stack restarts.

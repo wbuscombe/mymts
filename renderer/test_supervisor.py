@@ -290,6 +290,23 @@ class MultiOutputFanout(unittest.TestCase):
     def test_encoder_outputs_exclude_the_publisher(self):
         self.assertEqual(list(sup.enabled_encoder_outputs(self._outputs(mercury={"enabled": True}))), ["hls"])
         self.assertTrue(sup.is_publisher_output("mercury"))
+
+    def test_startup_fallback_differs_from_a_live_multi_encoder_config(self):
+        # WHY the poll loop must feed fetch_outputs() (None on a blip), NOT the
+        # startup fallback (2026-07-14 churn fix): the single-HLS fallback differs
+        # from a live hls+discord config, so plan_output_restart CORRECTLY calls it
+        # an encoder change — which, fed on every failed read, was the flap. Pins
+        # both the divergence and the invariant the fix relies on (live vs itself is
+        # a no-op, so a stable helper never respawns the encoder).
+        live = {
+            "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 24000,
+                    "audio": True, "restart_epoch": 3},
+            "discord": {"enabled": True, "guild_id": "", "transport": "activity"},
+        }
+        fallback = {"hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
+                            "audio": True, "restart_epoch": 0}}
+        self.assertTrue(sup.plan_output_restart(live, fallback)["encoder_restart"])
+        self.assertFalse(any(sup.plan_output_restart(live, live).values()))
         self.assertTrue(sup.is_encoder_output("hls"))
 
 
