@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## docs(architecture): §42 native crash-fix + §43 renderer/helper reliability (professionalization catch-up) (2026-07-15)
+
+A holistic professionalization sweep over everything since the last milestone (`5fcd3a6`) found the batch's
+only docs-vs-reality drift was ARCHITECTURE-only — every other dimension (security, CI-wiring, containers,
+version/tag, DX, all suites green) passed. Docs-only; no code or tests changed.
+
+- **ARCHITECTURE §42** — documents the v0.4.1 native hardening that had *zero* ARCHITECTURE coverage: the
+  shared Coil `ImageLoaderFactory` (retiring the deprecated `Movie`/`MovieDrawable` GIF path) + the durable
+  `CrashReporter`/breadcrumb record. Also corrected the Stage-1 component tree, which still described the
+  crash handler as a future "→ Stage 6": it **shipped** in v0.4.1 (only the watchdog is still deferred);
+  added `util/CrashReporter.kt` + `util/RadarDecoder.kt`; noted `MyMtsApp` now implements `ImageLoaderFactory`.
+- **ARCHITECTURE §43** — gives the two non-native `[Unreleased]` reliability fixes an ARCHITECTURE home
+  (previously CHANGELOG + code-comments only): the `fetch_outputs()` None-on-blip encoder-churn fix and the
+  helper `mem_limit` 384m→512m concurrent-viewer headroom.
+
 ## fix(renderer): stop the encoder-respawn churn on a helper blip (2026-07-14)
 
 Root-caused from a cross-project NAS-load incident (WyzeGrid's Frigate crash-looping on the shared

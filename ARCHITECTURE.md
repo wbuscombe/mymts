@@ -108,7 +108,7 @@ The TV app targets the Onn 4K **today**; the helper follows the operator's stand
 ```
 app/
 └── src/main/java/com/mymts/
-    ├── MyMtsApp.kt              # Application class (crash handler / watchdog → Stage 6)
+    ├── MyMtsApp.kt              # Application class + ImageLoaderFactory (§42); crash handler SHIPPED (v0.4.1), watchdog still → Stage 6
     ├── MainActivity.kt          # single Activity; switches modes via intent extras
     ├── player/
     │   ├── StreamSpec.kt        # value object; enforces http(s)-only scheme (no RTSP)
@@ -124,7 +124,9 @@ app/
     │   ├── SoakFixtures.kt      # LIVE + STABLE fixture pools
     │   ├── SoakHarness.kt       # multi-tile playback with telemetry
     │   └── SoakLog.kt           # tagged logcat (parsed by scripts/parse-soak-log.py)
-    └── util/CrashLog.kt         # file-backed log (mirrors WyzeGrid)
+    ├── util/CrashLog.kt         # file-backed event/breadcrumb log (mirrors WyzeGrid)
+    ├── util/CrashReporter.kt    # uncaught-exception handler → durable crash record (§42, v0.4.1)
+    └── util/RadarDecoder.kt     # picks the platform ImageDecoder (API 28+) over the legacy Movie GIF path (§42)
 ```
 
 ### Helper modules (Stage 1)
@@ -1414,3 +1416,21 @@ Chromium decode CPU roughly halved (≈165 % → ≈70–105 % of a core-second)
 **High-motion control (separating pipeline-limit from content-limit).** To rule out "the news content is just still," a synthetic **multi-variant 30fps moving-clock** (every frame provably unique) was injected into 2 cells via the fpsmeter-gated bench hook (the channel registry rightly refuses an internal source — https-only + trusted-CA + must-probe-live). Before the fix the clock tiles, forced to 1080p, dropped **15.5 %** and fell to ~17 fps; after, **worst drop 2.7 %** at 1.3× overdraw. (A locally-generated `-re` HLS live source has some live-edge jitter a real CDN doesn't, so the clock tiles' *presented*-fps can dip below 30 — but **drop-% stays ~0 during those dips** (the pipeline presents every frame it receives; the source under-delivered), and the real LiveNOW tile in the same run holds a full 30 fps / 0 %. So drop-% is the pipeline signal; the dip is source-side.)
 
 **Honest sustainable envelope (this NAS, 1080p canvas, capped variants).** 3 live video tiles at ≤480p decode with <5 % drop while the wall also runs its two 1080p fan-out encodes (VLC + Discord); a 60fps source (CBS) is the hardest and occasionally spikes to ~15 % under the dual-encode load. The `mpdecimate`-on-output number is **not** a smoothness metric for a multi-tile wall (see the blind spot above) — use `tools/render-bench/` (per-tile telemetry) for any future smoothness question. The remaining ceiling above 1080p is unchanged (§31 GPU envelope). The harness + the `?fpsmeter=1` instrumentation are opt-in and inert in prod.
+
+## 42. Native long-uptime hardening (v0.4.1) — one shared image loader + a durable crash record (2026-07-13)
+
+An overnight **native** crash on the box (a SIGSEGV inside ART's GC — a use-after-free shape) left no forensic trail: this Google TV build ships with Dropbox disabled and logcat rotated past the event within ~2 days. Two changes land in `MyMtsApp` (updating the Stage-1 component-tree note above, which had promised the crash handler for a future "Stage 6") to make the app both less likely to corrupt native heap *and* diagnosable the next time it does.
+
+**One shared Coil `ImageLoader` (`ImageLoaderFactory`).** The weather-radar tile (§33) built a *fresh* `ImageLoader` inside its composable and never `shutdown()` it — a Coil anti-pattern: each loader roots itself on the `Application` and owns a memory cache + disk cache + OkHttp dispatcher threads, so the wall leaked one whole loader per tile rotation. `MyMtsApp` now implements `ImageLoaderFactory` and returns a single app-scoped loader (Coil resolves `context.imageLoader` to it). The single loader also lets the GIF decoder be chosen **once**: the platform `ImageDecoderDecoder` on API 28+ (the Onn box is API 34), which **retires the deprecated `android.graphics.Movie`/`MovieDrawable` software GIF path** — the most plausible source of the native heap corruption — keeping the legacy `GifDecoder` only for the `minSdk`-23 floor (`RadarDecoder.preferAnimatedImageDecoder()`).
+
+**A durable crash record (`CrashReporter`).** The uncaught-exception handler the Stage-1 comment had long promised for "Stage 6" finally ships, plus a retrievable event/breadcrumb log (`CrashLog`, written to the ADB-pullable external files dir). `CrashReporter.install()` sets a global `Thread.UncaughtExceptionHandler` that appends a full crash record **before** chaining to the platform handler — it *adds* a forensic record, it does not swallow the crash (the system still logs + kills the process exactly as before). **Honest limit:** a native crash (SIGSEGV/SIGABRT — the failure actually seen) bypasses every JVM handler, so this cannot capture the native stack. What it *does* give for a native death is the **breadcrumb trail** — `CrashLog` lifecycle + per-radar-refresh markers are already on disk, and `markSessionStart()` records each (re)launch — so the durable log shows the restart timeline and what the app was doing last. Capturing the native stack itself is a separate escalation (a GWP-ASan/HWASan debug soak — `tools/soak`).
+
+Shipped as **`v0.4.1`** (`versionCode 401`), a native-only crash-fix patch. Tests: `CrashReporterTest` / `RadarDecoderTest` (JVM unit, CI-wired via `:app:testReleaseUnitTest`).
+
+## 43. Renderer/helper reliability — config-read resilience + concurrent-viewer headroom ([Unreleased], 2026-07-13/14)
+
+Two reliability fixes on the renderer/helper side, both **non-native** — they sit in CHANGELOG `[Unreleased]`, not a tag (the no-tag-unless-`app/`-changes convention; `app/` is untouched since `v0.4.1`).
+
+**The encoder-respawn churn fix (`fetch_outputs()` returns `None` on a blip).** The renderer polls the helper's `outputs` config every ~12s and reconfigures the fan-out encoders when it changes (the §34 restart matrix — unchanged, still accurate; the bug was *upstream* of `plan_output_restart`, in the config read that feeds it). The old `read_outputs()` fell back to a **single-HLS default** on any failed read. Inside the poll loop that default *differs* from the live multi-output config, so `plan_output_restart` saw a "change" and respawned the encoder — then the next successful read differed from the fallback and respawned **again**. Under NAS I/O load (the 1-CPU helper answering slowly) this flapped every poll — **127 respawns in 6h observed** — wedging the stream into full-stack restarts, a self-amplifying load spiral (the same I/O-contention window that also stretched the nightly Kometa run). The fix splits the read: **`fetch_outputs()` returns `None` on an unreachable/empty-outputs blip, and the poll loop leaves the running pipeline untouched on `None`** (no plan, no respawn) — only a real, freshly-read config drives a restart. The divergent single-HLS fallback is now confined to the **startup** path (`read_outputs()`, which needs *something* to size the canvas before the helper first answers) and is never fed to the poll loop's change-detection. Tests: `renderer/test_run.py` (stdlib `unittest`, CI-wired via `unittest discover -s renderer`).
+
+**Concurrent-viewer headroom (helper `mem_limit` 384m → 512m).** A "two VLC viewers crashed something" investigation found the constraint was the helper's 384m ceiling itself, not a leak: `memory.current` sat within a few MiB of the 384 MiB cap (~99%), yet 1–4 concurrent `/stream` readers showed **0 errors, 0 restarts, memory flat** — a working set that fits comfortably under a slightly higher cap, not an anonymous/unreclaimable heap. Raised to **512m** (still a hard ceiling — the helper can never starve the host or PIA). A stateless-concurrency regression test (`helper/tests/test_stream_api.py`) fires **72 simultaneous in-flight `/stream` requests** and asserts each gets its correct, independent response (the passthrough is stateless — no cross-request contamination under load). Watch item: a slow creep toward 512m would flip the reading to a real leak.
