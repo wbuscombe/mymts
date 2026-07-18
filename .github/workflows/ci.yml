@@ -54,9 +54,6 @@ jobs:
       - name: Web client tests (node:test — render/cards/schema-guard/settings)
         run: node --test web/test/*.test.mjs
 
-      - name: Discord Activity tests (node:test — OAuth wiring + hls attach + error states)
-        run: node --test discord-activity/test/*.test.mjs
-
       - name: Mercury publisher tests (node:test — forced screen_share simulcast wiring)
         run: node --test renderer/test/*.test.mjs
 

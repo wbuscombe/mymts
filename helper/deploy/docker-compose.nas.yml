@@ -89,20 +89,6 @@ services:
       # the self-signed HTTPS, so the HLS is ALSO served over plain HTTP on this
       # LAN port (the same hardened /api/stream route; API/control/app stay HTTPS).
       STREAM_HTTP_PORT: ${STREAM_HTTP_PORT:-8082}
-      # Discord Activity output (2026-06-28). A DEDICATED minimal public app serves
-      # ONLY the Activity static files + /api/discord/* + the /api/stream passthrough
-      # on DISCORD_PUBLIC_PORT — the full API + /control/ + /app/ are NOT on it. The
-      # operator's Cloudflare tunnel maps the public hostname to this port (TLS at the
-      # edge). The listener starts only when PORT + ACTIVITY_DIR + STREAM_DIR are all
-      # set (here ACTIVITY_DIR + STREAM_DIR are, so set DISCORD_PUBLIC_PORT=8084 in
-      # .env to bring it up). The Activity static files arrive via the read-only mount
-      # below. CLIENT ID is public; the SECRET is a secret — both come from .env
-      # (gitignored), default EMPTY → the card sits in needs-setup, posts NOTHING.
-      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
-      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
-      DISCORD_ACTIVITY_PUBLIC_ORIGIN: ${DISCORD_ACTIVITY_PUBLIC_ORIGIN:-}
-      DISCORD_ACTIVITY_DIR: ${DISCORD_ACTIVITY_DIR:-/app/activity}
-      DISCORD_PUBLIC_PORT: ${DISCORD_PUBLIC_PORT:-8084}
     volumes:
       # Named volume (Docker-managed) avoids host-side permission churn
       # for the non-root container user. State lives at
@@ -124,26 +110,14 @@ services:
       # helper/, so it is NOT in the image build context — a bind mount is
       # how it reaches the container without an image rebuild for web edits.)
       - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_web:/app/web:ro
-      # Discord Activity static app (the repo-root `discord-activity/` tree, rsynced
-      # by deploy-helper.sh to `_activity/`). Mounted READ-ONLY: inert static files
-      # (HTML/CSS/JS + the vendored SDK/hls.js), credential-free; the container can
-      # never rewrite them. Served at /app/activity via DISCORD_ACTIVITY_DIR above by
-      # the dedicated public app. Like web/, it's outside the image build context, so
-      # a bind mount reaches the container without an image rebuild for Activity edits.
-      - ${MYMTS_HELPER_REMOTE_PATH:-/srv/mymts-helper}/_activity:/app/activity:ro
       # Renderer HLS output — the shared volume the renderer writes (rw) and the
       # helper serves READ-ONLY. A compromised helper cannot write the stream;
       # a compromised renderer cannot reach the helper's data/cert volumes.
       - mymts-stream:/stream:ro
     networks:
       # mymts-net: the helper + renderer's own bridge (TV/LAN + renderer reach the
-      # helper here). tunnel-net: the operator's EXTERNAL Cloudflare-tunnel network
-      # (owned by the separate cloudflared stack) — attaching the helper here makes the
-      # Discord Activity origin DURABLE: cloudflared reaches `mymts-helper:8084` over
-      # tunnel-net even if cloudflared is recreated, replacing the fragile one-off
-      # `docker network connect`. We touch ONLY our own compose. See ARCHITECTURE §39.
+      # helper here).
       - mymts-net
-      - tunnel-net
     # HTTPS-only as of 2026-06-04. The TV on the LAN reaches /api/feed
     # + /api/channels at https://<nas-lan-ip>:8443. LAN-only; the
     # container is still non-root + cap-dropped + read-only-rootfs.
@@ -152,12 +126,6 @@ services:
       # Plain-HTTP HLS stream (stream-only app) for strict LAN players (Apple TV
       # VLC). LAN-bound; serves ONLY the hardened /api/stream route, no API/keys.
       - "8082:8082"
-      # Plain-HTTP Discord Activity public app (2026-06-28). The operator's Cloudflare
-      # tunnel maps the public hostname (e.g. wall.your-domain.example) to this port and
-      # terminates TLS at the edge. Serves ONLY the Activity + /api/discord/* + the
-      # /api/stream passthrough — the full API + /control/ are NOT here. Until the
-      # tunnel hostname is added in the CF dashboard, this is just a LAN-local port.
-      - "8084:8084"
     logging:
       driver: json-file
       options:
@@ -282,17 +250,6 @@ networks:
     # sources and HLS upstreams. Bounded egress (a Squid-style allowlist)
     # is a Stage 6 hardening item; for v1 the SSRF guard in the fetcher
     # prevents the poller from being turned into a pivot.
-  # EXTERNAL: the operator's Cloudflare-tunnel network, created + owned by the separate
-  # cloudflared stack (NOT us). `external: true` means we ATTACH the helper to it and
-  # never create/manage/tear it down. This makes the public Discord Activity origin
-  # durable (cloudflared → mymts-helper:8084 over tunnel-net) without the fragile manual
-  # `docker network connect`, and without editing the cloudflared/kavita stack. Egress
-  # is unaffected — tunnel-net is an ordinary bridge out the NAS's residential WAN, never
-  # a VPN. Only cloudflared/kavita (already on tunnel-net) can reach the helper here; the
-  # public internet still only sees the tunnel-mapped :8084 host.
-  tunnel-net:
-    external: true
-    name: tunnel-net
 
 volumes:
   mymts-helper-data:

@@ -23,9 +23,6 @@ def _cfg(
     tmp_path: Path,
     *,
     stream_dir: str | None = None,
-    discord_client_id: str | None = None,
-    discord_client_secret: str | None = None,
-    discord_public_origin: str | None = None,
     phantom: bool = False,
 ) -> Config:
     return Config(
@@ -34,9 +31,6 @@ def _cfg(
         data_dir=str(tmp_path / "data"),
         feed_poll_interval_seconds=3600, channel_probe_interval_seconds=3600,
         stream_dir=stream_dir,
-        discord_client_id=discord_client_id,
-        discord_client_secret=discord_client_secret,
-        discord_activity_public_origin=discord_public_origin,
     )
 
 
@@ -150,79 +144,3 @@ def test_mercury_prefill_persists_and_stays_disabled(tmp_path: Path):
     }}})
     m = client.get("/api/outputs/status").json()["outputs"]["mercury"]
     assert m["channel_guid"] == "abc-123" and m["state"] == "disabled"
-
-
-# ----- discord output (helper-computed; launch-to-start; viewer of the HLS) -----
-
-def test_discord_present_and_disabled_by_default_no_egress(tmp_path: Path):
-    # No DISCORD_* creds configured → the card is disabled and performs ZERO outbound.
-    d = _client(tmp_path).get("/api/outputs/status").json()["outputs"]["discord"]
-    assert d["enabled"] is False and d["state"] == "disabled"
-    assert d["checklist"]["public_origin_reachable"] is None       # never probed
-    assert "resolution" not in d                                   # viewer shape, no encode knobs
-
-
-def test_discord_needs_setup_when_enabled_without_creds(tmp_path: Path):
-    client = _client(tmp_path)
-    client.post("/api/outputs/discord/start")
-    d = client.get("/api/outputs/status").json()["outputs"]["discord"]
-    assert d["enabled"] is True and d["state"] == "needs_setup"
-    assert d["checklist"]["client_id_present"] is False
-
-
-def test_discord_ready_when_creds_present_and_origin_reachable(tmp_path: Path, monkeypatch):
-    # Inject a reachable origin probe (no network) and supply creds → ready.
-    monkeypatch.setattr(
-        "mymts_helper.discord.status.httpx_origin_probe", lambda origin, **k: True
-    )
-    client = _client(
-        tmp_path, discord_client_id="cid", discord_client_secret="sec",
-        discord_public_origin="https://wall.example",
-    )
-    client.post("/api/outputs/discord/start")
-    d = client.get("/api/outputs/status").json()["outputs"]["discord"]
-    assert d["state"] == "ready"
-    assert d["checklist"]["public_origin_reachable"] is True
-    assert d["public_origin"] == "https://wall.example"
-    # ready ≠ a live session — the state is never "live"/"publishing".
-    assert d["state"] in ("disabled", "needs_setup", "ready")
-
-
-def test_discord_phantom_never_probes(tmp_path: Path, monkeypatch):
-    calls: list = []
-    monkeypatch.setattr(
-        "mymts_helper.discord.status.httpx_origin_probe",
-        lambda origin, **k: calls.append(origin) or True,
-    )
-    client = _client(
-        tmp_path, phantom=True, discord_client_id="cid", discord_client_secret="sec",
-        discord_public_origin="https://wall.example",
-    )
-    client.post("/api/outputs/discord/start")
-    d = client.get("/api/outputs/status").json()["outputs"]["discord"]
-    assert calls == []                                             # strict zero outbound
-    assert d["checklist"]["public_origin_reachable"] is None
-
-
-def test_discord_start_stop_and_no_clobber(tmp_path: Path):
-    client = _client(tmp_path)
-    client.put("/api/wall", json={"outputs": {"mercury": {"channel_guid": "g-9"}}})
-    client.post("/api/outputs/discord/start")
-    outs = client.get("/api/outputs/status").json()["outputs"]
-    assert outs["discord"]["enabled"] is True
-    assert outs["hls"]["enabled"] is True                          # hls not clobbered
-    assert outs["mercury"]["channel_guid"] == "g-9"               # mercury not clobbered
-    client.post("/api/outputs/discord/stop")
-    assert client.get("/api/outputs/status").json()["outputs"]["discord"]["enabled"] is False
-
-
-def test_discord_restart_is_rejected(tmp_path: Path):
-    # Launch-to-start: there is no helper-owned session to restart.
-    assert _client(tmp_path).post("/api/outputs/discord/restart").status_code == 400
-
-
-def test_discord_guild_hint_persists(tmp_path: Path):
-    client = _client(tmp_path)
-    client.put("/api/wall", json={"outputs": {"discord": {"guild_id": "777"}}})
-    d = client.get("/api/outputs/status").json()["outputs"]["discord"]
-    assert d["guild_id"] == "777"

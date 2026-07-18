@@ -7,9 +7,8 @@ keeps only the LATEST snapshot in memory (no disk, no secrets) and hands it back
 GET; the harness differences two GETs to compute any window.
 
 Posture (deliberate):
-  * Mounted ONLY on the full LAN app (``create_app``) — NEVER on the Discord public
-    app (``create_public_app`` includes only discord + stream + index). The tunnel
-    origin can't see it.
+  * Mounted ONLY on the full LAN app (``create_app``); the LAN-only stream app
+    (``create_stream_app``) deliberately omits it — no public surface exposes it.
   * Inert until measured: nothing POSTs unless the renderer's HELPER_URL carries
     ``fpsmeter=1`` for a measurement window, so prod holds ``latest: null``.
   * Bounded: the raw body is size-capped and the stored tile list is truncated, so a

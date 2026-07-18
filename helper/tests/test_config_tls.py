@@ -67,31 +67,3 @@ def test_empty_env_strings_treated_as_unset(monkeypatch: pytest.MonkeyPatch) -> 
     assert cfg.ssl_keyfile is None
     assert cfg.ssl_certfile is None
     assert cfg.has_https() is False
-
-
-def test_should_start_discord_public_is_gated_on_phantom(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Configured (port + activity dir + stream dir), NOT phantom → the public app starts.
-    _set_env(
-        monkeypatch,
-        DISCORD_PUBLIC_PORT="8084",
-        DISCORD_ACTIVITY_DIR="/app/activity",
-        STREAM_DIR="/stream",
-        PHANTOM_MODE="0",
-    )
-    cfg = Config.from_env()
-    assert cfg.has_discord_public() is True
-    assert cfg.should_start_discord_public() is True
-
-    # PHANTOM is a zero-egress demo → the public (egress-capable) app stays OFF even
-    # though it's otherwise configured.
-    _set_env(monkeypatch, PHANTOM_MODE="1")
-    cfg = Config.from_env()
-    assert cfg.has_discord_public() is True
-    assert cfg.should_start_discord_public() is False
-
-    # Not configured → off regardless of phantom.
-    monkeypatch.delenv("DISCORD_PUBLIC_PORT", raising=False)
-    _set_env(monkeypatch, PHANTOM_MODE="0")
-    cfg = Config.from_env()
-    assert cfg.has_discord_public() is False
-    assert cfg.should_start_discord_public() is False

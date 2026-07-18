@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mymts_helper.app import create_app, create_public_app
+from mymts_helper.app import create_app
 from mymts_helper.config import Config
 from mymts_helper.render_telemetry import MAX_TILES, TelemetryStore, get_router, sanitize
 
@@ -94,19 +94,3 @@ def test_telemetry_is_on_the_lan_app() -> None:
     with tempfile.TemporaryDirectory() as d:
         c = TestClient(create_app(_cfg(Path(d)), resolver=_block_all_resolver))
         assert c.get("/api/render/telemetry").status_code == 200
-
-
-def test_telemetry_is_absent_from_the_discord_public_app(tmp_path: Path) -> None:
-    stream = tmp_path / "stream"; stream.mkdir()
-    act = tmp_path / "activity"; act.mkdir()
-    (act / "index.html").write_text("<!doctype html><title>x</title>")
-    app = create_public_app(
-        stream_dir=str(stream), activity_dir=str(act),
-        discord_client_id="CID", discord_client_secret="SEC", build_sha="dev",
-    )
-    c = TestClient(app)
-    # the public tunnel origin must not see the LAN debug surface: the telemetry
-    # handler is simply not registered, so neither verb is accepted (GET falls
-    # through to the activity 404; POST has no handler → 405). Either way, never 2xx.
-    assert c.get("/api/render/telemetry").status_code == 404
-    assert c.post("/api/render/telemetry", json={"x": 1}).status_code in (404, 405)

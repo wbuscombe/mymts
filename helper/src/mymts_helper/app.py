@@ -27,7 +27,6 @@ from .channels.override import seed_lineup
 from .channels.presets import get_router as presets_router
 from .channels.prober import ChannelProber
 from .config import Config
-from .discord.token_api import get_router as discord_router
 from .feeds.api import get_router as feed_router
 from .feeds.poller import FeedPoller
 from .feeds.seeder import seed_from_file as seed_feeds_from_file
@@ -211,10 +210,6 @@ def create_app(
             db_path,
             cfg.data_dir,
             cfg.stream_dir,
-            discord_client_id=cfg.discord_client_id,
-            discord_client_secret=cfg.discord_client_secret,
-            discord_public_origin=cfg.discord_activity_public_origin,
-            phantom=cfg.phantom_mode,
         )
     )
     # Weather radar widget (free public NWS RIDGE loop GIF): proxy + cache the
@@ -224,7 +219,7 @@ def create_app(
     # mode / the SSRF posture is respected (no egress in phantom → honest-offline).
     app.include_router(weather_router(RadarFrameCache(), resolver=active_resolver))
     log.info("weather_radar_route_mounted")
-    # Opt-in render instrumentation sink (LAN-only; NEVER on create_public_app):
+    # Opt-in render instrumentation sink (LAN-only; never on a public surface):
     # the render page's ?fpsmeter=1 telemetry lands here for the bench harness to
     # scrape. Inert until a measurement points the renderer at fpsmeter=1.
     app.include_router(render_telemetry_router())
@@ -305,141 +300,4 @@ def create_stream_app(stream_dir: str) -> FastAPI:
     def health() -> dict[str, object]:
         return {"status": "ok", "stream": True}
 
-    return app
-
-
-class _StripProxyPrefix:
-    """ASGI middleware that strips a leading ``/.proxy`` from the request path.
-
-    Discord's Activity proxy serves our app at ``…/.proxy/`` and normally strips the
-    prefix before forwarding to our origin — but configurations vary, and some
-    forward the full ``/.proxy/...`` path. This makes the public origin tolerant of
-    BOTH: ``/.proxy/api/stream/playlist.m3u8`` and ``/api/stream/playlist.m3u8``
-    resolve identically. Belt-and-suspenders for the documented `/.proxy/` gotcha;
-    a no-op for every non-proxied request (the LAN/acceptance paths)."""
-
-    def __init__(self, app: object) -> None:
-        self._app = app
-
-    async def __call__(self, scope: dict, receive: object, send: object) -> None:
-        if scope.get("type") in ("http", "websocket"):
-            path = scope.get("path", "")
-            if path == "/.proxy" or path.startswith("/.proxy/"):
-                stripped = path[len("/.proxy"):] or "/"
-                scope = {**scope, "path": stripped, "raw_path": stripped.encode("latin-1")}
-        await self._app(scope, receive, send)  # type: ignore[operator]
-
-
-# Content types that must NEVER be edge-cached: the Activity's own static assets
-# (HTML/CSS/JS). They're tiny, and freshness beats caching — a stale asset (e.g. a
-# Cloudflare-cached pre-deploy .css served alongside a fresh index.html/.mjs) is exactly
-# the white-frame class of bug this closes. The HLS media (video/mp2t, mpegurl) is NOT
-# here — it keeps the stream router's own headers (already no-store).
-_NO_STORE_CONTENT_TYPES = ("text/html", "text/css", "text/javascript", "application/javascript")
-
-
-class _NoStoreStatic:
-    """ASGI middleware that stamps ``Cache-Control: no-store`` on the Activity's static
-    assets (HTML/CSS/JS) so no edge/proxy cache (Cloudflare, Discord's proxy) can serve
-    a stale pre-deploy copy. Keyed on the response content-type, so the HLS passthrough
-    (its own headers) and every non-asset response are untouched."""
-
-    def __init__(self, app: object) -> None:
-        self._app = app
-
-    async def __call__(self, scope: dict, receive: object, send: object) -> None:
-        if scope.get("type") != "http":
-            await self._app(scope, receive, send)  # type: ignore[operator]
-            return
-
-        from starlette.datastructures import MutableHeaders
-
-        async def _send(message: dict) -> None:
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(raw=message["headers"])
-                ct = headers.get("content-type", "")
-                if any(ct.startswith(p) for p in _NO_STORE_CONTENT_TYPES):
-                    headers["cache-control"] = "no-store"
-            await send(message)  # type: ignore[operator]
-
-        await self._app(scope, receive, _send)  # type: ignore[operator]
-
-
-def create_public_app(
-    *,
-    stream_dir: str,
-    activity_dir: str,
-    discord_client_id: str | None,
-    discord_client_secret: str | None,
-    build_sha: str = "dev",
-) -> FastAPI:
-    """A DEDICATED, MINIMAL public app for the Discord Activity — the only MyMTS
-    surface ever exposed to the public internet (behind the operator's Cloudflare
-    tunnel). It serves ONLY the Activity and its three supporting routes, plus a
-    trivial liveness endpoint:
-
-      1. the Activity static app (``discord-activity/``) at ``/`` (the iframe) — the
-         index injected with the build SHA + ``no-store``, its assets no-store too,
-      2. ``/api/discord/config`` + ``/api/discord/token`` (the OAuth exchange),
-      3. the hardened ``/api/stream`` passthrough (the SAME symlink-safe router the
-         LAN serves — the HLS the Activity plays, relayed through the public origin),
-      4. ``GET /health`` (a static ``{status, build_sha}`` liveness check — no state,
-         no egress).
-
-    The full API, ``PUT /api/wall``, ``/control/`` and ``/app/`` are DELIBERATELY
-    NOT here — they stay LAN-only. The raw LAN stream is never exposed; only this
-    relay. No DB, no pollers, no lifespan. Mirrors ``create_stream_app``'s
-    minimal-surface discipline so there is no second, divergent serving path to
-    drift. ``/.proxy/`` tolerance via :class:`_StripProxyPrefix`."""
-    from fastapi.responses import HTMLResponse
-    from fastapi.staticfiles import StaticFiles
-
-    app = FastAPI(
-        title="MyMTS Discord Activity (public)",
-        version="public",
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
-
-    # Routers FIRST so they win over the catch-all static mount registered last.
-    app.include_router(
-        discord_router(client_id=discord_client_id, client_secret=discord_client_secret)
-    )
-    app.include_router(stream_router(stream_dir))  # the HLS passthrough (path-safe)
-
-    @app.get("/health")
-    def health() -> dict[str, object]:
-        return {"status": "ok", "activity": True, "build_sha": build_sha}
-
-    # Serve index.html EXPLICITLY (winning over the static mount) so we can inject the
-    # running build SHA into its `__MYMTS_BUILD_SHA__` placeholder — a version stamp
-    # visible in view-source, answering "which build is Discord running?" forever — and
-    # stamp `no-store` so no edge/proxy cache pins a pre-deploy copy. Both "/" and
-    # "/index.html" (Discord may request either) map here.
-    _index_path = Path(activity_dir) / "index.html"
-
-    def _serve_index() -> HTMLResponse:
-        html = _index_path.read_text(encoding="utf-8").replace("__MYMTS_BUILD_SHA__", build_sha)
-        return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
-
-    @app.get("/", include_in_schema=False)
-    def index_root() -> HTMLResponse:
-        return _serve_index()
-
-    @app.get("/index.html", include_in_schema=False)
-    def index_html() -> HTMLResponse:
-        return _serve_index()
-
-    # The Activity's OTHER assets (vendored SDK/hls.js, css, activity.mjs). Mounted LAST
-    # so it can never shadow an /api/* route or the index routes above.
-    app.mount("/", StaticFiles(directory=activity_dir, html=True), name="discord-activity")
-
-    # Outer→inner: no-store the static assets (freshness > cache — kills the stale-asset
-    # white-frame class), then tolerate a forwarded /.proxy/ prefix (resolve to the same
-    # routes). Both are no-ops for the HLS passthrough (its own headers / path).
-    app.add_middleware(_StripProxyPrefix)
-    app.add_middleware(_NoStoreStatic)
-    log.info("public_activity_app_built",
-             extra={"activity_dir": activity_dir, "build_sha": build_sha})
     return app

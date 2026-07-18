@@ -103,29 +103,6 @@ class Config:
     # over plain HTTP on this port. The API + /control/ + /app/ stay HTTPS-only on
     # the main listener. LAN-bound. Unset → no extra listener (unchanged).
     stream_http_port: int | None = None
-    # ---- Discord Activity output (2026-06-28) ----
-    # Discord is the THIRD output destination (alongside HLS/VLC + Mercury). Its
-    # ToS-legitimate surface is an Embedded-App-SDK *Activity* (a viewer iframe in a
-    # voice channel) that plays the SAME HLS render — bots cannot broadcast video
-    # unattended, so this is launch-to-start by platform rule (NOT a self-bot).
-    #
-    # A DEDICATED minimal public app (create_public_app) serves ONLY the Activity
-    # static files + /api/discord/* (config + token exchange) + the hardened
-    # /api/stream passthrough — behind the operator's existing Cloudflare tunnel.
-    # The full API + /control/ are NEVER on this surface. All four below default
-    # unset → no public listener, helper byte-identical to its prior self.
-    #
-    # client_id is PUBLIC (served to the Activity via /api/discord/config). The
-    # SECRET is server-side only (the token endpoint), referenced by var name,
-    # never logged/echoed. public_origin is the operator-facing https URL (e.g.
-    # https://wall.your-domain.example) used for the /control/ checklist + reachability.
-    discord_client_id: str | None = None
-    discord_client_secret: str | None = None
-    discord_activity_public_origin: str | None = None
-    # The directory of the built Activity static app (discord-activity/), and the
-    # plain-HTTP port the public app listens on (TLS terminated by the CF tunnel).
-    discord_activity_dir: str | None = None
-    discord_public_port: int | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -179,11 +156,6 @@ class Config:
             profiles_file=_opt_str("PROFILES_FILE"),
             stream_dir=_opt_str("STREAM_DIR"),
             stream_http_port=_opt_int("STREAM_HTTP_PORT"),
-            discord_client_id=_opt_str("DISCORD_CLIENT_ID"),
-            discord_client_secret=_opt_str("DISCORD_CLIENT_SECRET"),
-            discord_activity_public_origin=_opt_str("DISCORD_ACTIVITY_PUBLIC_ORIGIN"),
-            discord_activity_dir=_opt_str("DISCORD_ACTIVITY_DIR"),
-            discord_public_port=_opt_int("DISCORD_PUBLIC_PORT"),
         )
 
     def has_https(self) -> bool:
@@ -194,19 +166,3 @@ class Config:
         setup never silently degrades to "almost encrypted."
         """
         return bool(self.https_port and self.ssl_keyfile and self.ssl_certfile)
-
-    def has_discord_public(self) -> bool:
-        """True iff the dedicated public Activity listener should start: a port,
-        the Activity static dir, and the HLS stream dir (the passthrough source)
-        must all be set. The token endpoint still self-reports "not configured"
-        when the client id/secret are absent — but the surface itself is opt-in via
-        these three, so an operator who hasn't enabled Discord publishes NOTHING."""
-        return bool(self.discord_public_port and self.discord_activity_dir and self.stream_dir)
-
-    def should_start_discord_public(self) -> bool:
-        """True iff the dedicated PUBLIC Activity listener should actually start:
-        configured (:meth:`has_discord_public`) AND **not phantom_mode**. Phantom is a
-        zero-egress demo and the public app is the ONLY internet-facing surface with an
-        egress-capable endpoint (the Discord token exchange calls discord.com), so it
-        stays off in phantom — gated explicitly, not left to implication."""
-        return self.has_discord_public() and not self.phantom_mode
