@@ -14,6 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## refactor: remove the Discord Activity + Mercury/LiveKit outputs (PR-018) (2026-07-17)
+
+Removed the two non-shipping wall-output integrations. **No measurable resource reclaim is
+expected** — the Discord output was a near-zero-cost HLS *viewer* (no second encode), and the
+Mercury publisher never ran past its inert stub (no LiveKit credentials ever arrived); the
+2026-07-14 renderer-CPU win came independently from the `hls.bitrate_kbps` reset.
+
+- **Removed — Discord Activity output:** the `discord-activity/` web app, the helper `discord/`
+  package (`/api/discord/config` + `/api/discord/token` OAuth), the dedicated `:8084` public app
+  (`create_public_app` + the `_StripProxyPrefix`/`_NoStoreStatic` middleware), the `tunnel-net`
+  cloudflared attachment, and the `outputs.discord` schema entry + its `/control/` card.
+- **Removed — Mercury/LiveKit publisher:** `renderer/mercury.py`, `renderer/publisher/` (the
+  vendored `livekit-client` + publisher page), the `LIVEKIT_*` / `RENDER_HLS_URL` env, and the
+  `outputs.mercury` schema entry + its `/control/` card.
+- **Kept intact:** the general capture-once → fan-out framework (`supervisor.PUBLISHER_OUTPUTS`
+  is now an empty-but-intact seam), the shared `/api/stream` handler (only its `:8084` mount
+  went — the relative-URI playlist hardening stays), and everything HLS/VLC.
+- **Docs:** ARCHITECTURE §36–§40 removed (a placeholder keeps §41+ numbering stable);
+  **§41 corrected** — Discord was a viewer, not a "second 1080p encode" (aligns with the README);
+  ADR 0001 decision 3 (Mercury) annotated as superseded (its general fan-out/schema decisions
+  retained); ADRs 0002/0003/0005 + `docs/mercury-wireup-notes.md` removed.
+- Sliced into four bisectable commits (helper Discord → Mercury lane → schema entries → docs);
+  every intermediate commit's suites are green.
+
 ## docs(architecture): §42 native crash-fix + §43 renderer/helper reliability (professionalization catch-up) (2026-07-15)
 
 A holistic professionalization sweep over everything since the last milestone (`5fcd3a6`) found the batch's

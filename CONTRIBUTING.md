@@ -45,9 +45,7 @@ The operational guardrails every contribution must honor (load-bearing — read 
   cd helper && uv run pytest                        # helper: pytest + the zero-egress phantom contract
   ./gradlew :app:testReleaseUnitTest                # native app: JVM unit tests
   node --test web/test/*.test.mjs                   # web client: pure render/honesty logic (no deps)
-  node --test discord-activity/test/*.test.mjs      # Discord Activity: OAuth/proxy/failure-surface
-  node --test renderer/test/*.test.mjs              # renderer: the LiveKit publisher (browser side)
-  python -m unittest discover -s renderer -p 'test_*.py'  # renderer: supervisor + mercury (pure)
+  python -m unittest discover -s renderer -p 'test_*.py'  # renderer: supervisor + run + fan-out (pure)
   ```
 - The **web client** is served by the helper at `/app` (LAN-only, credential-free, same-origin); its honesty/render logic is unit-tested above and its DOM is verified against demo mode. See [`web/README.md`](web/README.md). The full walkthrough for running everything is [`ONBOARDING.md`](ONBOARDING.md).
 

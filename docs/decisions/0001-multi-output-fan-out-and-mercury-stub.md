@@ -1,10 +1,12 @@
 # 0001 — Multi-output fan-out + Mercury stubbed behind a drop-in seam
 
-**Status:** accepted (2026-06-27) · server / web / renderer · native unchanged
+**Status:** accepted (2026-06-27); **decision 3 (Mercury) SUPERSEDED by PR-018 (2026-07-17) — the Mercury lane was removed.** Decisions 1 / 2 / 4 / 5 (the general capture-once fan-out framework + the map-shaped `outputs` schema) **remain in force.** · server / web / renderer · native unchanged
 
 A decision-record for the unified wall-output system: one rendered wall driving N
-outputs (HLS today, Mercury later), per-tile audio, and a Mercury publisher that is
-an inert shell pending credentials.
+outputs, per-tile audio, and (historically) a Mercury publisher stub. The Mercury lane
+was removed in PR-018 (decision 3, superseded); the general fan-out framework it seated
+survives — this ADR is retained for that framework, with the Mercury decision annotated
+below rather than deleted.
 
 ## Context
 
@@ -29,7 +31,7 @@ runs on a **GPU-less** box where the smoothness pass (ARCHITECTURE §31) establi
    nothing is unmuted), `audio:false` omits the track. No explicit ffmpeg mixer; the
    model is predictable either way and any combination of audible cells is allowed.
 
-3. **Mercury is stubbed behind a `MercuryPublisher` seam.** This build ships ONLY a
+3. **Mercury is stubbed behind a `MercuryPublisher` seam.** *(**SUPERSEDED — PR-018, 2026-07-17:** the Mercury lane — the `MercuryPublisher` classes, the `mercury` output entry, and the `MERCURY-WIRE-UP` boundary — was removed; no LiveKit credentials ever arrived and it never ran past the stub. The publisher-output seam in `supervisor.py` survives, now memberless, for a future non-encoder output. Original decision kept below for the record.)* This build shipped ONLY a
    `StubMercuryPublisher`: it reports `disabled`/`needs_setup`/`ready_not_wired` with a
    setup checklist, and opens NO socket / mints NO token on start/stop/restart. The
    renderer's output manager routes the `mercury` output to this interface (not an
@@ -53,8 +55,8 @@ runs on a **GPU-less** box where the smoothness pass (ARCHITECTURE §31) establi
 
 - The restart matrix avoids thrashing the render: a change that moves the derived
   canvas restarts Xvfb/Chromium; a bitrate/audio/sub-max change respawns only the
-  encode; a per-output `restart_epoch` cycles one output. (With one fan-out ffmpeg +
-  one publisher, "without touching the others" holds for the real hls+mercury config.)
+  encode; a per-output `restart_epoch` cycles one output. (With one fan-out ffmpeg,
+  "without touching the others" holds for the current `hls` config; the publisher seam is memberless.)
 - The renderer writes a per-output status file into the shared stream volume
   (renderer rw, helper ro — the same trust direction as the HLS stream); the helper
   relays it for `/api/outputs/status`. No new privileged channel.

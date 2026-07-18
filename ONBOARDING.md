@@ -98,9 +98,7 @@ for details (and to override the helper URL via `local.properties`).
 cd helper && uv run pytest                        # helper suite
 ./gradlew :app:testReleaseUnitTest                # app suite
 node --test web/test/*.test.mjs                   # web client suite (pure render/honesty logic, no deps)
-node --test discord-activity/test/*.test.mjs      # Discord Activity (OAuth / proxy / failure surface)
-node --test renderer/test/*.test.mjs              # renderer LiveKit publisher (browser side)
-python -m unittest discover -s renderer -p 'test_*.py'  # renderer supervisor + mercury (pure)
+python -m unittest discover -s renderer -p 'test_*.py'  # renderer supervisor + run + fan-out (pure)
 ```
 
 ## What you can play with

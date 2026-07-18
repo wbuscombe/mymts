@@ -143,54 +143,10 @@ config** the rendered wall (`/app/?render=1`) reads from, so a pick drives playb
 renderer container (Xvfb → Chromium → ffmpeg) **composites the wall once and fans it out to multiple
 outputs**: an **Outputs panel** drives an **HLS/VLC card** (its own resolution from the 8-rung ladder
 + fine bitrate + audio + start/stop) — so **VLC or an Apple TV opens one URL** (HTTPS or a plain-HTTP
-port for strict tvOS clients) — a **Mercury card** for publishing the wall into a Mercury voice
-channel, and a **Discord card** for showing the wall *inside a Discord voice channel* as a launchable
-Activity. *Mercury's real LiveKit `screen_share` publisher is **implemented and verified against a dev
-SFU**, but stays **INERT on prod** — with no LiveKit credentials it falls back to a zero-egress stub
-that opens no connection (it goes live as a pure config swap once the creds + tailnet land; see
-`docs/decisions/0003`). Discord is a **launch-to-start Activity** that views the same HLS render (no
-extra encode) — see below.*
+port for strict tvOS clients). The capture-once → fan-out framework can take more outputs with no
+schema bump; today HLS/VLC is the shipping output.
 
 ![The picker control surface — each cell a feed/audio/subtitle picker, driving the server-side wall config](docs/screenshots/web/control.png)
-
-### 🎮 Discord — the wall in a voice channel
-MyMTS can appear **inside a Discord voice channel** as an [Activity](https://discord.com/developers/docs/activities/overview)
-(the Embedded App SDK). It's a small viewer that plays the **same HLS render** the wall already
-produces — no second encode. Discord's only ToS-legitimate path for shared in-call video is a
-user-launched Activity (a bot can't broadcast video unattended, and a user-token self-bot is against
-ToS), so this is **launch-to-start**: configure once in `/control/`, then a user starts it from Discord
-and the wall appears in the call.
-
-The Activity is served from a **dedicated minimal public origin** behind your existing Cloudflare
-tunnel — it exposes **only** the Activity, the OAuth endpoints, and an HLS passthrough. *Your LAN API,
-`/control/`, and the raw stream are never exposed.* One-time operator setup:
-
-1. **Register the app** at the [Discord Developer Portal](https://discord.com/developers/applications)
-   → your application. Copy the **Application ID** (this is the *public* client id) and a **Client
-   Secret**. Put them in the helper's gitignored `.env` (`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`)
-   — the secret stays server-side and is never returned to the browser.
-2. **Expose a public origin** for the Activity via your Cloudflare tunnel (Zero Trust → Networks →
-   Tunnels → your tunnel → **Public Hostnames** → add e.g. `wall.your-domain.example` → the helper's
-   public port). Set `DISCORD_ACTIVITY_PUBLIC_ORIGIN=https://wall.your-domain.example` and
-   `DISCORD_PUBLIC_PORT` in `.env`.
-3. **Set the Activity URL Mappings** (Developer Portal → your app → **Activities → URL Mappings**) so
-   Discord proxies the Activity to your origin:
-
-   | Prefix (Target) | URL (your public origin) |
-   | --- | --- |
-   | `/` | `wall.your-domain.example` |
-
-   That single root mapping covers the Activity, `/api/discord/*`, and `/api/stream/*` (the SDK serves
-   the app under `…/.proxy/` and proxies same-path requests to your origin).
-4. **Enable Activities** for the app (Developer Portal → Activities → enable) and, in `/control/`,
-   toggle the **Discord** card on. The card's checklist turns green when the client id/secret are
-   present and the public origin is reachable.
-5. **Launch it:** in a Discord voice channel → **Activities** (the rocket) → **MyMTS News Wall**. The
-   wall plays in the call; tap once for sound.
-
-The `/control/` Discord card is honest end to end: it shows `disabled / needs-setup / ready`, where
-**ready means "you can launch it"** — never a fake "live session". Until you complete the steps above,
-it sits in **needs-setup** and **nothing is posted to Discord**.
 
 ### 🟢 Honest degradation — a design value, not an afterthought
 This is the differentiator. **The wall never fakes liveness.** Sample data wears a `SAMPLE`
