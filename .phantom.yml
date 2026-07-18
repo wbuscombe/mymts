@@ -43,7 +43,7 @@ routes:
   - GET /api/presets        # server-authoritative wall presets
   - GET /api/playlist.m3u   # M3U of live channels for VLC / an Apple TV
   - "GET·PUT /api/wall"     # headless-container wall config (read / partial-merge write; outputs + per-cell audio)
-  - GET /api/outputs/status # multi-output runtime state (phantom: HLS stopped, Mercury + Discord disabled/needs-setup — no renderer/connection, no Discord egress)
+  - GET /api/outputs/status # multi-output runtime state (phantom: HLS stopped — no renderer/connection)
   - "POST /api/outputs/{name}/{action}"  # start/stop/restart via the validated merge path
   - GET /api/weather/radar/{region}  # weather-radar widget proxy (phantom: honest offline, zero egress)
   - GET /app                # static web client (the playback wall)

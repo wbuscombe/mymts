@@ -8,7 +8,7 @@ Two layers, mirroring the rest of the helper suite:
 
 Schema v1 (post-fan-out): the single `audible_cell` pointer is retired in favour
 of per-cell `audio`, and the single `render.resolution` is superseded by an
-`outputs` map (hls + mercury, each with its own resolution + bitrate). The
+`outputs` map (hls, with its own resolution + bitrate). The
 load-time migration upgrades an old stored file in memory.
 """
 
@@ -294,26 +294,19 @@ def test_bumped_reload_epochs_survive_save_load_round_trip(tmp_path: Path):
     assert loaded["cells"][1]["reload"] == 3
 
 
-# --- outputs: the multi-output fan-out (hls + mercury + discord) ---
+# --- outputs: the multi-output fan-out (hls) ---
 
 
 def test_default_outputs_shape():
     o = store.default_wall_config(VALID)["outputs"]
-    assert set(o) == {"hls", "mercury", "discord"}
+    assert set(o) == {"hls"}
     assert o["hls"]["enabled"] is True and o["hls"]["resolution"] == "1080p"
-    assert o["mercury"]["enabled"] is False and o["mercury"]["resolution"] == "720p"
-    assert o["mercury"]["channel_guid"] == "" and o["mercury"]["display_name"] == "MyMTS News Wall"
-    # The two ENCODE outputs carry restart_epoch; Discord (a launch-to-start viewer)
-    # is a special shape with none.
-    assert "restart_epoch" in o["hls"] and "restart_epoch" in o["mercury"]
-    assert o["discord"] == {"enabled": False, "transport": "activity", "guild_id": ""}
-    assert "restart_epoch" not in o["discord"] and "resolution" not in o["discord"]
+    assert "restart_epoch" in o["hls"]
 
 
 def test_validate_defaults_outputs_when_absent():
     out = store.validate_wall_config(_good_config(), set(VALID))
     assert out["outputs"]["hls"]["resolution"] == "1080p"
-    assert out["outputs"]["mercury"]["enabled"] is False
 
 
 @pytest.mark.parametrize("res", store.RENDER_RESOLUTIONS)
@@ -326,57 +319,6 @@ def test_validate_accepts_every_ladder_rung_for_hls(res):
 def test_invalid_resolution_clamps_to_default_not_rejected():
     cfg = _good_config(outputs={"hls": {"resolution": "480p"}})
     assert store.validate_wall_config(cfg, set(VALID))["outputs"]["hls"]["resolution"] == "1080p"
-
-
-def test_mercury_resolution_capped_at_1080p():
-    for hi in ("1260p", "1440p", "2160p"):
-        cfg = _good_config(outputs={"mercury": {"resolution": hi}})
-        m = store.validate_wall_config(cfg, set(VALID))["outputs"]["mercury"]
-        assert m["resolution"] == "1080p"
-    # a ≤1080p mercury resolution passes unchanged
-    cfg = _good_config(outputs={"mercury": {"resolution": "900p"}})
-    assert store.validate_wall_config(cfg, set(VALID))["outputs"]["mercury"]["resolution"] == "900p"
-
-
-# --- discord output: the special viewer shape (no res/bitrate/audio/restart) ---
-
-
-def test_discord_validates_to_viewer_shape_dropping_encode_knobs():
-    cfg = _good_config(outputs={"discord": {
-        "enabled": True, "transport": "activity", "guild_id": "g-1",
-        # junk an encode output would have — must be DROPPED for discord
-        "resolution": "1080p", "bitrate_kbps": 9000, "audio": True, "restart_epoch": 5,
-    }})
-    d = store.validate_wall_config(cfg, set(VALID))["outputs"]["discord"]
-    assert d == {"enabled": True, "transport": "activity", "guild_id": "g-1"}
-
-
-def test_discord_unknown_transport_clamps_to_activity():
-    # A bot/self-bot transport is forbidden by Discord ToS → clamp, don't reject.
-    cfg = _good_config(outputs={"discord": {"transport": "bot"}})
-    d = store.validate_wall_config(cfg, set(VALID))["outputs"]["discord"]
-    assert d["transport"] == "activity"
-
-
-def test_discord_partial_merge_does_not_clobber_other_outputs():
-    stored = store.default_wall_config(VALID)
-    # enable discord ALONE — hls/mercury must be preserved field-for-field
-    merged = store.merge_wall_config(stored, {"outputs": {"discord": {"enabled": True}}})
-    out = store.validate_wall_config(merged, set(VALID))["outputs"]
-    assert out["discord"]["enabled"] is True
-    assert out["hls"]["enabled"] is True and out["hls"]["resolution"] == "1080p"
-    assert out["mercury"]["enabled"] is False and "restart_epoch" in out["mercury"]
-
-
-def test_clamp_monotonic_leaves_discord_without_restart_epoch():
-    stored = store.default_wall_config(VALID)
-    new = store.validate_wall_config(
-        store.merge_wall_config(stored, {"outputs": {"discord": {"enabled": True}}}), set(VALID)
-    )
-    clamped = store.clamp_reload_monotonic(new, stored)
-    # discord stays a pure viewer shape — the monotonic clamp adds NO restart_epoch
-    assert "restart_epoch" not in clamped["outputs"]["discord"]
-    assert clamped["outputs"]["hls"]["restart_epoch"] == 0
 
 
 def test_bitrate_clamped_to_per_resolution_band():
@@ -393,15 +335,6 @@ def test_bitrate_clamped_to_per_resolution_band():
 def test_output_flags_coerced_to_bool(field, val, expect):
     cfg = _good_config(outputs={"hls": {field: val}})
     assert store.validate_wall_config(cfg, set(VALID))["outputs"]["hls"][field] is expect
-
-
-def test_mercury_non_secret_string_fields():
-    cfg = _good_config(outputs={"mercury": {"channel_guid": "abc-123", "display_name": "Wall"}})
-    m = store.validate_wall_config(cfg, set(VALID))["outputs"]["mercury"]
-    assert m["channel_guid"] == "abc-123" and m["display_name"] == "Wall"
-    # a non-string falls to the default (never crashes, never a secret-shaped check)
-    cfg = _good_config(outputs={"mercury": {"channel_guid": 42}})
-    assert store.validate_wall_config(cfg, set(VALID))["outputs"]["mercury"]["channel_guid"] == ""
 
 
 # --- MIGRATION: old render.resolution → outputs.hls.resolution ---
@@ -445,11 +378,9 @@ def test_default_config_includes_outputs():
 def test_clamp_reload_monotonic_clamps_output_restart_epoch():
     old = store.validate_wall_config(_good_config(), set(VALID))
     old["outputs"]["hls"]["restart_epoch"] = 5
-    old["outputs"]["mercury"]["restart_epoch"] = 2
-    new = store.validate_wall_config(_good_config(), set(VALID))   # both restart_epoch 0
+    new = store.validate_wall_config(_good_config(), set(VALID))   # restart_epoch 0
     clamped = store.clamp_reload_monotonic(new, old)
     assert clamped["outputs"]["hls"]["restart_epoch"] == 5      # not rewound
-    assert clamped["outputs"]["mercury"]["restart_epoch"] == 2
     # a genuine bump goes through
     new2 = store.validate_wall_config(_good_config(), set(VALID))
     new2["outputs"]["hls"]["restart_epoch"] = 6
@@ -503,13 +434,11 @@ def test_merge_preserves_omitted_top_level_fields():
 
 def test_merge_outputs_per_output_and_per_field_no_clobber():
     stored = store.validate_wall_config(_good_config(), set(VALID))
-    # write ONLY outputs.hls.bitrate_kbps — mercury + hls.resolution must survive
+    # write ONLY outputs.hls.bitrate_kbps — hls.resolution must survive (per-field)
     merged = store.merge_wall_config(stored, {"outputs": {"hls": {"bitrate_kbps": 5000}}})
     mv = store.validate_wall_config(merged, set(VALID))
     assert mv["outputs"]["hls"]["bitrate_kbps"] == 5000             # overridden
     assert mv["outputs"]["hls"]["resolution"] == "1080p"           # preserved (per-field)
-    assert mv["outputs"]["mercury"]["display_name"] == "MyMTS News Wall"   # preserved (per-output)
-    assert mv["outputs"]["mercury"]["enabled"] is False
 
 
 def test_merge_cells_preserves_omitted_per_cell_fields():
@@ -590,8 +519,6 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
         "ticker_scale": 1.5,
         "outputs": {
             "hls": {"enabled": True, "resolution": "1440p", "bitrate_kbps": 9000, "audio": True},
-            "mercury": {"enabled": False, "resolution": "900p", "bitrate_kbps": 2500,
-                        "audio": False, "channel_guid": "g-1", "display_name": "Custom"},
         },
         "cells": [
             {"channel": "bbc-news", "audio": True, "subtitles": True, "reload": 3},
@@ -603,7 +530,6 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
     stored.pop("stored", None)
     # sanity: non-default values round-tripped so a revert WOULD be detectable
     assert stored["outputs"]["hls"]["resolution"] == "1440p" and stored["reload_epoch"] == 7
-    assert stored["outputs"]["mercury"]["channel_guid"] == "g-1"
 
     for field in list(stored.keys()):
         partial = {k: v for k, v in stored.items() if k != field}

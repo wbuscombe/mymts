@@ -3,8 +3,7 @@
 // The wall's layout in a browser, but each cell is a FEED-PICKER + per-cell AUDIO
 // + SUBTITLE toggles (multi-audible: any combination unmuted, they mix) — NO video
 // decode (lightweight; runs on a phone). The Outputs section drives the multi-output
-// fan-out: an HLS/VLC card (live) + a Mercury card (an inert, pre-fillable shell in
-// a "needs-setup" state). Every edit writes the server-side wall config (PUT
+// fan-out: an HLS/VLC card (live). Every edit writes the server-side wall config (PUT
 // /api/wall, partial-merge); the rendered wall + the renderer read that config.
 //
 // Shares the bundled pure logic with /app/ via absolute imports. DOM text is written
@@ -20,8 +19,8 @@ import {
   withLayout, withPreset, cellCount, withCellReload, withWallReload,
   withFeedPct, withFeedFont, withTickerScale,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
-  withOutputRestart, withMercuryFields, withDiscordFields,
-  RENDER_RESOLUTIONS, RESOLUTION_INFO, MERCURY_MAX_RESOLUTION, bitrateBounds,
+  withOutputRestart,
+  RENDER_RESOLUTIONS, RESOLUTION_INFO, bitrateBounds,
   deriveRenderResolution, FEED_PCT, FEED_FONT, TICKER_SCALE,
 } from "/app/js/wallConfig.mjs";
 
@@ -83,9 +82,8 @@ async function refreshChannels() {
   } catch { /* keep last; next tick retries */ }
 }
 
-/** Poll the per-output runtime status (HLS running/stopped, Mercury state +
- *  setup checklist) WITHOUT disturbing an in-flight config edit — status is
- *  renderer-owned, the config is owned here. */
+/** Poll the per-output runtime status (HLS running/stopped) WITHOUT disturbing an
+ *  in-flight config edit — status is renderer-owned, the config is owned here. */
 async function refreshOutputsStatus() {
   try {
     outputsStatus = await api.outputsStatus();
@@ -257,7 +255,7 @@ function renderCell(index) {
   return card;
 }
 
-// ----- the Outputs section (HLS card + Mercury shell) -----
+// ----- the Outputs section (HLS card) -----
 
 function resOptions(sel, current, capName) {
   const cap = capName ? RENDER_RESOLUTIONS.indexOf(capName) : RENDER_RESOLUTIONS.length - 1;
@@ -332,166 +330,12 @@ function hlsCard(o, rt) {
   return card;
 }
 
-function mercuryCard(o, rt) {
-  const card = node("div", "output-card output-card--mercury");
-  const head = node("div", "output-head");
-  head.appendChild(node("span", "output-name", "Mercury"));
-  const state = rt.state || (o.enabled ? "needs_setup" : "disabled");
-  head.appendChild(node("span", `output-state state-${state}`, state.replace(/_/g, " ")));
-  card.appendChild(head);
-
-  // Honest needs-setup checklist (renderer-computed). Actions stay disabled until
-  // every item is satisfied (creds present + tailnet reachable).
-  const cl = rt.checklist || {};
-  const ready = cl.key_present === true && cl.channel_set === true && cl.tailnet_reachable === true;
-  const checklist = node("div", "mercury-checklist");
-  const item = (ok, label) => {
-    const i = node("div", `check ${ok === true ? "ok" : ok === false ? "bad" : "unknown"}`);
-    i.appendChild(node("span", "check-mark", ok === true ? "✓" : ok === false ? "✗" : "?"));
-    i.appendChild(node("span", "check-label", label));
-    return i;
-  };
-  checklist.appendChild(item(cl.key_present, "LiveKit key"));
-  checklist.appendChild(item(cl.tailnet_reachable, "Tailnet reachable"));
-  checklist.appendChild(item(cl.channel_set, "Channel set"));
-  card.appendChild(checklist);
-  // Live publisher line: viewer count when publishing, the last error when errored.
-  const live = [];
-  if (state === "publishing" || state === "dynacast_paused") {
-    live.push(rt.viewer_count != null ? `${rt.viewer_count} viewer${rt.viewer_count === 1 ? "" : "s"}` : "0 viewers");
-  }
-  if (state === "error" && rt.last_error) live.push(`error: ${rt.last_error}`);
-  card.appendChild(node("div", "mercury-detail", rt.detail || "Pending credentials"));
-  if (live.length) card.appendChild(node("div", "mercury-live", live.join(" · ")));
-
-  // Pre-fillable config fields (no secrets) — editable NOW so Will can stage ahead.
-  const guid = node("input", "mercury-input");
-  guid.type = "text"; guid.value = o.channel_guid || ""; guid.placeholder = "channel GUID";
-  guid.addEventListener("change", () => commit(withMercuryFields(config, { channel_guid: guid.value.trim() }), "Mercury channel"));
-  card.appendChild(row("Channel GUID", guid));
-
-  const dname = node("input", "mercury-input");
-  dname.type = "text"; dname.value = o.display_name || ""; dname.placeholder = "display name";
-  dname.addEventListener("change", () => commit(withMercuryFields(config, { display_name: dname.value }), "Mercury name"));
-  card.appendChild(row("Display name", dname));
-
-  const resSel = node("select", "output-res");
-  resOptions(resSel, o.resolution, MERCURY_MAX_RESOLUTION);   // capped ≤1080p
-  resSel.addEventListener("change", () => commit(withOutputResolution(config, "mercury", resSel.value), "Mercury resolution"));
-  card.appendChild(row("Resolution", resSel));
-
-  const b = bitrateBounds(o.resolution);
-  const br = node("input", "output-br-slider");
-  br.type = "range"; br.min = String(b.min); br.max = String(b.max); br.step = String(b.step);
-  br.value = String(o.bitrate_kbps);
-  const brVal = node("span", "output-br-val", `${(o.bitrate_kbps / 1000).toFixed(1)} Mbps`);
-  br.addEventListener("input", () => { brVal.textContent = `${(Number(br.value) / 1000).toFixed(1)} Mbps`; });
-  br.addEventListener("change", () => commit(withOutputBitrate(config, "mercury", Number(br.value)), "Mercury bitrate"));
-  const brWrap = node("div", "output-bitrate"); brWrap.append(br, brVal);
-  card.appendChild(row("Bitrate", brWrap));
-
-  const audBtn = node("button", `pill${o.audio ? " pill--on" : ""}`, o.audio ? "🔊 On" : "🔇 Off");
-  audBtn.type = "button";
-  audBtn.addEventListener("click", () => commit(withOutputAudio(config, "mercury", !o.audio), "Mercury audio"));
-  card.appendChild(row("Audio", audBtn));
-
-  // Action controls — DISABLED until the checklist is satisfied; never triggers a
-  // connection in this build (the publisher is stubbed).
-  const actions = node("div", "output-actions");
-  const enableBtn = node("button", "pill", o.enabled ? "Disable" : "Enable");
-  const startStop = node("button", "pill", o.enabled ? "Stop" : "Start");
-  const restart = node("button", "pill", "↻ Restart");
-  for (const btn of [enableBtn, startStop, restart]) {
-    btn.type = "button";
-    btn.disabled = !ready;   // armed only when the checklist passes
-    btn.title = ready ? "" : "Waiting on setup";
-  }
-  enableBtn.addEventListener("click", () => commit(withOutputEnabled(config, "mercury", !o.enabled), o.enabled ? "disable Mercury" : "enable Mercury"));
-  startStop.addEventListener("click", () => commit(withOutputEnabled(config, "mercury", !o.enabled), o.enabled ? "stop Mercury" : "start Mercury"));
-  restart.addEventListener("click", () => commit(withOutputRestart(config, "mercury"), "restart Mercury"));
-  actions.append(enableBtn, startStop, restart);
-  card.appendChild(actions);
-  return card;
-}
-
-// ----- the Discord card (a launch-to-start Activity that VIEWS the HLS) -----
-
-function discordCard(o, rt) {
-  const card = node("div", "output-card output-card--discord");
-  const head = node("div", "output-head");
-  head.appendChild(node("span", "output-name", "Discord"));
-  // State is disabled | needs_setup | ready — NEVER "live"/"publishing" (a bot
-  // can't broadcast unattended; the card never claims a session that isn't there).
-  const state = rt.state || (o.enabled ? "needs_setup" : "disabled");
-  head.appendChild(node("span", `output-state state-${state}`, state.replace(/_/g, " ")));
-  card.appendChild(head);
-
-  card.appendChild(node("p", "discord-explain",
-    "Discord plays the wall as an Activity a user launches in a voice channel — it views the SAME HLS render (no extra encode). A bot can't broadcast video unattended, so this is launch-to-start: configure once here, then start it from Discord."));
-
-  const enableBtn = node("button", `pill${o.enabled ? " pill--on" : ""}`, o.enabled ? "On" : "Off");
-  enableBtn.type = "button";
-  enableBtn.addEventListener("click", () => commit(withOutputEnabled(config, "discord", !o.enabled), "Discord on/off"));
-  card.appendChild(row("Enabled", enableBtn));
-
-  // Helper-computed setup checklist (✓/✗/? — ? = couldn't check safely). The public
-  // origin check is real but NON-authenticating (it never posts to Discord).
-  const cl = rt.checklist || {};
-  const checklist = node("div", "discord-checklist");
-  const item = (ok, label) => {
-    const i = node("div", `check ${ok === true ? "ok" : ok === false ? "bad" : "unknown"}`);
-    i.appendChild(node("span", "check-mark", ok === true ? "✓" : ok === false ? "✗" : "?"));
-    i.appendChild(node("span", "check-label", label));
-    return i;
-  };
-  checklist.appendChild(item(cl.client_id_present, "Client ID present"));
-  checklist.appendChild(item(cl.client_secret_present, "Client secret present"));
-  checklist.appendChild(item(cl.public_origin_reachable, "Public origin reachable"));
-  checklist.appendChild(item(cl.hls_enabled, "HLS output on (the Activity plays it)"));
-  card.appendChild(checklist);
-  card.appendChild(node("div", "mercury-detail", rt.detail || "Configure the Discord app to enable"));
-
-  // URL Mappings is a one-time DEV-PORTAL step we can't verify from here — surface
-  // it as an honest instruction, not a fake ✓.
-  card.appendChild(node("p", "discord-note",
-    "One-time in the Discord developer portal → your app → Activities → URL Mappings: map  /  →  the public origin below. The exact block is in the README."));
-
-  const origin = rt.public_origin || "";
-  const urlLine = node("div", "output-url");
-  urlLine.appendChild(node("span", "output-url-label", "Public origin"));
-  urlLine.appendChild(node("code", "output-url-code", origin || "(set DISCORD_ACTIVITY_PUBLIC_ORIGIN)"));
-  if (origin && navigator.clipboard) {
-    const copy = node("button", "pill pill--copy", "Copy");
-    copy.type = "button";
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(origin);
-        copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1500);
-      } catch { /* clipboard blocked — the code is selectable anyway */ }
-    });
-    urlLine.appendChild(copy);
-  }
-  card.appendChild(urlLine);
-
-  // Optional guild-id hint (non-secret). The client SECRET never appears in this UI.
-  const guild = node("input", "mercury-input");
-  guild.type = "text"; guild.value = o.guild_id || ""; guild.placeholder = "guild ID (optional)";
-  guild.addEventListener("change", () => commit(withDiscordFields(config, { guild_id: guild.value.trim() }), "Discord guild"));
-  card.appendChild(row("Guild ID", guild));
-
-  card.appendChild(node("p", "discord-launch",
-    "To start: in a Discord voice channel → Activities (the rocket) → launch “MyMTS News Wall”. The wall appears in the call; tap once for sound."));
-  return card;
-}
-
 function renderOutputs() {
   const root = el("outputs");
   if (!root || !config) return;
   const rt = (outputsStatus && outputsStatus.outputs) || {};
   root.replaceChildren();
   root.appendChild(hlsCard(config.outputs.hls, rt.hls || {}));
-  root.appendChild(mercuryCard(config.outputs.mercury, rt.mercury || {}));
-  root.appendChild(discordCard(config.outputs.discord, rt.discord || {}));
 }
 
 function render() {

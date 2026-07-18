@@ -166,7 +166,7 @@ def fetch_outputs() -> dict | None:
 
     THE BUG THIS FIXES (2026-07-14): the prior `read_outputs()` fell back to a
     single-HLS DEFAULT on any failed read. During the poll loop that default DIFFERS
-    from the live config (its bitrate/epoch, and it drops the discord encoder output),
+    from the live config (its bitrate/epoch differ),
     so `plan_output_restart` saw a "change" and RESPAWNED the encoder — then the next
     successful read differed from the fallback and respawned again. Under NAS load the
     1-CPU helper answers slowly, so failed reads recur and the encoder flapped every

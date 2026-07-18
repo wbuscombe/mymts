@@ -12,9 +12,9 @@ import {
   withCellChannel, withCellSubtitles, withCellAudio, withLayout, withPreset,
   withCellReload, withWallReload,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
-  withOutputRestart, withMercuryFields, deriveRenderResolution, bitrateBounds,
+  withOutputRestart, deriveRenderResolution, bitrateBounds,
   withFeedPct, withFeedFont, withTickerScale,
-  RENDER_RESOLUTIONS, RESOLUTION_INFO, MERCURY_MAX_RESOLUTION,
+  RENDER_RESOLUTIONS, RESOLUTION_INFO,
   FEED_PCT, FEED_FONT, TICKER_SCALE,
 } from "../js/wallConfig.mjs";
 
@@ -63,7 +63,7 @@ test("normalizeConfig clamps dims and resizes cells to match", () => {
   assert.equal(out.layout.cols, 1);
   assert.equal(out.cells.length, 3);
   assert.equal(WALL_SCHEMA_VERSION, out.schema_version);
-  assert.ok(out.outputs && out.outputs.hls && out.outputs.mercury);
+  assert.ok(out.outputs && out.outputs.hls);
   assert.equal(out.render, undefined);          // render is gone
   assert.equal(out.audible_cell, undefined);    // audible_cell is gone
 });
@@ -180,8 +180,6 @@ test("normalizeConfig defaults the outputs block", () => {
   const out = normalizeConfig({ layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }] });
   assert.equal(out.outputs.hls.enabled, true);
   assert.equal(out.outputs.hls.resolution, "1080p");
-  assert.equal(out.outputs.mercury.enabled, false);
-  assert.equal(out.outputs.mercury.channel_guid, "");
 });
 
 test("withOutput* transforms set + clamp", () => {
@@ -194,33 +192,19 @@ test("withOutput* transforms set + clamp", () => {
   assert.equal(withOutputBitrate(c, "hls", 1).outputs.hls.bitrate_kbps, bitrateBounds("1080p").min);
 });
 
-test("mercury resolution capped at ≤1080p", () => {
-  assert.equal(withOutputResolution(cfg2x2(), "mercury", "2160p").outputs.mercury.resolution, MERCURY_MAX_RESOLUTION);
-  assert.equal(withOutputResolution(cfg2x2(), "mercury", "900p").outputs.mercury.resolution, "900p");
-});
-
-test("withMercuryFields sets the non-secret fields only", () => {
-  const out = withMercuryFields(cfg2x2(), { channel_guid: "g-1", display_name: "Wall", secret: "nope" });
-  assert.equal(out.outputs.mercury.channel_guid, "g-1");
-  assert.equal(out.outputs.mercury.display_name, "Wall");
-  assert.equal(out.outputs.mercury.secret, undefined);
-});
-
 test("withOutputRestart bumps the per-output restart epoch (monotonic)", () => {
   const a = withOutputRestart(cfg2x2(), "hls");
   assert.equal(a.outputs.hls.restart_epoch, 1);
   assert.equal(withOutputRestart(a, "hls").outputs.hls.restart_epoch, 2);
-  assert.equal(a.outputs.mercury.restart_epoch, 0);   // the other output untouched
 });
 
 test("deriveRenderResolution = max enabled output resolution", () => {
-  const c = withOutputResolution(withOutputEnabled(cfg2x2(), "mercury", true), "mercury", "720p");
-  // hls 1080p enabled, mercury 720p enabled → 1080p
-  assert.equal(deriveRenderResolution(c.outputs), "1080p");
-  const c2 = withOutputResolution(c, "hls", "1440p");
+  // hls 1080p enabled → 1080p
+  assert.equal(deriveRenderResolution(cfg2x2().outputs), "1080p");
+  const c2 = withOutputResolution(cfg2x2(), "hls", "1440p");
   assert.equal(deriveRenderResolution(c2.outputs), "1440p");
   // nothing enabled → default
-  const c3 = withOutputEnabled(withOutputEnabled(cfg2x2(), "hls", false), "mercury", false);
+  const c3 = withOutputEnabled(cfg2x2(), "hls", false);
   assert.equal(deriveRenderResolution(c3.outputs), "1080p");
 });
 

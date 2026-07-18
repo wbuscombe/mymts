@@ -229,9 +229,9 @@ def test_config_reads_stream_http_port(monkeypatch):
 
 
 def test_stream_serves_cors_header_for_browser_consumers(tmp_path: Path):
-    # The HLS is public video; a browser HLS consumer (the Mercury publisher's
-    # livekit-client, served from a different local origin) fetches it cross-origin,
-    # which CORS otherwise blocks. The playlist + segments carry Access-Control-Allow-Origin: *.
+    # The HLS is public video; a browser HLS consumer served from a different local
+    # origin fetches it cross-origin, which CORS otherwise blocks. The playlist +
+    # segments carry Access-Control-Allow-Origin: *.
     stream = tmp_path / "stream"
     stream.mkdir()
     (stream / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:4.0,\nseg_00001.ts\n")

@@ -2,8 +2,7 @@
 
 Exercise: an empty sink is honest (latest: null), a POST is stored + handed back on
 GET with an age, an oversized body is refused, a non-object is 422, the stored tile
-list is bounded — and, critically, the route is on the full LAN app but NEVER on the
-Discord public app (the tunnel origin can't reach it).
+list is bounded — and the route is on the full LAN app (no public surface exposes it).
 """
 
 from __future__ import annotations
@@ -78,7 +77,7 @@ def test_store_is_per_instance() -> None:
     assert b.get()["latest"] is None
 
 
-# --- posture: on the LAN app, NOT on the Discord public app ---
+# --- posture: on the LAN app only ---
 
 def _cfg(tmp_path: Path) -> Config:
     return Config(

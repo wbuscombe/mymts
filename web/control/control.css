@@ -147,7 +147,6 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   padding: 14px; display: flex; flex-direction: column; gap: 10px;
 }
-.output-card--mercury { border-style: dashed; }   /* a shell pending wire-up */
 .output-head { display: flex; align-items: center; justify-content: space-between; }
 .output-name { font-weight: 600; font-size: 14px; letter-spacing: 0.3px; }
 .output-state {
@@ -157,9 +156,6 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .state-running { background: rgba(67,196,120,0.16); color: var(--ok); }
 .state-stopped { background: rgba(224,179,65,0.14); color: var(--warn); }
 .state-disabled { background: var(--panel-2); color: #5b6577; }
-.state-needs { color: var(--warn); }
-.output-state.state-needs_setup { background: rgba(224,179,65,0.14); color: var(--warn); }
-.output-state.state-ready_not_wired { background: rgba(78,161,255,0.14); color: var(--accent); }
 
 .output-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .output-row-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
@@ -176,37 +172,6 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
   padding: 3px 7px; color: var(--text); user-select: all; word-break: break-all;
 }
-
-/* Mercury needs-setup checklist */
-.mercury-checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-.check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
-.check-mark { font-weight: 700; }
-.check.ok .check-mark { color: var(--ok); }
-.check.bad .check-mark { color: var(--err); }
-.check.unknown .check-mark { color: var(--muted); }
-.mercury-detail { font-size: 12px; color: var(--warn); }
-/* Live Mercury publisher states (the real LiveKit screen_share publisher). */
-.output-state.state-publishing { background: rgba(67,196,120,0.16); color: var(--ok); }
-.output-state.state-connected,
-.output-state.state-connecting { background: rgba(78,161,255,0.14); color: var(--accent); }
-.output-state.state-dynacast_paused { background: rgba(139,151,170,0.16); color: var(--muted); }
-.output-state.state-reconnecting { background: rgba(224,179,65,0.16); color: var(--warn); }
-.output-state.state-error { background: rgba(236,106,106,0.16); color: var(--err); }
-.mercury-live { font-size: 12px; color: var(--ok); margin-top: 2px; }
-.mercury-input {
-  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; font-size: 13px; max-width: 62%; min-width: 0;
-}
-.mercury-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-/* ---- Discord card (launch-to-start Activity; views the HLS) ---- */
-.output-card--discord { border-style: dashed; border-color: var(--accent-dim); }
-/* "ready" = an operator CAN launch — positive but NOT a running/live badge. */
-.output-state.state-ready { background: rgba(78,161,255,0.16); color: var(--accent); }
-.discord-checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-.discord-explain { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 2px 0 4px; }
-.discord-note { font-size: 11.5px; color: var(--warn); line-height: 1.5; margin: 2px 0; }
-.discord-launch { font-size: 12px; color: var(--text); line-height: 1.55; margin: 4px 0 0; }
 .pill--copy { padding: 4px 10px; font-size: 12px; }
 
 .footnote { color: var(--muted); font-size: 12px; margin-top: 22px; line-height: 1.6; }

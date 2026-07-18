@@ -33,29 +33,19 @@ export const RESOLUTION_INFO = {
 };
 
 // ----- outputs (the multi-output fan-out; mirror helper store.py) -----
-export const OUTPUT_NAMES = ["hls", "mercury", "discord"];
-export const MERCURY_MAX_RESOLUTION = "1080p";
-// Discord is a SPECIAL-SHAPE output: a launch-to-start Activity that VIEWS the HLS
-// render (no resolution/bitrate/audio/restart). Only "activity" transport exists
-// (a bot/self-bot broadcasting video is forbidden by Discord ToS).
-export const DISCORD_TRANSPORTS = ["activity"];
-export const DEFAULT_DISCORD_TRANSPORT = "activity";
+export const OUTPUT_NAMES = ["hls"];
 export const BITRATE_KBPS_MIN = 500;
 export const BITRATE_KBPS_CEIL = 60000;
 export const RES_BITRATE_KBPS = {
   "720p": 4000, "900p": 6000, "1080p": 8000, "1260p": 10000,
   "1440p": 12000, "1620p": 14000, "1800p": 16000, "2160p": 20000,
 };
-export const DEFAULT_DISPLAY_NAME = "MyMTS News Wall";
 
 function ladderIndex(res) {
   const i = RENDER_RESOLUTIONS.indexOf(res);
   return i < 0 ? RENDER_RESOLUTIONS.indexOf(DEFAULT_RESOLUTION) : i;
 }
 function clampResolution(v, def) { return RENDER_RESOLUTIONS.includes(v) ? v : def; }
-function capMercury(res) {
-  return ladderIndex(res) > ladderIndex(MERCURY_MAX_RESOLUTION) ? MERCURY_MAX_RESOLUTION : res;
-}
 
 /** The bitrate slider bounds for a resolution: a floor that carries motion, a
  *  ceiling of ~3x the rung's recommended bitrate (mirror helper clamp). */
@@ -72,38 +62,19 @@ function clampBitrate(v, resolution) {
 export function defaultOutputs() {
   return {
     hls: { enabled: true, resolution: "1080p", bitrate_kbps: 8000, audio: true, restart_epoch: 0 },
-    mercury: {
-      enabled: false, resolution: "720p", bitrate_kbps: 3000, audio: true, restart_epoch: 0,
-      channel_guid: "", display_name: DEFAULT_DISPLAY_NAME,
-    },
-    discord: { enabled: false, transport: DEFAULT_DISCORD_TRANSPORT, guild_id: "" },
   };
 }
 
 function normalizeOutput(name, raw, def) {
   const src = raw && typeof raw === "object" ? raw : {};
-  if (name === "discord") {
-    // Special viewer shape — only enabled/transport/guild_id (no res/bitrate/audio).
-    return {
-      enabled: src.enabled === undefined ? def.enabled : src.enabled === true,
-      transport: DISCORD_TRANSPORTS.includes(src.transport) ? src.transport : def.transport,
-      guild_id: typeof src.guild_id === "string" ? src.guild_id : def.guild_id,
-    };
-  }
-  let res = clampResolution(src.resolution ?? def.resolution, def.resolution);
-  if (name === "mercury") res = capMercury(res);
-  const out = {
+  const res = clampResolution(src.resolution ?? def.resolution, def.resolution);
+  return {
     enabled: src.enabled === undefined ? def.enabled : src.enabled === true,
     resolution: res,
     bitrate_kbps: clampBitrate(src.bitrate_kbps ?? def.bitrate_kbps, res),
     audio: src.audio === undefined ? def.audio : src.audio === true,
     restart_epoch: reloadInt(src.restart_epoch),
   };
-  if (name === "mercury") {
-    out.channel_guid = typeof src.channel_guid === "string" ? src.channel_guid : def.channel_guid;
-    out.display_name = typeof src.display_name === "string" ? src.display_name : def.display_name;
-  }
-  return out;
 }
 
 /** The render canvas /control/ shows read-only ("compositing at X") — the largest
@@ -117,15 +88,13 @@ export function deriveRenderResolution(outputs) {
   return enabled.reduce((a, b) => (ladderIndex(b) > ladderIndex(a) ? b : a));
 }
 
-/** Normalise/clamp the outputs map (each output to the ladder + sane bitrate;
- *  Mercury ≤1080p). Always returns the two known outputs. Pure. */
+/** Normalise/clamp the outputs map (each output to the ladder + sane bitrate).
+ *  Always returns the known outputs. Pure. */
 export function normalizeOutputs(raw) {
   const def = defaultOutputs();
   const src = raw && typeof raw === "object" ? raw : {};
   return {
     hls: normalizeOutput("hls", src.hls, def.hls),
-    mercury: normalizeOutput("mercury", src.mercury, def.mercury),
-    discord: normalizeOutput("discord", src.discord, def.discord),
   };
 }
 
@@ -290,28 +259,11 @@ export function withOutputBitrate(config, name, kbps) {
 export function withOutputAudio(config, name, on) {
   return withOutput(config, name, { audio: on === true });
 }
-/** Bump an output's restart_epoch (+1): cycle that one output's encoder/publisher.
- *  Discord has no encoder/session to cycle (launch-to-start) → no-op. */
+/** Bump an output's restart_epoch (+1): cycle that one output's encoder. */
 export function withOutputRestart(config, name) {
   const cfg = normalizeConfig(config);
-  if (!OUTPUT_NAMES.includes(name) || name === "discord") return cfg;
+  if (!OUTPUT_NAMES.includes(name)) return cfg;
   return withOutput(config, name, { restart_epoch: reloadInt(cfg.outputs[name].restart_epoch) + 1 });
-}
-/** Set the Mercury non-secret fields (channel_guid / display_name). NO secrets. */
-export function withMercuryFields(config, fields) {
-  const patch = {};
-  if (typeof fields?.channel_guid === "string") patch.channel_guid = fields.channel_guid;
-  if (typeof fields?.display_name === "string") patch.display_name = fields.display_name;
-  return withOutput(config, "mercury", patch);
-}
-/** Set the Discord non-secret fields (guild_id hint / transport). NO secrets — the
- *  Discord client id is served by the helper and the SECRET never touches the
- *  browser. transport is clamped to a supported value. */
-export function withDiscordFields(config, fields) {
-  const patch = {};
-  if (typeof fields?.guild_id === "string") patch.guild_id = fields.guild_id;
-  if (DISCORD_TRANSPORTS.includes(fields?.transport)) patch.transport = fields.transport;
-  return withOutput(config, "discord", patch);
 }
 
 /** Change the grid layout (rows × cols, each clamped 1..3), resizing the cells

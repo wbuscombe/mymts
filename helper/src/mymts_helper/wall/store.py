@@ -13,13 +13,7 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "ticker_scale": 1.0,                    # ticker height + content scale
       "outputs": {                            # the unified multi-output fan-out
         "hls":     {"enabled": true,  "resolution": "1080p", "bitrate_kbps": 8000,
-                    "audio": true, "restart_epoch": 0},
-        "mercury": {"enabled": false, "resolution": "720p",  "bitrate_kbps": 3000,
-                    "audio": true, "restart_epoch": 0,
-                    "channel_guid": "", "display_name": "MyMTS News Wall"},
-        "discord": {"enabled": false, "transport": "activity", "guild_id": ""}
-                    # NO resolution/bitrate/audio: the Discord Activity is a VIEWER
-                    # of the HLS render (it inherits HLS quality, adds no encode).
+                    "audio": true, "restart_epoch": 0}
       },
       "cells": [                              # length == rows*cols (by index)
         {"channel": "bbc-news" | null, "audio": false, "subtitles": false, "reload": 0},
@@ -49,7 +43,7 @@ stored file without them loads fine.
 
 **Migration (load-time, idempotent):** an old stored file is upgraded in memory on
 read — an absent ``outputs`` block is seeded (``hls.resolution`` from the old
-``render.resolution``, ``mercury`` from defaults); a present ``audible_cell`` sets
+``render.resolution``); a present ``audible_cell`` sets
 that cell's ``audio:true``. The legacy ``render`` + ``audible_cell`` keys are dropped
 from the validated result. The first PUT persists the new shape.
 
@@ -103,20 +97,8 @@ TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT = 0.6, 2.0, 1.0
 # ---- outputs (the multi-output fan-out) ----
 # The outputs the wall fans out to. The block is a MAP so more can be added later
 # with no schema_version bump (add a validator branch + a defaults entry — no
-# migration). Three today: hls (the live VLC stream), mercury (the LiveKit stub),
-# discord (the Activity viewer — a special-shape output, see below).
-OUTPUT_NAMES = ("hls", "mercury", "discord")
-# Mercury publishes a 720p-ish screen-share into a voice channel; cap it at 1080p
-# (no point pushing a 4K wall down a chat pipe). The ladder is ascending, so the cap
-# is an index comparison.
-MERCURY_MAX_RESOLUTION = "1080p"
-DEFAULT_DISPLAY_NAME = "MyMTS News Wall"
-# Discord is a SPECIAL-SHAPE output: it has NO resolution/bitrate/audio/restart_epoch
-# (the Activity is a viewer of the HLS render — it inherits HLS quality and adds no
-# encode). It carries only an enabled flag, a transport (only "activity" today; a
-# bot/self-bot is forbidden by Discord ToS), and an optional guild_id hint.
-DISCORD_TRANSPORTS = ("activity",)
-DEFAULT_DISCORD_TRANSPORT = "activity"
+# migration). One today: hls (the live VLC stream).
+OUTPUT_NAMES = ("hls",)
 # bitrate_kbps is a fine-grained per-output knob, clamped to a sane band per
 # resolution: a floor that always carries motion, and a ceiling of ~3x the rung's
 # RECOMMENDED bitrate (mirrors renderer RENDER_BITRATES, in kbps) so a slider can't
@@ -146,20 +128,12 @@ def derive_render_resolution(outputs: dict | None) -> str:
 
 
 def default_outputs() -> dict[str, Any]:
-    """The default outputs block: HLS on (the shipping VLC stream), Mercury off
-    (the inert shell pending credentials). Built fresh each call (never shared)."""
+    """The default outputs block: HLS on (the shipping VLC stream). Built fresh each
+    call (never shared)."""
     return {
         "hls": {
             "enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
             "audio": True, "restart_epoch": 0,
-        },
-        "mercury": {
-            "enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
-            "audio": True, "restart_epoch": 0,
-            "channel_guid": "", "display_name": DEFAULT_DISPLAY_NAME,
-        },
-        "discord": {
-            "enabled": False, "transport": DEFAULT_DISCORD_TRANSPORT, "guild_id": "",
         },
     }
 
@@ -229,32 +203,10 @@ def _coerce_bool(value: Any, default: bool) -> bool:
     return bool(value)
 
 
-def _coerce_str(value: Any, default: str) -> str:
-    """A plain string field (absent/non-string → default). Used for the Mercury
-    non-secret fields (channel_guid / display_name) — never validated as a secret,
-    never logged as one."""
-    return value if isinstance(value, str) else default
-
-
 def _clamp_resolution(value: Any, default: str) -> str:
     """Clamp a resolution to the ladder — an unknown value snaps to ``default``
     (output knobs are operator-friendly: clamp, don't reject)."""
     return value if value in RENDER_RESOLUTIONS else default
-
-
-def _clamp_discord_transport(value: Any) -> str:
-    """Clamp the Discord transport to a supported value. Only ``activity`` exists
-    (a bot/self-bot broadcasting video is forbidden by Discord ToS), so any unknown
-    value snaps to ``activity`` (operator-friendly: clamp, don't reject)."""
-    return value if value in DISCORD_TRANSPORTS else DEFAULT_DISCORD_TRANSPORT
-
-
-def _cap_mercury_resolution(res: str) -> str:
-    """Cap a resolution at :data:`MERCURY_MAX_RESOLUTION` (the ladder is ascending,
-    so the cap is an index comparison)."""
-    if RENDER_RESOLUTIONS.index(res) > RENDER_RESOLUTIONS.index(MERCURY_MAX_RESOLUTION):
-        return MERCURY_MAX_RESOLUTION
-    return res
 
 
 def _clamp_bitrate_kbps(value: Any, resolution: str) -> int:
@@ -272,23 +224,10 @@ def _clamp_bitrate_kbps(value: Any, resolution: str) -> int:
 
 def _validate_output(name: str, raw: Any, defaults: dict[str, Any]) -> dict[str, Any]:
     """Validate ONE output entry against its defaults: resolution clamped to the
-    ladder (Mercury additionally ≤1080p), bitrate clamped per-resolution, the flags
-    coerced to bool, ``restart_epoch`` a non-negative monotonic counter. The Mercury
-    non-secret fields (channel_guid / display_name) are plain strings.
-
-    Discord is a SPECIAL SHAPE: only ``enabled`` (bool), ``transport`` (clamped to a
-    supported value), and ``guild_id`` (a plain string hint) — NO resolution / bitrate
-    / audio / restart_epoch, because the Activity is a viewer of the HLS render."""
+    ladder, bitrate clamped per-resolution, the flags coerced to bool,
+    ``restart_epoch`` a non-negative monotonic counter."""
     src = raw if isinstance(raw, dict) else {}
-    if name == "discord":
-        return {
-            "enabled": _coerce_bool(src.get("enabled"), defaults["enabled"]),
-            "transport": _clamp_discord_transport(src.get("transport", defaults["transport"])),
-            "guild_id": _coerce_str(src.get("guild_id"), defaults["guild_id"]),
-        }
     res = _clamp_resolution(src.get("resolution", defaults["resolution"]), defaults["resolution"])
-    if name == "mercury":
-        res = _cap_mercury_resolution(res)
     out: dict[str, Any] = {
         "enabled": _coerce_bool(src.get("enabled"), defaults["enabled"]),
         "resolution": res,
@@ -298,16 +237,13 @@ def _validate_output(name: str, raw: Any, defaults: dict[str, Any]) -> dict[str,
             src.get("restart_epoch"), f"outputs.{name}.restart_epoch"
         ),
     }
-    if name == "mercury":
-        out["channel_guid"] = _coerce_str(src.get("channel_guid"), defaults["channel_guid"])
-        out["display_name"] = _coerce_str(src.get("display_name"), defaults["display_name"])
     return out
 
 
 def _validate_outputs(raw_outputs: Any, legacy_render: Any) -> dict[str, Any]:
     """Validate the outputs block. MIGRATION: when ``outputs`` is absent, seed
     ``hls.resolution`` from the legacy ``render.resolution`` (so an old stored file
-    keeps its canvas), and create ``mercury`` from defaults. Only the known outputs
+    keeps its canvas). Only the known outputs
     (:data:`OUTPUT_NAMES`) are produced; an unknown extra key is dropped (a future
     output adds a defaults entry here — no schema bump)."""
     defaults = default_outputs()
@@ -357,10 +293,8 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
       - ``cells`` is a list of length ``rows*cols``; each cell's ``channel`` is
         null or a slug in ``valid_slugs``; ``audio`` + ``subtitles`` are bools
         (default false; any combination of audio cells allowed);
-      - ``outputs`` is the fan-out map (hls + mercury + discord); the encode outputs
-        are clamped to the ladder + sane bitrate (Mercury ≤1080p); discord is the
-        special viewer shape (enabled/transport/guild_id); absent → seeded (migrating
-        ``render``);
+      - ``outputs`` is the fan-out map (hls today); the encode outputs are clamped to
+        the ladder + sane bitrate; absent → seeded (migrating ``render``);
       - ``preset`` is null or a string (informational).
     """
     if not isinstance(raw, dict):
@@ -476,7 +410,7 @@ def _merge_outputs(
 ) -> dict[str, Any]:
     """Merge an incoming outputs map onto the stored one per-output AND per-field:
     ``outputs.hls.bitrate_kbps`` alone overrides only that field — it preserves
-    ``outputs.hls.resolution`` and the whole ``outputs.mercury`` entry. A non-dict
+    ``outputs.hls.resolution`` (and any other output's fields). A non-dict
     output value passes through for the validator to reject. Pure."""
     out: dict[str, Any] = copy.deepcopy(stored_outputs) if isinstance(stored_outputs, dict) else {}
     for name, fields in incoming_outputs.items():
@@ -548,9 +482,8 @@ def clamp_reload_monotonic(
     old_outputs = old_config.get("outputs") or {}
     outputs: dict[str, Any] = {}
     for name, out in (new_config.get("outputs") or {}).items():
-        # A special-shape output without a restart_epoch (Discord — a launch-to-start
-        # viewer, no encoder to cycle) passes through untouched: the monotonic clamp
-        # only applies to outputs that actually carry the counter.
+        # An output without a restart_epoch counter passes through untouched: the
+        # monotonic clamp only applies to outputs that actually carry the counter.
         if not isinstance(out, dict) or "restart_epoch" not in out:
             outputs[name] = out
             continue

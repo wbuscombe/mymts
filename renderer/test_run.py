@@ -37,8 +37,7 @@ class FetchOutputs(unittest.TestCase):
         self.assertIsNone(run.fetch_outputs())
 
     def test_fetch_outputs_returns_live_outputs_verbatim(self):
-        live = {"hls": {"enabled": True, "bitrate_kbps": 24000, "restart_epoch": 3},
-                "discord": {"enabled": True, "transport": "activity"}}
+        live = {"hls": {"enabled": True, "bitrate_kbps": 24000, "restart_epoch": 3}}
         self._stub({"outputs": live})
         self.assertEqual(run.fetch_outputs(), live)
 
@@ -52,8 +51,8 @@ class FetchOutputs(unittest.TestCase):
         self.assertTrue(out["hls"]["enabled"])
 
     def test_read_outputs_prefers_live_over_fallback(self):
-        self._stub({"outputs": {"hls": {"enabled": True}, "discord": {"enabled": True}}})
-        self.assertEqual(sorted(run.read_outputs()), ["discord", "hls"])
+        self._stub({"outputs": {"hls": {"enabled": True, "bitrate_kbps": 24000}}})
+        self.assertEqual(run.read_outputs()["hls"]["bitrate_kbps"], 24000)   # live, not the 8000 fallback
 
 
 if __name__ == "__main__":

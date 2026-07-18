@@ -5,8 +5,7 @@ Two surfaces for the unified Outputs panel (/control/):
   GET  /api/outputs/status            → per-output runtime state (merged: the wall
                                          config's CONFIGURED outputs + the renderer's
                                          live status file). HLS: running/stopped +
-                                         res/bitrate + playlist path. Mercury: the
-                                         publisher's honest state + setup checklist.
+                                         res/bitrate + playlist path.
   POST /api/outputs/{name}/{action}   → start | stop | restart — performed as a
                                          config edit through the SAME validated
                                          partial-merge path as PUT /api/wall (no
@@ -89,32 +88,10 @@ def get_router(
                 "audio": o.get("audio"),
             }
             r = runtime.get(name, {})
-            if name == "mercury":
-                # The renderer (which holds the LiveKit env) is the authority for the
-                # checklist + state. Without a report, fall back to a config-only view
-                # (key/tailnet unknown). NEVER "connected/publishing" in this build.
-                entry["channel_guid"] = o.get("channel_guid", "")
-                entry["display_name"] = o.get("display_name", "")
-                entry["state"] = r.get(
-                    "state", ("needs_setup" if o.get("enabled") else "disabled")
-                )
-                entry["checklist"] = r.get("checklist", {
-                    "key_present": None,
-                    "channel_set": bool(o.get("channel_guid")),
-                    "tailnet_reachable": None,
-                })
-                entry["detail"] = r.get(
-                    "detail", "Renderer not reporting" if not reporting else ""
-                )
-                # The real publisher reports these; absent (stub / no report) → None.
-                entry["viewer_count"] = r.get("viewer_count")
-                entry["last_error"] = r.get("last_error")
-                entry["room"] = r.get("room", "")
-            else:
-                entry["state"] = r.get("state", ("stopped" if o.get("enabled") else "disabled"))
-                entry["playlist_path"] = r.get(
-                    "playlist_path", "/api/stream/playlist.m3u8" if name == "hls" else None
-                )
+            entry["state"] = r.get("state", ("stopped" if o.get("enabled") else "disabled"))
+            entry["playlist_path"] = r.get(
+                "playlist_path", "/api/stream/playlist.m3u8" if name == "hls" else None
+            )
             result[name] = entry
 
         return {

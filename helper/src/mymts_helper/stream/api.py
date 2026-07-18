@@ -26,9 +26,9 @@ _SEGMENT_RE = re.compile(r"seg_\d+\.ts")
 
 # no-store: HLS is live; never let a cache pin a stale playlist/segment.
 # Access-Control-Allow-Origin: * — the HLS is PUBLIC video (no secret); a browser HLS
-# consumer (the Mercury publisher's livekit-client, served from a different local
-# origin; any in-browser player) fetches the playlist + segments cross-origin via XHR,
-# which CORS otherwise blocks. Read-only GET of our own renderer output → ACAO:* is
+# consumer served from a different local origin (any in-browser player) fetches the
+# playlist + segments cross-origin via XHR, which CORS otherwise blocks. Read-only GET
+# of our own renderer output → ACAO:* is
 # the standard, safe posture for an HLS endpoint.
 _STREAM_HEADERS = {"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"}
 

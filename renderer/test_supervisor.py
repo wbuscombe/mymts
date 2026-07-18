@@ -220,8 +220,9 @@ class MultiOutputFanout(unittest.TestCase):
     the restart-decision matrix."""
 
     def test_derive_render_resolution_is_max_enabled(self):
+        # the largest ENABLED output resolution (a disabled higher rung is ignored)
         o = {"hls": {"enabled": True, "resolution": "1080p"},
-             "mercury": {"enabled": True, "resolution": "720p"}}
+             "extra": {"enabled": False, "resolution": "2160p"}}
         self.assertEqual(sup.derive_render_resolution(o), "1080p")
         # a higher-res output (incl. a non-hls encoder) lifts the canvas
         o2 = {"hls": {"enabled": True, "resolution": "720p"},
@@ -255,8 +256,6 @@ class MultiOutputFanout(unittest.TestCase):
         base = {
             "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
                     "audio": True, "restart_epoch": 0},
-            "mercury": {"enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
-                        "audio": True, "restart_epoch": 0, "channel_guid": "", "display_name": "X"},
         }
         for k, v in over.items():
             base[k] = {**base[k], **v}
@@ -283,15 +282,14 @@ class MultiOutputFanout(unittest.TestCase):
 
     def test_startup_fallback_differs_from_a_live_multi_encoder_config(self):
         # WHY the poll loop must feed fetch_outputs() (None on a blip), NOT the
-        # startup fallback (2026-07-14 churn fix): the single-HLS fallback differs
-        # from a live hls+discord config, so plan_output_restart CORRECTLY calls it
-        # an encoder change — which, fed on every failed read, was the flap. Pins
-        # both the divergence and the invariant the fix relies on (live vs itself is
-        # a no-op, so a stable helper never respawns the encoder).
+        # startup fallback (2026-07-14 churn fix): the single-HLS fallback (bitrate
+        # 8000, epoch 0) differs from a live hls config (bitrate 24000, epoch 3), so
+        # plan_output_restart CORRECTLY calls it an encoder change — which, fed on
+        # every failed read, was the flap. Pins both the divergence and the invariant
+        # the fix relies on (live vs itself is a no-op, so a stable helper never respawns).
         live = {
             "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 24000,
                     "audio": True, "restart_epoch": 3},
-            "discord": {"enabled": True, "guild_id": "", "transport": "activity"},
         }
         fallback = {"hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000,
                             "audio": True, "restart_epoch": 0}}
