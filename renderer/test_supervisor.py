@@ -267,29 +267,19 @@ class MultiOutputFanout(unittest.TestCase):
         new = self._outputs(hls={"resolution": "2160p"})   # moves the max
         p = sup.plan_output_restart(old, new)
         self.assertTrue(p["render_restart"] and p["encoder_restart"])
-        self.assertFalse(p["publisher_restart"])
 
     def test_restart_matrix_bitrate_restarts_encoder_only(self):
         p = sup.plan_output_restart(self._outputs(), self._outputs(hls={"bitrate_kbps": 5000}))
         self.assertFalse(p["render_restart"])
         self.assertTrue(p["encoder_restart"])
-        self.assertFalse(p["publisher_restart"])
 
     def test_restart_matrix_audio_toggle_restarts_encoder_only(self):
         p = sup.plan_output_restart(self._outputs(), self._outputs(hls={"audio": False}))
-        self.assertEqual((p["render_restart"], p["encoder_restart"], p["publisher_restart"]), (False, True, False))
-
-    def test_restart_matrix_mercury_change_restarts_publisher_only(self):
-        p = sup.plan_output_restart(self._outputs(), self._outputs(mercury={"restart_epoch": 1}))
-        self.assertEqual((p["render_restart"], p["encoder_restart"], p["publisher_restart"]), (False, False, True))
+        self.assertEqual((p["render_restart"], p["encoder_restart"]), (False, True))
 
     def test_restart_matrix_no_change_is_noop(self):
         p = sup.plan_output_restart(self._outputs(), self._outputs())
         self.assertFalse(any(p.values()))
-
-    def test_encoder_outputs_exclude_the_publisher(self):
-        self.assertEqual(list(sup.enabled_encoder_outputs(self._outputs(mercury={"enabled": True}))), ["hls"])
-        self.assertTrue(sup.is_publisher_output("mercury"))
 
     def test_startup_fallback_differs_from_a_live_multi_encoder_config(self):
         # WHY the poll loop must feed fetch_outputs() (None on a blip), NOT the
@@ -310,45 +300,6 @@ class MultiOutputFanout(unittest.TestCase):
         self.assertTrue(sup.is_encoder_output("hls"))
 
 
-class MercuryStub(unittest.TestCase):
-    """The StubMercuryPublisher (the no-creds fallback) — needs_setup/disabled, and it
-    NEVER opens a connection. The credentialed publishing path is RealMercuryPublisher
-    (see test_mercury.py)."""
-
-    def _boom_probe(self, *_a, **_k):
-        raise AssertionError("the stub opened a network probe — egress leak!")
-
-    def test_disabled_state_no_probe(self):
-        import mercury
-        p = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=self._boom_probe)
-        p.configure({"enabled": False})
-        st = p.status()
-        self.assertEqual(st["state"], "disabled")
-        self.assertIsNone(st["checklist"]["tailnet_reachable"])   # never probed
-
-    def test_needs_setup_when_key_missing_no_probe(self):
-        import mercury
-        # key absent → needs_setup, and the probe is short-circuited (zero egress)
-        p = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=self._boom_probe)
-        p.configure({"enabled": True, "channel_guid": "g"})
-        st = p.status()
-        self.assertEqual(st["state"], "needs_setup")
-        self.assertIn("LiveKit key", st["detail"])
-        self.assertFalse(st["checklist"]["key_present"])
-
-    def test_start_stop_restart_are_inert(self):
-        import mercury
-        logs = []
-        # The stub is the NO-CREDS fallback (env has no key): start/stop/restart must
-        # not raise and must open NO connection — they only log intent.
-        p = mercury.StubMercuryPublisher(env={}, log=logs.append, probe=self._boom_probe)
-        p.configure({"enabled": True, "channel_guid": "g", "resolution": "720p"})
-        p.start()                                    # must not raise, must not connect
-        p.stop()
-        p.restart()
-        self.assertTrue(any("not publishing" in m or "no-op" in m for m in logs))
-
-
 class StatusFile(unittest.TestCase):
     """The renderer's status file must be readable by the HELPER (a different uid,
     read-only on the shared volume) — mkstemp's 0600 default would block it."""
@@ -359,27 +310,21 @@ class StatusFile(unittest.TestCase):
         import stat
         import tempfile
 
-        import mercury
         import run
 
         d = tempfile.mkdtemp()
         run.STREAM_DIR = d
         run.WIDTH, run.HEIGHT, run.FPS = 1920, 1080, 30
-        pub = mercury.StubMercuryPublisher(env={}, log=lambda m: None, probe=lambda u: None)
-        pub.configure({"enabled": False})
         outputs = {
             "hls": {"enabled": True, "resolution": "1080p", "bitrate_kbps": 8000, "audio": True},
-            "mercury": {"enabled": False, "resolution": "720p", "bitrate_kbps": 3000,
-                        "audio": True, "channel_guid": "", "display_name": "X"},
         }
-        run.write_status_file(outputs, "1080p", True, pub)
+        run.write_status_file(outputs, "1080p", True)
         path = os.path.join(d, run.STATUS_FILE)
         self.assertTrue(os.path.isfile(path))
         mode = stat.S_IMODE(os.stat(path).st_mode)
         self.assertTrue(mode & 0o004, f"status file {oct(mode)} not readable by other (the helper uid)")
         data = json.load(open(path))
         self.assertEqual(data["outputs"]["hls"]["state"], "running")
-        self.assertEqual(data["outputs"]["mercury"]["state"], "disabled")
         self.assertEqual(data["render"]["resolution"], "1080p")
 
 

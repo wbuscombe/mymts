@@ -117,9 +117,10 @@ def grab_queue_size(width: int, height: int | None = None) -> int:
 # established in the smoothness pass (§31) — NOT the encode. So the wall is
 # composited ONCE at the derived render resolution and fanned out to per-output
 # encodes, each downscaling from the single capture to its own resolution/bitrate.
-# `mercury` is NOT an ffmpeg encoder — it routes to the publisher abstraction
-# (mercury.py); every other output is an ffmpeg → HLS encoder.
-PUBLISHER_OUTPUTS = frozenset({"mercury"})
+# PUBLISHER_OUTPUTS names any output routed to a publisher abstraction instead of an
+# ffmpeg → HLS encoder. Currently EMPTY (the Mercury publisher was removed in PR-018);
+# the seam is kept so a future non-encoder output slots in without reworking the fan-out.
+PUBLISHER_OUTPUTS: frozenset[str] = frozenset()
 
 
 def is_publisher_output(name: str) -> bool:
@@ -229,16 +230,6 @@ def _encoder_signature(outputs: dict | None) -> dict:
     }
 
 
-def _publisher_signature(outputs: dict | None) -> dict:
-    return {
-        n: (o.get("enabled"), o.get("resolution"), o.get("bitrate_kbps"),
-            bool(o.get("audio")), o.get("restart_epoch", 0),
-            o.get("channel_guid"), o.get("display_name"))
-        for n, o in (outputs or {}).items()
-        if isinstance(o, dict) and is_publisher_output(n)
-    }
-
-
 def plan_output_restart(old_outputs: dict | None, new_outputs: dict | None) -> dict[str, bool]:
     """The restart-decision matrix when the outputs config changes (avoid thrashing
     the render):
@@ -247,19 +238,15 @@ def plan_output_restart(old_outputs: dict | None, new_outputs: dict | None) -> d
         canvas too;
       - ``encoder_restart``: an ffmpeg-encoder output's params changed (a resolution
         change that does NOT move the max, bitrate, audio, enabled, restart_epoch) →
-        respawn the capture/encode WITHOUT touching the render;
-      - ``publisher_restart``: the Mercury (publisher) output's params/epoch changed
-        → cycle the publisher alone (no encoder/render touch).
+        respawn the capture/encode WITHOUT touching the render.
     Pure — the runtime acts on these flags."""
     render_restart = derive_render_resolution(old_outputs) != derive_render_resolution(new_outputs)
     encoder_restart = render_restart or (
         _encoder_signature(old_outputs) != _encoder_signature(new_outputs)
     )
-    publisher_restart = _publisher_signature(old_outputs) != _publisher_signature(new_outputs)
     return {
         "render_restart": render_restart,
         "encoder_restart": encoder_restart,
-        "publisher_restart": publisher_restart,
     }
 
 

@@ -58,12 +58,7 @@ RUN printf 'Package: chromium*\nPin: version 147.*\nPin-Priority: 1001\n' \
     && chown -R 10002:10002 /home/renderer /stream
 
 WORKDIR /app
-COPY supervisor.py run.py healthcheck.py mercury.py ./
-# The Mercury publisher's browser assets (publisher.html/js + vendored livekit-client,
-# served same-origin by the in-process localhost control server to the publisher
-# Chrome). Inert static files — no secrets. (A missing COPY here would crash-loop the
-# real publisher on start; the stub path is unaffected.)
-COPY publisher ./publisher
+COPY supervisor.py run.py healthcheck.py ./
 RUN chown -R 10002:10002 /app
 
 USER 10002:10002

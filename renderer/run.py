@@ -32,7 +32,6 @@ import sys
 import tempfile
 import time
 
-import mercury
 import supervisor
 
 # ---- config (env, with sane defaults; no secrets) ----
@@ -207,7 +206,7 @@ def resolve_render_dimensions(outputs: dict | None = None) -> tuple[int, int, in
 
 
 def encoder_specs(outputs: dict) -> list[dict]:
-    """Per enabled ENCODER output (the publisher is excluded), the spec the fan-out
+    """Per enabled ENCODER output, the spec the fan-out
     ffmpeg needs: its downscale dims (from its resolution), bitrate, whether to mux
     the wall audio, and its HLS output paths. The `hls` output writes to the
     STREAM_DIR ROOT (the existing VLC playlist + segments — regression-preserved);
@@ -244,11 +243,11 @@ def fanout_cmd(outputs: dict) -> list[str]:
 
 
 def write_status_file(
-    outputs: dict, render_res: str, ffmpeg_running: bool, publisher: mercury.MercuryPublisher
+    outputs: dict, render_res: str, ffmpeg_running: bool
 ) -> None:
     """Write the per-output runtime status into the shared stream volume (atomic
     rename). HLS: running/stopped/disabled + effective res/bitrate + the playlist
-    path. Mercury: the publisher's honest state + setup checklist. The helper reads
+    path. The helper reads
     this (read-only) for /api/outputs/status — no new privileged channel."""
     status: dict = {
         "render": {"resolution": render_res, "width": WIDTH, "height": HEIGHT, "fps": FPS},
@@ -256,9 +255,6 @@ def write_status_file(
         "outputs": {},
     }
     for name, o in outputs.items():
-        if supervisor.is_publisher_output(name):
-            status["outputs"][name] = publisher.status()
-            continue
         enabled = bool(o.get("enabled"))
         entry = {
             "state": "running" if (enabled and ffmpeg_running) else ("stopped" if enabled else "disabled"),
@@ -276,8 +272,7 @@ def write_status_file(
             json.dump(status, f)
         # mkstemp creates 0600; the helper (a DIFFERENT uid, ro on this volume) must
         # read it — make it world-readable like ffmpeg's .ts segments (0644). The
-        # file is non-secret runtime status (no LiveKit values; the Mercury fields
-        # are the non-secret channel_guid/display_name only).
+        # file is non-secret runtime status.
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except OSError:
@@ -448,19 +443,6 @@ def main() -> int:
 
     env = dict(os.environ, DISPLAY=DISPLAY, PULSE_SINK=SINK)
 
-    # Mercury output → the publisher abstraction. The factory picks the REAL LiveKit
-    # screen_share publisher (a publisher Chrome on THIS Xvfb running livekit-client)
-    # when credentials are present, else the inert stub (zero egress). The publisher
-    # captures this same framebuffer (render-once preserved) and parks its own window
-    # off the WxH canvas — set_canvas tells it which canvas to park off of.
-    publisher = mercury.make_publisher(
-        env=os.environ, log=log, display=DISPLAY, chromium_bin=CHROMIUM_BIN
-    )
-    publisher.set_canvas(WIDTH, HEIGHT, FPS)
-    publisher.configure(outputs.get("mercury", {}))
-    if outputs.get("mercury", {}).get("enabled"):
-        publisher.start()
-
     chromium = Child("chromium", chromium_cmd(), env)
     chromium.start()
     # ONE fan-out ffmpeg: capture the composited wall once, encode per enabled
@@ -472,8 +454,8 @@ def main() -> int:
     children = [chromium] + ([ffmpeg] if ffmpeg else [])
 
     enc_names = [s["name"] for s in specs]
-    log(f"streaming {HELPER_URL} → outputs {enc_names or '(none)'}; mercury {publisher.status()['state']}")
-    write_status_file(outputs, render_res, ffmpeg is not None, publisher)
+    log(f"streaming {HELPER_URL} → outputs {enc_names or '(none)'}")
+    write_status_file(outputs, render_res, ffmpeg is not None)
     last_fresh = None   # monotonic time the stream was last HEALTHY (advancing)
     next_check = time.monotonic() + RESOLUTION_POLL_S
     # Blank/frozen render watchdog: sample the live render every ~2 min; N consecutive
@@ -494,8 +476,8 @@ def main() -> int:
         # OUTPUTS change (from /control/): apply the restart MATRIX. A change that
         # moves the derived canvas restarts the whole stack (the heavy path); a
         # change to only an encoder's bitrate/audio/resolution-not-moving-max
-        # respawns just the fan-out ffmpeg (render untouched); a Mercury change
-        # cycles only the publisher. An unreachable helper → no change → no restart.
+        # respawns just the fan-out ffmpeg (render untouched). An unreachable helper
+        # → no change → no restart.
         if time.monotonic() >= next_check:
             next_check = time.monotonic() + RESOLUTION_POLL_S
             # A helper blip returns None → keep the running pipeline UNTOUCHED (no
@@ -522,14 +504,8 @@ def main() -> int:
                     if ffmpeg:
                         ffmpeg.start()
                     children = [chromium] + ([ffmpeg] if ffmpeg else [])
-                if plan["publisher_restart"]:
-                    publisher.configure(new_outputs.get("mercury", {}))
-                    if new_outputs.get("mercury", {}).get("enabled"):
-                        publisher.restart()   # inert
-                    else:
-                        publisher.stop()      # inert
                 outputs = new_outputs
-                write_status_file(outputs, render_res, ffmpeg is not None, publisher)
+                write_status_file(outputs, render_res, ffmpeg is not None)
         # WEDGE detection: ffmpeg/Chromium can hang (alive but the stream stops
         # advancing). Only meaningful when an HLS encoder is running (it writes the
         # playlist this checks). Once healthy, a stale-past-threshold stack restarts.

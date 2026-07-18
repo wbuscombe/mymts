@@ -209,27 +209,6 @@ services:
       RENDER_VIDEO_BITRATE: ${RENDER_VIDEO_BITRATE:-8M}
       RENDER_BUFSIZE: ${RENDER_BUFSIZE:-16M}
       RENDER_X264_PRESET: ${RENDER_X264_PRESET:-veryfast}
-      # Mercury output (the renderer's LiveKit screen_share publisher). SECRETS —
-      # empty by default; real values come from the deploy .env (gitignored, never
-      # committed/logged). The publisher is IMPLEMENTED (a publisher Chrome on the
-      # shared Xvfb runs livekit-client, publishing the wall as a simulcast
-      # screen_share track), verified against a local dev SFU. With the key/secret
-      # UNSET the renderer falls back to the inert stub: needs-setup, NO connection,
-      # zero egress to Mercury. NODE_IP maps the prod host → the tailnet IP via
-      # Chrome's host-resolver-rules (note H). See docs/decisions/0003.
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
-      LIVEKIT_HOST: ${LIVEKIT_HOST:-}
-      # No baked default — the tailnet media IP is operator topology, supplied via the
-      # gitignored .env alongside the LiveKit key/secret/host when Mercury is enabled
-      # (empty until then; Mercury is inert with no creds, so this is unused). Keeping a
-      # real IP here committed a private tailnet address — redacted (2026-07-08 audit).
-      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:-}
-      LIVEKIT_BOT_IDENTITY: ${LIVEKIT_BOT_IDENTITY:-mymts-wall-bot}
-      # The wall's HLS the publisher captures (render-once — it re-uses the single
-      # composite the renderer already produces). Defaults to the helper's plain-HTTP
-      # stream on the LAN; override only if the stream URL differs.
-      RENDER_HLS_URL: ${RENDER_HLS_URL:-http://mymts-helper:8082/api/stream/playlist.m3u8}
       BUILD_SHA: ${BUILD_SHA:-dev}
       BUILD_VERSION: ${BUILD_VERSION:-0.0.0-dev}
     volumes:
