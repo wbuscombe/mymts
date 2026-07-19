@@ -9,7 +9,7 @@ import androidx.lifecycle.LifecycleOwner
 /**
  * Owns N StreamPlayers and their lifecycle.
  *
- * Lifecycle policy (adapted from WyzeGrid): players (re)initialize on
+ * Lifecycle policy (adapted from a sibling TV app): players (re)initialize on
  * onStart, release on onDestroy. onStop merely pauses by clearing
  * playWhenReady (Stage 6 will tune this for the dim-window + watchdog
  * interplay).

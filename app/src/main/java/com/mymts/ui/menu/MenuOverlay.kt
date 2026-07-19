@@ -53,7 +53,7 @@ import com.mymts.data.settings.FeedSide
  *
  * Stage 5 (this commit) renders one **slot row per wall tile**: each
  * row shows "Slot N · current channel" and SELECT will open the channel
- * picker (checkpoint 2). The version footer matches WyzeGrid's
+ * picker (checkpoint 2). The version footer matches a sibling TV app's
  * vocabulary so the two apps read as the same family.
  */
 @Composable
@@ -168,7 +168,7 @@ private fun MenuPanel(
             }
             // UX & Config chapter — operator's wall-layout controls
             // live in a small section below the channels block. Same
-            // WyzeGrid family: a section title + a focusable row.
+            // sibling-app family: a section title + a focusable row.
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             SectionTitle("WALL")
             // Server-authoritative wall preset (News / Nature / Space / Chill / Mixed / Ocean / Eagles).

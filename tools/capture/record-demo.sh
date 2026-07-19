@@ -13,7 +13,7 @@
 # tools/capture/README.md for the recommended shot list.
 #
 # Conforms to AGENTS.md: hard-targets the configured device serial via `-s`
-# (never falls through to the .182/.158 boxes — the wrong-box lesson), does ONE
+# (never falls through to another device — the wrong-box lesson), does ONE
 # foreground adb op at a time, and NEVER runs `adb kill-server` (that would
 # disrupt the other Onn boxes) and never backgrounds adb. PIA is never touched.
 #
@@ -118,7 +118,7 @@ elif (( SCRCPY_MAJOR < 2 )); then
 fi
 
 # ── Preflight 3: the device serial is REAL, not the scrubbed placeholder ────────
-# (the wrong-box guard — a MyMTS adb op must never fall through to .182/.158.)
+# (the wrong-box guard — a MyMTS adb op must never fall through to another device.)
 if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
     {
         echo "FATAL: target device is the placeholder/unset ('$DEVICE')."
@@ -129,7 +129,7 @@ if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
 fi
 
 # ── Preflight 4: adb present + the device connected (ONE foreground reconnect; ──
-#    NEVER kill-server — that disrupts the other Onn boxes .182/.158) ───────────
+#    NEVER kill-server — that disrupts the other devices on the adb server) ───────────
 command -v adb >/dev/null 2>&1 \
     || die "adb is not on PATH. Install the Android platform-tools (e.g. brew install android-platform-tools)."
 

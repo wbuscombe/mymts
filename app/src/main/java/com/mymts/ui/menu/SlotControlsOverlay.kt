@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * The per-tile controls — opens when the operator hits SELECT on a
- * slot row in the side menu. Centered popup, WyzeGrid-family styling,
+ * slot row in the side menu. Centered popup, sibling-app styling,
  * D-pad navigation.
  *
  * Actions (Stage 6+ controls track):

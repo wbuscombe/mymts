@@ -11,10 +11,9 @@
 0.0.0.0      # bind-all listen address (uvicorn/compose)
 
 # --- deliberately-kept last-octet box aliases ---
-# Non-routable last-octet shorthand, NOT a full IP. Load-bearing in the AGENTS.md
-# governance rules ("never adb kill-server — it disrupts the other boxes .182/.158")
-# and pervasive in the CHANGELOG history. The prior topology scrub kept these by
-# decision; the personal-config audit flagged them as the operator's call.
-.92          # the MyMTS box alias
-.158         # an other-Onn-box alias
-.182         # the WyzeGrid/camera box alias
+# Non-routable last-octet shorthand, NOT a full IP. These remain only in the dated
+# CHANGELOG / findings history as a record — the current docs and code no longer use
+# them. Kept exempt so the gate doesn't flag those historical mentions.
+.92          # a dev-box octet (historical CHANGELOG/findings only)
+.158         # another-device octet (historical)
+.182         # another-device octet (historical)

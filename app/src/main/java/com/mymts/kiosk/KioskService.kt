@@ -30,7 +30,7 @@ import com.mymts.util.CrashLog
  *
  * **Opt-in:** nothing starts this service unless `KioskPrefs` is enabled
  * (set during provisioning). On a non-kiosk box the service is never
- * started, so the same APK is inert there (notably `.182`).
+ * started, so the same APK is inert there (notably on a non-kiosk box).
  *
  * **STAGED:** that this actually holds the foreground across hours and
  * survives a real reboot is validated on the new box in the migration
@@ -74,7 +74,7 @@ class KioskService : Service() {
             // ambient wall is a long-running, device-owner display role
             // that doesn't map to a domain type (location/media/etc.),
             // so SPECIAL_USE is the honest classification — same lineage
-            // as WyzeGrid's watchdog. The matching manifest declaration
+            // as a sibling TV app's watchdog. The matching manifest declaration
             // carries the required `specialUse` property + justification.
             startForeground(
                 NOTIFICATION_ID,

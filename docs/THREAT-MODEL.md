@@ -177,9 +177,9 @@ The A1 boundary **holds**: hostile-feed input remains neutralized by the helper'
 
 **Connection to T-T2 and T-H1:** This entry **does not change** the existing T-T2 (HTML smuggled into the feed pane via RSS title/summary → XSS-equivalent on the TV) or T-H1 (hostile RSS feed content) mitigations. The feed-expand path is a *consumer* of the helper's already-stripped output; it neither extends nor weakens those mitigations. The boundary they pin (no HTML interpretation on the TV) is the same boundary feed-expand respects by construction.
 
-**Connection to BUILD-PROMPT §4 closed door:**
+**Connection to the A1 closed-door design decision:**
 
-BUILD-PROMPT line 81 states: *"Opening an item on the TV shows whatever the helper safely provides (e.g., a text excerpt). Do **not** build a flow that requires the TV to fetch arbitrary web pages or that depends on a cross-device auth handoff — that path is forbidden. A simple, safe on-screen excerpt is the v1 answer; richer reading is deferred."*
+An early A1 design decision (line 81) states: *"Opening an item on the TV shows whatever the helper safely provides (e.g., a text excerpt). Do **not** build a flow that requires the TV to fetch arbitrary web pages or that depends on a cross-device auth handoff — that path is forbidden. A simple, safe on-screen excerpt is the v1 answer; richer reading is deferred."*
 
 The feed-expand implementation honors this closed door exactly: safe on-screen excerpt (the summary field from the helper's `FeedItem`), no TV-side fetch (expansion only flips render properties), richer reading deferred (a future "open on phone via QR" is logged in BACKLOG as a closed-door-compatible alternative, not as in-app HTML reading).
 
@@ -366,10 +366,10 @@ The logged intermittent `sqlite3.ProgrammingError: SQLite objects created in a t
 *Mitigation:* `KioskService` is declared `exported="false"`; the OS refuses external/adb starts. No `onBind` IPC surface; `onStartCommand` accepts no commands/state from callers. *Residual risk:* none (manifest-enforced). *Traces to:* A4.
 
 **T-K3 — Model-A sole-kiosk assumption broken on a shared box.**
-The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW`, no coexistence state machine. On the dedicated box (sole kiosk) this holds. The opt-in gate means a non-provisioned box (e.g. `.182`) never runs the kiosk at all, so it cannot contend with WyzeGrid. A future shared-box use case would require fresh threat-modelling before any reclaim logic is added. *Traces to:* B1, A4.
+The kiosk code assumes it owns its box: no reclaim loop, no `SYSTEM_ALERT_WINDOW`, no coexistence state machine. On the dedicated box (sole kiosk) this holds. The opt-in gate means a non-provisioned box (e.g. `.182`) never runs the kiosk at all, so it cannot contend with a sibling TV app. A future shared-box use case would require fresh threat-modelling before any reclaim logic is added. *Traces to:* B1, A4.
 
 **T-K4 — the opt-in gate is the sole `.182`-safety control; accidental enable would orphan a shared box.**
-*Mitigation:* `KioskPrefs.DEFAULT_ENABLED=false`; the *only* enable path is the explicit provisioning intent (`--ez kiosk true`), which needs physical/adb access — not something a remote app can do. Standing rule (`.182` + WyzeGrid untouched) is the operational enforcement; a code-review gate rejects any change flipping the default to true. Rollback is `--ez kiosk false`. *Traces to:* B1, A7 (the flag is a boolean, not a secret).
+*Mitigation:* `KioskPrefs.DEFAULT_ENABLED=false`; the *only* enable path is the explicit provisioning intent (`--ez kiosk true`), which needs physical/adb access — not something a remote app can do. Standing rule (`.182` + a sibling TV app untouched) is the operational enforcement; a code-review gate rejects any change flipping the default to true. Rollback is `--ez kiosk false`. *Traces to:* B1, A7 (the flag is a boolean, not a secret).
 
 **No new secret:** the kiosk flag is a boolean in SharedPreferences (no PII, no credential). The release signing keystore remains the only secret and is never committed. **STAGED:** on-hardware validation is pending the migration session; this analysis stands on the code as written.
 

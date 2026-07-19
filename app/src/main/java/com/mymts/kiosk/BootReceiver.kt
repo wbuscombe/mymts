@@ -14,7 +14,7 @@ import com.mymts.util.CrashLog
  *   - on the provisioned MyMTS box (kiosk on) a reboot starts the
  *     foreground service, which brings the wall to the front;
  *   - on any other box (kiosk off — the default), this receiver is a
- *     no-op, so the same signed APK never autostarts on `.182`.
+ *     no-op, so the same signed APK never autostarts on a non-kiosk box.
  *
  * Registered for `BOOT_COMPLETED` + `LOCKED_BOOT_COMPLETED` + the
  * quickboot variants in the manifest; the policy allowlist is the

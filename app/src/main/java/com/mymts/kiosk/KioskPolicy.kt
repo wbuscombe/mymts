@@ -7,7 +7,7 @@ package com.mymts.kiosk
  * MyMTS as the *sole* kiosk — so this module is about staying up and
  * foregrounded reliably on its own box, NOT reclaiming the foreground
  * from a competitor (that coexistence complexity is deliberately not
- * built; see `docs/THREAT-MODEL.md`). `.182` is WyzeGrid's box and is
+ * built; see `docs/THREAT-MODEL.md`). Any non-kiosk box on the LAN is
  * never touched.
  *
  * Everything here is **pure Kotlin** (no Android imports) so the boot
@@ -41,8 +41,8 @@ object KioskPolicy {
      * The single gate for "should the boot receiver start the kiosk
      * service?": a recognised boot action AND kiosk mode is enabled on
      * this device. **Kiosk mode is opt-in (off by default)** so the same
-     * signed APK is inert on a non-kiosk box (e.g. `.182`, WyzeGrid's
-     * box) — no foreground service, no boot autostart — and only the
+     * signed APK is inert on a non-kiosk box — no foreground service,
+     * no boot autostart — and only the
      * provisioned MyMTS box (where the runbook enables it) owns its
      * screen.
      */

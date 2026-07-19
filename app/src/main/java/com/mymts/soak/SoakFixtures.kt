@@ -28,7 +28,7 @@ import com.mymts.player.StreamSpec
 object SoakFixtures {
 
     // LIVE-pool composition for the gate-clearing soak: 5 streams that
-    // sustained playback in solo validation on .182 + 1 deliberate reconnect
+    // sustained playback in solo validation on the dev box + 1 deliberate reconnect
     // exerciser. Inverts the prior pool's mostly-flaky ratio — the first
     // gate-clearing attempt's PSS data measured "1 active tile + 5 stale"
     // because nearly every fixture was flaky.
@@ -39,14 +39,14 @@ object SoakFixtures {
     //   - state=LIVE, playing=true at 75s and 5 min in solo runs
     //   - 0 errors over the validation window
     //
-    // International broadcasters tried but failing on .182 with
+    // International broadcasters tried but failing on the dev box with
     // ERROR_CODE_IO_BAD_HTTP_STATUS (likely geo-restriction or auth):
     // NASA TV Public/Media (4xx mid-validation), France 24, NHK, Al Jazeera,
     // Sky News, TV5MONDE, moctobpltc 'eight', ABC Australia. Do not silently
     // re-add without revalidation on the same network.
     val LIVE: List<StreamSpec> = listOf(
         // ---- 5 stable ----
-        // Real live broadcasts (validated solo on .182, sustained 5 min LIVE).
+        // Real live broadcasts (validated solo on the dev box, sustained 5 min LIVE).
         StreamSpec(
             id = "redbull-tv",
             label = "Red Bull TV (live)",

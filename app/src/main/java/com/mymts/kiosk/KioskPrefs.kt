@@ -7,8 +7,8 @@ import android.content.Context
  *
  * **Opt-in, off by default.** This is the load-bearing safety property
  * of the whole kiosk chapter: the same signed APK installed on a
- * non-kiosk box (notably `.182`, WyzeGrid's camera box, where a MyMTS
- * dev install may linger) must NOT start a foreground service or
+ * non-kiosk box (where a MyMTS dev install may linger) must NOT start
+ * a foreground service or
  * autostart on boot. Kiosk mode is flipped on only during the
  * provisioning runbook for the dedicated MyMTS box (via the
  * `--ez kiosk true` launch extra `MainActivity` honours), so an

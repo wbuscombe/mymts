@@ -90,7 +90,7 @@ Highlights:
 - Attempt 2 (`long-soak-4t-v2-20260602-0857`): 5.13 h of clean N=4 LIVE evidence (state machine honest, PSS slope `−9.53 KB/min` in mature steady state), then a synchronized external network event hit both Akamai CDN origins simultaneously at h5.13. State machine + recovery ladder + anti-loop ran exactly per design; all 4 tiles settled into honest `DEAD` within 13 s of each other. Last ~47 min: tiles `DEAD` (no thrashing, no leak).
 - **Decision (2026-06-02):** close on the 5.13h + network-event evidence. The failure mode at h5.13 is unambiguously external (synchronized across two unrelated CDN origins inside a 12-second window — capacity failures are staggered and load-correlated, not synchronized). The state machine succeeded at its hardest job (honest graceful degradation under real-world failure). The gate criterion's *intent* — "sustain 4 tiles without leaking or degrading from the box's own limits" — is met. Re-running risks the identical outcome (network blips are not schedulable). Full rationale + evidence in `docs/findings/01-onn4k-tile-budget.md §"Stage 2 closeout"`.
 
-WyzeGrid was re-enabled on `.182` at the close.
+a sibling TV app was re-enabled on `.182` at the close.
 
 ## ~~C. Capacity re-soak (this is what completes the Stage 1 gate)~~
 
@@ -107,7 +107,7 @@ The gate criteria stay as written in the existing finding doc; the difference no
 
 ## D. Production-deployment concerns (not blockers; record now so they're not lost)
 
-- **App-vs-app foreground conflict.** WyzeGrid's persistent foreground-service watchdog reclaimed the foreground from MyMTS in Stage 1's first soak. Any Onn box that runs both apps will contend on a 2 GB device. MyMTS's own foreground/kiosk + watchdog story lands in **Stage 6** (operational hardening), per the build prompt; designed-for-coexistence-or-not is a decision then.
+- **App-vs-app foreground conflict.** a sibling TV app's persistent foreground-service watchdog reclaimed the foreground from MyMTS in Stage 1's first soak. Any Onn box that runs both apps will contend on a 2 GB device. MyMTS's own foreground/kiosk + watchdog story lands in **Stage 6** (operational hardening), per the build prompt; designed-for-coexistence-or-not is a decision then.
 - **Confirmatory 4K-panel soak.** Stage 1 ran against `.182`'s 1280×720 panel. Per the finding doc, decode load is panel-agnostic so the slope transfers, but the Graphics-layer composition at 4K isn't independently measured. A short confirmatory soak on a 4K-attached display lands before the default ships to a production-grade TV.
 
 Both already in `docs/BACKLOG.md`; mentioned here as cross-references.

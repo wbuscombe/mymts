@@ -26,7 +26,7 @@ class StreamSpecTest {
     fun rtspUrlIsRejected() {
         // The technical-approach hard boundary: no RTSP wiring on MyMTS.
         // Any RTSP URL crossing this validator is a sign someone copied
-        // wyzegrid camera plumbing into the app.
+        // a sibling camera app's plumbing into the app.
         try {
             StreamSpec(id = "x", label = "X", url = "rtsp://192.168.1.1/stream")
             fail("expected IllegalArgumentException for rtsp scheme")

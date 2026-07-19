@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
  *
  * Scroll-follows-focus: one `Column` + `verticalScroll`, every row pulling
  * itself into view on focus (the [bringFocusedIntoView] discipline proven on the
- * overscan-clipped .92 panel) — no genre or source can sit unreachable below the
+ * overscan-clipped dev panel) — no genre or source can sit unreachable below the
  * fold.
  *
  * Honesty + A1: this only flips on-device preference sets (persisted by
@@ -331,7 +331,7 @@ private fun SourceRow(
  * Scroll the focused row INTO the card's viewport (the list follows the cursor).
  * The same discipline `SettingsOverlay` uses: the default `.focusable()`
  * bring-into-view scrolled flush to the edge, leaving the focused row at/below
- * the visible bottom on the overscan-clipped, fit-scaled .92 panel — an explicit
+ * the visible bottom on the overscan-clipped, fit-scaled dev panel — an explicit
  * [BringIntoViewRequester] fired on focus reliably pulls the row fully in.
  */
 @OptIn(ExperimentalFoundationApi::class)

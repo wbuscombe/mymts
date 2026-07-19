@@ -95,7 +95,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Wrong-box guard. A MyMTS deploy must never fall through to the wrong device
-# (a prior run hit .182 — WyzeGrid's box — and failed on a signature mismatch).
+# (a prior run hit a non-kiosk box and failed on a signature mismatch).
 # Refuse the scrubbed placeholder / an unset target, and require the device be
 # actually connected BEFORE the multi-minute build. Pass --device explicitly.
 if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then

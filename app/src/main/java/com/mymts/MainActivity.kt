@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
         //   adb shell am start -n com.mymts/.MainActivity --ez kiosk true
         // (and `--ez kiosk false` to disable). Kiosk mode is opt-in and
         // OFF by default, so an un-provisioned install — e.g. a lingering
-        // MyMTS install on .182 (WyzeGrid's box) — never starts the
+        // MyMTS install on another (non-kiosk) box on the LAN — never starts the
         // foreground service or autostarts on boot.
         applyKioskExtraIfPresent()
         // If this box is provisioned as a kiosk, ensure the foreground

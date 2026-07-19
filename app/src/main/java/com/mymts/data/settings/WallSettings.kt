@@ -244,7 +244,7 @@ enum class UiScale(val multiplier: Float, val displayName: String) {
  * severe overscan the wall is fitted by raising this inset until the footprint
  * sits inside the visible area, then nudging it into place with the position
  * offset. The high presets (`XLarge`..`Max`) exist for exactly those panels —
- * the .92 panel needed >7% on the bottom/right edges (2026-06-09).
+ * the dev panel needed >7% on the bottom/right edges (2026-06-09).
  */
 enum class Overscan(val fraction: Float, val displayName: String) {
     None(0.00f, "None"),

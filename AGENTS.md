@@ -16,16 +16,16 @@ MyMTS is a **solo homelab ambient news wall**: a native Android TV app (Kotlin/C
 
 ## Never without explicit per-session approval
 
-- **Touch the PIA VPN container / any `service:vpn` config.** The helper is NOT behind PIA, but the NAS runs PIA for other things. Untouchable.
+- **Touch a VPN container / any `service:vpn` config on the deployment host.** The helper is NOT behind the VPN, but the host may run one for unrelated services. Untouchable.
 - **Touch the gitignored local config or secrets:** `local.properties`, `scripts/deploy.local.env`, `docs/ops-local/`, `app/keystore.properties`, `*.jks` / `*.key`. These hold the operator's real values and stay out of git.
 - **Force-push or rewrite git history.** Default is no. The *one* authorized, bounded exception follows the protocol in the house `professionalize.md` §0 (backup-mirror first → rewrite on a throwaway clone → verify gone-from-blobs-AND-messages + secrets-absent + DAG-intact → human checkpoint → `--force-with-lease` only → the rule resumes → coordinate collaborator re-clone).
-- **Background `adb`** (background adb tasks have caused multi-hour device hangs), or **`adb kill-server`** (would disrupt the *other* Onn boxes `.182`/`.158`). One foreground adb op at a time.
+- **Background `adb`** (background adb tasks have caused multi-hour device hangs), or **`adb kill-server`** (would disrupt any *other* devices sharing the adb server). One foreground adb op at a time.
 - **Relax the helper container hardening** (`read_only`, `cap_drop ALL`, non-root uid 10001, `no-new-privileges`) to make something write — use a narrow named volume instead.
 - **Add a release-signing job to CI**, or put the keystore anywhere shared. CI stays test/lint-only.
 
 ## Sensitive areas (read the lore before editing)
 
-- **The `.92` Wi-Fi adb transport** wedges and can truncate a push. See `docs/ops-local/OPERATIONS.md` for the truncating-push / 0-byte / streamed-install-deadlock failure modes and device-specific reconnect recovery. Use the deploy invariant below; never improvise.
+- **A Wi-Fi adb transport** can wedge and truncate a push. See `docs/ops-local/OPERATIONS.md` for the truncating-push / 0-byte / streamed-install-deadlock failure modes and device-specific reconnect recovery. Use the deploy invariant below; never improvise.
 - **The Compose-for-TV focus model** (`ui/nav/WallFocusModel.kt`) — a pure `(focus, intent, counts) -> NavResult` function with ~49 invariant tests. Keep it pure; focus-escape on overlay dismiss is historically finicky. Add a test for any change.
 - **The pollers** (`helper/.../ticker/pollers.py`, `feeds/poller.py`, `channels/prober.py`) hold the degradation logic (HTTP-status handling, `real_as_of`/stale gating, per-source isolation, keep-prior-snapshot) and currently have **no direct tests**. Handle carefully; do not "simplify" a degradation branch without adding coverage.
 - **The TLS pin** — `network_security_config.xml` is generated at build time from the helper URL (commits no topology). Don't hardcode a host into it.
@@ -63,7 +63,7 @@ The **app** deploy is, in order, and with each gate enforced:
 2. **Verify the on-device byte size equals the local APK** (macOS host `stat -f%z` vs Onn toybox `stat -c %s`); **abort** if they differ — that's a truncated transfer over the flaky link.
 3. `adb shell pm install -r /data/local/tmp/mymts.apk`.
 4. **Verify `lastUpdateTime` advanced** (`dumpsys package com.mymts | grep lastUpdateTime`).
-5. **One foreground adb op at a time.** Never background adb. On a wedge, do a device-specific reconnect — **never `adb kill-server`** (it disrupts the other Onn boxes).
+5. **One foreground adb op at a time.** Never background adb. On a wedge, do a device-specific reconnect — **never `adb kill-server`** (it disrupts any other devices on the same adb server).
 
 The **helper** deploy rebuilds the image (`docker compose build --pull && up -d`) and verifies the running container's `/health` `build_sha` matches the deployed SHA — a bare restart never picks up code changes.
 

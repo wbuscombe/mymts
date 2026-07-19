@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test for deploy-app.sh's wrong-box guard (the .182 incident).
+# Regression test for deploy-app.sh's wrong-box guard (the wrong-box incident).
 #
 # Asserts the script REFUSES the scrubbed placeholder / unset device BEFORE any
 # build or device op — so a MyMTS deploy can never fall through to the wrong box.

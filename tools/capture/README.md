@@ -48,8 +48,8 @@ Useful flags (`tools/capture/record-demo.sh --help` for all):
   data.)
 - The target serial comes from `MYMTS_DEPLOY_DEVICE` in the gitignored
   `scripts/deploy.local.env` — the same one the deploy uses. The
-  script **hard-targets** it via scrcpy `-s`, so it can never grab the `.182` /
-  `.158` boxes by accident.
+  script **hard-targets** it via scrcpy `-s`, so it can never grab another
+  device on the LAN by accident.
 
 ## The shot list (a tight ~60–90s demo)
 

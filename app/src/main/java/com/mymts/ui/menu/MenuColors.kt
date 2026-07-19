@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * Menu palette — translucent dark over the wall, green focus accent.
- * Kept tight against WyzeGrid's vocabulary so the two apps read as
+ * Kept tight against a sibling TV app's vocabulary so the two apps read as
  * the same family on the same TV.
  */
 internal object MenuColors {

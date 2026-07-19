@@ -1,5 +1,5 @@
 [versions]
-# Toolchain — match WyzeGrid's validated combination (same Onn 4K target).
+# Toolchain — match a sibling TV app's validated combination (same Onn 4K target).
 agp = "8.7.3"
 kotlin = "2.0.0"
 
@@ -14,7 +14,7 @@ compose-tv-foundation = "1.0.0-alpha12"
 compose-tv-material = "1.1.0-alpha01"
 
 # Media
-# Media3 1.5.0 — HLS only for MyMTS. WyzeGrid includes RTSP for cameras;
+# Media3 1.5.0 — HLS only for MyMTS. A sibling camera app includes RTSP for cameras;
 # MyMTS deliberately does not depend on RTSP, per the technical-approach
 # hard boundary (no camera-auth model on the TV).
 media3 = "1.5.0"

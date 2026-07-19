@@ -17,7 +17,7 @@ can clobber a field it didn't send and any future field is safe by default (`ARC
 (a layout-only PATCH is rejected post-merge by the `rows*cols` rule). The `wallConfig.mjs`
 transforms already do this; a hand-built client must too.
 
-## Deferred from v1 (per `BUILD-PROMPT.md §9` and `04-TECHNICAL-APPROACH.md §5`)
+## Deferred from v1 (per `04-TECHNICAL-APPROACH.md §5`)
 
 | What | Why-not-now | Reconsider when |
 |---|---|---|
@@ -370,7 +370,7 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 
 ## ~~Production deployment — app-vs-app foreground conflict on the Onn box~~ — RESOLVED BY DECISION (Model A, 2026-06-04)
 
-**Resolved by the Model A decision: one kiosk app per box.** The coexistence problem (two `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdogs — WyzeGrid + MyMTS — thrashing on one box) is no longer pursued, because MyMTS gets its own dedicated box and `.182` stays WyzeGrid's alone. The kiosk scaffolding deliberately builds **no** coexistence/foreground-reclaim logic; the opt-in gate (kiosk OFF by default) keeps the shared APK inert on `.182` so no contention can occur there. The original entry's own "Reconsider when" foresaw exactly this resolution ("assert 'one kiosk app per box, MyMTS is the kiosk'"). See the kiosk entry below + `ARCHITECTURE.md §17`.
+**Resolved by the Model A decision: one kiosk app per box.** The coexistence problem (two `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` watchdogs — a sibling TV app + MyMTS — thrashing on one box) is no longer pursued, because MyMTS gets its own dedicated box and `.182` stays a sibling TV app's alone. The kiosk scaffolding deliberately builds **no** coexistence/foreground-reclaim logic; the opt-in gate (kiosk OFF by default) keeps the shared APK inert on `.182` so no contention can occur there. The original entry's own "Reconsider when" foresaw exactly this resolution ("assert 'one kiosk app per box, MyMTS is the kiosk'"). See the kiosk entry below + `ARCHITECTURE.md §17`.
 **If Model A is ever revisited (shared box):** coexistence/reclaim would need fresh threat-modelling before any reclaim logic is added — out of scope while Model A holds.
 
 ## Stage 3 polish-pass — partial channel-resolution investigation
@@ -392,7 +392,7 @@ The sports-ticker overhaul shipped the **8 team leagues** (NFL/NCAAF/UFL/NBA/WNB
 **Why-not-now:** the preset-level controls cover the immediate need; free-form pane-proportion editing is a larger layout-system effort, not a tweak.
 **Reconsider when:** the operator wants drag-resizable panes beyond the current presets. Note the per-device-profile linkage (different output setups may want different default proportions).
 
-## ~~In-app menu / settings section (WyzeGrid-style)~~ — DONE (Stage 5, struck 2026-06-14)
+## ~~In-app menu / settings section (sibling-app-style)~~ — DONE (Stage 5, struck 2026-06-14)
 
 **Done.** The in-app settings/menu surface shipped (Stage 5 + the menu-overhaul chapter): a focusable overlay with D-pad nav for lineup/channel control (the channel picker), the sectioned settings (Display & Fit / Layout & Feed / Sports), display options + the panel-fit levers, the league picker, and the whole-wall controls. See `ui/menu/` (`MenuOverlay` / `SettingsOverlay`), the sports-selection-menu DONE entry above, `ARCHITECTURE.md`, CHANGELOG. *(In-menu "diagnostics" was not pursued as a discrete panel — the helper's `/health` + JSON metrics cover diagnostics out-of-band.)*
 
@@ -584,7 +584,7 @@ Channel supply is the standing follow-on; these extend it with varying feasibili
 ## Send-to-phone for richer article reading (QR pair) — closed-door-compatible
 
 **What:** A future feature for the focused-feed-item SELECT path: alongside the current safe in-place expansion of the helper's plain-text summary, surface a small QR (and/or operator-pre-paired phone notification) that opens the article URL on the operator's phone. The full article is read on the phone's browser — a context where the operator's existing browser hygiene + the article's own platform already apply — not in MyMTS.
-**Why this respects the closed door:** the in-app full-article web reading path is permanently closed (BUILD-PROMPT §4, lines 81/130/178). This entry is **not** that path: MyMTS never fetches the article HTML, never renders it, never proxies through the helper for the operator's session. The QR/notification is a *handoff to the phone*, the phone owns the read — same shape as "scan to open on phone" patterns in news apps. A1 / B4 hold because nothing about the article ever crosses into the TV or helper's render layer.
+**Why this respects the closed door:** the in-app full-article web reading path is permanently closed (an early A1 closed-door design decision). This entry is **not** that path: MyMTS never fetches the article HTML, never renders it, never proxies through the helper for the operator's session. The QR/notification is a *handoff to the phone*, the phone owns the read — same shape as "scan to open on phone" patterns in news apps. A1 / B4 hold because nothing about the article ever crosses into the TV or helper's render layer.
 **Why-not-now:** Out of scope for the navigation chapter (chapter is whole-wall D-pad UX, not reading flow). Cross-device handoff also needs care: QR is the simple form (no auth, no pairing), notification-to-phone requires a one-time pairing flow which is a small but real surface. Decide which form (or both) at design time.
 **Reconsider when:** Operator wants a richer reading flow than the in-place safe summary. Likely pairs with item B (feed UX list/sections) since "select to send to phone" is the natural next action verb once feed items are selectable.
 

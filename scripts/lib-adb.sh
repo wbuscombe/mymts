@@ -5,7 +5,7 @@
 # in AGENTS.md ("Deploy — the adb invariant"):
 #
 #   adb push  ->  verify on-device byte size == local APK (retry on mismatch —
-#   handles the flaky .92 partial-push)  ->  pm install -r [flags]  ->  verify
+#   handles the flaky Wi-Fi partial-push)  ->  pm install -r [flags]  ->  verify
 #   lastUpdateTime advanced.
 #
 # NEVER a streamed `adb install` (the exact failure this guards against). ONE
@@ -58,7 +58,7 @@ adb_install_verified() {
     fi
     local before; before="$(_adb_last_update_time "$device" "$pkg")"
 
-    # Push with byte-size verify + retry — the .92 partial-push gate.
+    # Push with byte-size verify + retry — the Wi-Fi partial-push gate.
     local attempt got=""
     for ((attempt = 1; attempt <= ADB_PUSH_RETRIES; attempt++)); do
         log "push ($attempt/$ADB_PUSH_RETRIES): $apk -> $device:$ADB_REMOTE_TMP"

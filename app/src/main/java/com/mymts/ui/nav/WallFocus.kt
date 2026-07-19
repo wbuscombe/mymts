@@ -15,7 +15,7 @@ package com.mymts.ui.nav
  *   reading this state, never from racing input events.
  * - `feedIndex` and `gridIndex` are *preserved* across zone transitions
  *   so the operator returning to a zone lands where they left off
- *   (the WyzeGrid-family "where I was, not where you think I should be"
+ *   (the sibling-app "where I was, not where you think I should be"
  *   habit — the menu and channel picker already follow it).
  * - `lastLowerZone` is the "where did I come from when I went UP into
  *   the ticker?" memo, so going DOWN from the ticker returns to the

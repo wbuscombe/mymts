@@ -182,7 +182,7 @@ class WallSettingsTest {
         assertEquals(Overscan.Max, Overscan.values().last())
         assertEquals(0.0f, Overscan.None.fraction, 0.0001f)
         // Strictly increasing across the whole ladder, including the high
-        // presets added for severely-overscanning panels (the .92 panel).
+        // presets added for severely-overscanning panels (the dev panel).
         val ladder = Overscan.values().toList()
         ladder.zipWithNext().forEach { (lo, hi) ->
             assertTrue("${lo.name} (${lo.fraction}) must be < ${hi.name} (${hi.fraction})", lo.fraction < hi.fraction)

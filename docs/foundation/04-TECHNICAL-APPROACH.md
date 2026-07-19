@@ -9,7 +9,7 @@
 ## 1. The load-bearing decision: native Android TV app, not a web app
 
 ### Decision
-MyMTS is a **native Android TV application** targeting the Onn 4K box, built in the same proven lineage as the WyzeGrid project: **Kotlin + Jetpack Compose for TV + Media3 (ExoPlayer)**. It is paired with a **minimal NAS-side helper service** that does only the things the TV should not do itself (aggregating news sources, resolving live-stream addresses). News is rendered as native text; video plays in the native player; **no browser engine is in the critical path**.
+MyMTS is a **native Android TV application** targeting the Onn 4K box, built in the same proven lineage as the a sibling TV app project: **Kotlin + Jetpack Compose for TV + Media3 (ExoPlayer)**. It is paired with a **minimal NAS-side helper service** that does only the things the TV should not do itself (aggregating news sources, resolving live-stream addresses). News is rendered as native text; video plays in the native player; **no browser engine is in the critical path**.
 
 ### Why (traced to the foundation)
 
@@ -22,7 +22,7 @@ A browser kiosk is a hostile execution environment: it runs untrusted remote con
 This is the crux: nearly every severe issue raised during the prior web-app review rounds existed *because* of the browser-kiosk-over-tunnel architecture. Native does not patch those issues; it removes the architecture that created them.
 
 **Operational Bar B1 (updates must never brick the wall) + B2 (always a way back).**
-Native updates are signed installs with the prior version recoverable — a far more trustworthy update story than browser service-workers that can cascade a bad bundle across screens. The proven WyzeGrid deploy pattern already embodies this.
+Native updates are signed installs with the prior version recoverable — a far more trustworthy update story than browser service-workers that can cascade a bad bundle across screens. The proven a sibling TV app deploy pattern already embodies this.
 
 **Worst-outcome #2 (harm to a shared friend) + the someday-share principle.**
 A signed app a friend sideloads on *their own* hardware, pointed at *their own* helper and sources, is a cleaner and safer sharing model than granting a friend access through the operator's tunnel. It keeps instances isolated by construction (serves **A3**, "designed as if untrusted people will touch it").
@@ -31,7 +31,7 @@ A signed app a friend sideloads on *their own* hardware, pointed at *their own* 
 Native weakens the browser-desktop path. The operator explicitly ranked the TV as the point and desktop as a nice-to-have, so this trades the least-valued capability to bulletproof the most-valued outcome. A desktop companion, if ever wanted, is a small separate effort — not a reason to make the core a browser kiosk.
 
 **Evidence it works.**
-WyzeGrid is the existence proof: same household, same Onn 4K (2GB RAM) hardware, same stack, already shipping stable at a small memory footprint with native D-pad support and multiple simultaneous video streams. MyMTS is not a speculative architecture; it is a second app in a validated pattern.
+a sibling TV app is the existence proof: same household, same Onn 4K (2GB RAM) hardware, same stack, already shipping stable at a small memory footprint with native D-pad support and multiple simultaneous video streams. MyMTS is not a speculative architecture; it is a second app in a validated pattern.
 
 ### What this decision costs (stated honestly)
 - The "view it in a browser on my desktop" path is not free anymore. Accepted: it was the least-valued capability.
@@ -89,7 +89,7 @@ This maps each load-bearing principle to the mechanism that satisfies it. It is 
 | C1 data durable | Operator content persisted on-device and backed up; survives reinstalls and updates |
 | C2 dead feed is a non-event | Native player handles per-stream failure as an isolated, quiet gap; deliberately not over-engineered |
 | C3 staleness never silent | The wall visibly distinguishes current from frozen; the helper reports its own freshness |
-| C4 long uptime | Native app built for sustained operation; the WyzeGrid pattern of keeping players alive and disciplined memory use applies |
+| C4 long uptime | Native app built for sustained operation; the a sibling TV app pattern of keeping players alive and disciplined memory use applies |
 | C5/C6 recovery & graceful failure | Self-heals where it can, surfaces what it can't, fails in soft pieces, never into an unsafe state |
 | Op A1–A3 delivery | Reproducible build + install path; designed cold-start; clean inviting first-run |
 | Op B1–B5 updates | Signed installs, prior version recoverable, visible/verifiable updates, content edits off the deploy path, no silent fleet cascade |

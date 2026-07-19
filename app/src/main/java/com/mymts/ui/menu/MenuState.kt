@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 /**
  * Holder for the wall's side-menu interaction state.
  *
- * Stage 5 introduces a WyzeGrid-style left-side panel that the operator
+ * Stage 5 introduces a sibling-app-style left-side panel that the operator
  * opens with the D-pad to control the wall's channel lineup. This class
  * is the small mutable state owner — when [isOpen] flips, the overlay
  * slides in over the wall; [pendingSelection] carries the row the

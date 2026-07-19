@@ -3,7 +3,7 @@ package com.mymts.player
 /**
  * Minimal value object for a stream the harness should play.
  *
- * Hard boundary against WyzeGrid (Trust Bar A1, technical-approach §2.2):
+ * Hard boundary against a sibling camera app (Trust Bar A1, technical-approach §2.2):
  * MyMTS plays only **public web video** by URL. There is no camera model,
  * no auth, no RTSP. The url field is constrained to schemes the
  * StreamPlayer understands (http/https → HLS). Anything else is an error

@@ -8,7 +8,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Crash + lifecycle log. Mirrors WyzeGrid's pattern: write a forensic trail that
+ * Crash + lifecycle log. Mirrors a sibling TV app's pattern: write a forensic trail that
  * survives a process restart AND logcat rotation. Also tees to logcat so dev runs
  * are observable in real time.
  *

@@ -31,13 +31,13 @@ class KioskPolicyTest {
         assertFalse(KioskPolicy.isBootAction("android.intent.action.BOOT_COMPLETED_NOT"))
     }
 
-    // ---- the opt-in boot gate (the .182-safety property) ----
+    // ---- the opt-in boot gate (the non-kiosk-box safety property) ----
 
     @Test fun `boot start requires BOTH a boot action AND kiosk enabled`() {
         // Enabled + boot action -> start.
         assertTrue(KioskPolicy.shouldStartOnBoot("android.intent.action.BOOT_COMPLETED", kioskEnabled = true))
         // Kiosk disabled -> never start, even on a real boot action.
-        // This is what keeps the same APK inert on .182.
+        // This is what keeps the same APK inert on a non-kiosk box.
         assertFalse(KioskPolicy.shouldStartOnBoot("android.intent.action.BOOT_COMPLETED", kioskEnabled = false))
         // Enabled but not a boot action -> don't start.
         assertFalse(KioskPolicy.shouldStartOnBoot("android.intent.action.MAIN", kioskEnabled = true))
