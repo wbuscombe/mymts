@@ -100,7 +100,7 @@ done
 # actually connected BEFORE the multi-minute build. Pass --device explicitly.
 if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
     echo "FATAL: deploy device is the placeholder/unset ('$DEVICE')." >&2
-    echo "       Pass --device <ip:port> explicitly (e.g. --device 192.168.50.92:5555)" >&2
+    echo "       Pass --device <ip:port> explicitly (e.g. --device 192.168.1.50:5555)" >&2
     echo "       or set a real MYMTS_DEPLOY_DEVICE in scripts/deploy.local.env." >&2
     exit 2
 fi

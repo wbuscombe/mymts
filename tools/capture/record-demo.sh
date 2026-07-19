@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/capture/record-demo.sh — one-command, bulletproof scrcpy recording of the
-# MyMTS wall on the .92 Onn box.
+# MyMTS wall on the configured Android TV device.
 #
 # scrcpy (free, open-source, Genymobile) captures the device FRAMEBUFFER over the
 # EXISTING adb connection — the same transport the deploy uses. It READS the
@@ -51,8 +51,8 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 
-Records the MyMTS wall on the configured device (MYMTS_DEPLOY_DEVICE, the .92
-box) to tools/capture/output/. You perform the walkthrough while it records;
+Records the MyMTS wall on the configured device (MYMTS_DEPLOY_DEVICE)
+to tools/capture/output/. You perform the walkthrough while it records;
 stop with Ctrl-C (or by closing the scrcpy window).
 
 Options:
@@ -122,7 +122,7 @@ fi
 if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
     {
         echo "FATAL: target device is the placeholder/unset ('$DEVICE')."
-        echo "  Set MYMTS_DEPLOY_DEVICE in scripts/deploy.local.env (the .92 box),"
+        echo "  Set MYMTS_DEPLOY_DEVICE in scripts/deploy.local.env,"
         echo "  or pass --device <ip:port> explicitly."
     } >&2
     exit 2
@@ -144,7 +144,7 @@ fi
 
 if ! device_connected; then
     die "$DEVICE is not connected as 'device' in 'adb devices'.
-       The .92 Wi-Fi adb transport may need a device-specific reconnect or a box power-cycle.
+       The Wi-Fi adb transport may need a device-specific reconnect or a box power-cycle.
        Try:  adb connect $DEVICE     (NEVER 'adb kill-server' — it disrupts the other Onn boxes).
        Or use a USB cable to the box for a rock-solid connection (see tools/capture/README.md)."
 fi

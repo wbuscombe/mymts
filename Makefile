@@ -7,7 +7,7 @@
 
 help:
 	@echo "MyMTS make targets:"
-	@echo "  make record-demo    Record a demo of the live wall on the .92 box (scrcpy)."
+	@echo "  make record-demo    Record a demo of the live wall on your configured Android TV device (scrcpy)."
 	@echo "                      You drive the walkthrough; Ctrl-C stops. See tools/capture/README.md."
 	@echo "                      Pass flags via ARGS, e.g.  make record-demo ARGS=\"--h265 --native\""
 	@echo "  make test-capture   Test record-demo.sh's preflight guards (no device needed)."

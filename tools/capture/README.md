@@ -1,6 +1,6 @@
 # tools/capture — record a demo of the wall
 
-One command records the **live MyMTS wall** (the native app on the `.92` Onn box)
+One command records the **live MyMTS wall** (the native app on your configured Android TV device)
 to a video file, using [**scrcpy**](https://github.com/Genymobile/scrcpy) — a
 free, open-source tool that captures the device **framebuffer** over the existing
 adb connection. Native quality, no camera, no new hardware, no paid service.
@@ -40,14 +40,14 @@ Useful flags (`tools/capture/record-demo.sh --help` for all):
 
 - **scrcpy installed** — `brew install scrcpy` (macOS) / your distro's package
   (Linux). scrcpy **2.0+** (the script checks and tells you if it's too old).
-- **The `.92` box is on** and reachable over adb (the same transport deploys use;
+- **Your configured device is on** and reachable over adb (the same transport deploys use;
   the script reconnects it for you, or tells you how if it can't).
 - **MyMTS is running on the box** — the *live native wall*, not the demo/phantom
   web client. The live wall is where the real channels play and the per-sport
   cards show. (Make sure the **helper is up** so the wall has real feed/ticker
   data.)
 - The target serial comes from `MYMTS_DEPLOY_DEVICE` in the gitignored
-  `scripts/deploy.local.env` (the `.92` box) — the same one the deploy uses. The
+  `scripts/deploy.local.env` — the same one the deploy uses. The
   script **hard-targets** it via scrcpy `-s`, so it can never grab the `.182` /
   `.158` boxes by accident.
 
@@ -80,7 +80,7 @@ Keep it tight and deliberate — pause a beat on each view so it reads on playba
 
 ## The transport caveat (Wi-Fi vs USB)
 
-scrcpy holds a **continuous** adb connection. On the flaky `.92` **Wi-Fi**
+scrcpy holds a **continuous** adb connection. On the flaky **Wi-Fi**
 transport it can stutter or drop mid-recording. Mitigations:
 
 - **USB cable** (best): plug the computer into the box if it's physically
