@@ -7,9 +7,9 @@
 //     framing ("the office Onn", "my wall", a named box instance, etc.).
 //
 // The check is only as good as its ALLOWLIST: without it, the check
-// false-positives on the things we DELIBERATELY keep (the `.182`/`.158`/`.92`
-// last-octet box aliases, loopback/emulator IPs, the `<LAN_IP>`/`<MAC>`
-// placeholders) and gets disabled. Two exemption mechanisms:
+// false-positives on the things we DELIBERATELY keep (the last-octet box
+// aliases, loopback/emulator IPs, the `<LAN_IP>`/`<MAC>` placeholders) and
+// gets disabled. Two exemption mechanisms:
 //   - GLOBAL: tools/docs-hygiene/allowlist.txt — literal strings that are OK
 //     wherever they appear (one reason per line).
 //   - INLINE: a line containing `docs-hygiene:allow` (e.g. an HTML comment) is
@@ -27,9 +27,35 @@ import path from "node:path";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../..");
 
+// The operator's real apex/brand is NOT committed (it is the very thing this
+// class protects). Provide it out-of-band: the `DOCS_HYGIENE_APEX` env var (set
+// it as a CI variable so the gate still catches the real brand), or a gitignored
+// `tools/docs-hygiene/apex.local` file for local runs. A public fork sets its own.
+// Absent → a placeholder token that matches nothing real, so the gate still runs
+// (it just can't catch a brand it was never told about). See apex.local.example.
+export function readApexBrand() {
+  const env = process.env.DOCS_HYGIENE_APEX?.trim();
+  if (env) return env;
+  try {
+    const line = readFileSync(path.join(HERE, "apex.local"), "utf8")
+      .split(/\r?\n/).map((l) => l.replace(/#.*$/, "").trim()).find(Boolean);
+    if (line) return line;
+  } catch { /* no local override — use the placeholder below */ }
+  return "your-brand";
+}
+
+/** Build the apex-domain regex for a brand token (e.g. "acme" matches
+ *  sub.acme.com / acme.io). The brand is regex-escaped. */
+export function apexPattern(brand) {
+  const esc = brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(String.raw`\b(?:[a-z0-9-]+\.)*${esc}\.[a-z]{2,}\b`, "gi");
+}
+
 // Each pattern is global (`g`) so matchAll yields every hit on a line. `id`
 // names the leak class; `why` is shown in the failure so a human knows the fix.
-export const PATTERNS = [
+// Built via a function so the apex pattern can take an injected brand (tests do this).
+export function buildPatterns(apexBrand = readApexBrand()) {
+  return [
   { id: "full-ipv4", why: "a full IPv4 looks like real topology — use a <LAN_IP> placeholder",
     re: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g },
   { id: "mac-address", why: "a MAC address is device-identifying — use a <MAC> placeholder",
@@ -37,7 +63,7 @@ export const PATTERNS = [
   { id: "abs-home-path", why: "an absolute personal home path leaks the operator's filesystem",
     re: /(?:\/Users\/|\/home\/)[A-Za-z0-9._-]+/g },
   { id: "apex-domain", why: "the operator's real domain/brand leaks the deployment host — use a wall.your-domain.example placeholder",
-    re: /\b(?:[a-z0-9-]+\.)*3slstudios\.[a-z]{2,}\b/gi },
+    re: apexPattern(apexBrand) },
   { id: "device-alias", why: "a last-octet box alias — keep only the deliberate ones (allowlist)",
     re: /(?<![\d.])\.(?:92|158|182)\b/g },
   { id: "location-onn", why: "a location-qualified box instance ('the office Onn') — describe the platform generically",
@@ -52,7 +78,10 @@ export const PATTERNS = [
     re: /\b(?:upstairs|downstairs|basement)\s+session\b/gi },
   { id: "legacy-room-filename", why: "the office-in-situ.png filename encoded a room — it is now in-situ.png",
     re: /\boffice-in-situ\b/gi },
-];
+  ];
+}
+
+export const PATTERNS = buildPatterns();
 
 const INLINE_ALLOW = "docs-hygiene:allow";
 
@@ -80,12 +109,12 @@ export function isDocumentationIp(s) {
  *  non-exempt hit. A hit is exempt if its matched string is in `allowSet`
  *  (GLOBAL), its line carries the INLINE marker, or (for full-ipv4) it is a
  *  reserved documentation IP. */
-export function scanText(text, allowSet = new Set()) {
+export function scanText(text, allowSet = new Set(), patterns = PATTERNS) {
   const violations = [];
   const lines = text.split(/\r?\n/);
   lines.forEach((line, i) => {
     if (line.includes(INLINE_ALLOW)) return; // line-level exemption
-    for (const p of PATTERNS) {
+    for (const p of patterns) {
       for (const m of line.matchAll(p.re)) {
         if (allowSet.has(m[0])) continue;     // global exemption
         if (p.id === "full-ipv4" && isDocumentationIp(m[0])) continue; // RFC 5737 placeholder

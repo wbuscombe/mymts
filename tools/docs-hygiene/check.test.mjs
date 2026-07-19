@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scanText, parseAllowlist } from "./check.mjs";
+import { scanText, parseAllowlist, buildPatterns } from "./check.mjs";
 
 const ids = (text, allow) => scanText(text, allow).map((v) => v.id);
 
@@ -42,12 +42,17 @@ test("RFC 5737 documentation IPs are NOT flagged (they ARE the sanctioned placeh
 });
 
 test("the operator apex domain / brand is flagged (use a placeholder)", () => {
-  assert.deepEqual(ids("served from wall.3slstudios.com over the tunnel"), ["apex-domain"]);
-  assert.deepEqual(ids("purge the 3slstudios.com zone"), ["apex-domain"]);
-  assert.deepEqual(ids("even foo.bar.3slstudios.com is caught"), ["apex-domain"]);
+  // Inject a TEST brand so the operator's real apex is never written into the
+  // repo (not even as a fixture). Production reads DOCS_HYGIENE_APEX / apex.local.
+  const p = buildPatterns("example-brand");
+  const idsB = (t) => scanText(t, new Set(), p).map((v) => v.id);
+  assert.deepEqual(idsB("served from wall.example-brand.com over the tunnel"), ["apex-domain"]);
+  assert.deepEqual(idsB("purge the example-brand.io zone"), ["apex-domain"]);
+  assert.deepEqual(idsB("even foo.bar.example-brand.com is caught"), ["apex-domain"]);
   // the neutral placeholder convention is NOT flagged
-  assert.deepEqual(ids("served from wall.your-domain.example"), []);
-  assert.deepEqual(ids("the 3sixteen jeans brand is unrelated"), []);   // precision: no bare-token wolf
+  assert.deepEqual(idsB("served from wall.your-domain.example"), []);
+  // precision: a token that merely CONTAINS the brand substring (no dotted TLD) isn't flagged
+  assert.deepEqual(idsB("the example-brandish label is unrelated"), []);
 });
 
 test("DELIBERATE KEEPS are NOT flagged (precision — no crying wolf)", () => {
@@ -60,9 +65,9 @@ test("DELIBERATE KEEPS are NOT flagged (precision — no crying wolf)", () => {
 });
 
 test("GLOBAL allowlist exempts a literal match", () => {
-  const allow = parseAllowlist("10.0.2.2  # emulator\n.182  # box alias");
+  const allow = parseAllowlist("10.0.2.2  # emulator\n.200  # box alias");
   assert.deepEqual(ids("the helper at 10.0.2.2", allow), []);          // emulator IP exempt
-  assert.deepEqual(ids("never disrupt the .182 box", allow), []);      // alias exempt
+  assert.deepEqual(ids("never disrupt the .200 box", allow), []);      // alias exempt
   // but a NON-allowlisted IP still fails even with the allowlist loaded
   assert.deepEqual(ids("a real one 172.16.9.9", allow), ["full-ipv4"]);  // routable, non-allowlisted, non-doc
 });
@@ -77,6 +82,6 @@ test("INLINE marker exempts that line only", () => {
 });
 
 test("parseAllowlist strips comments + blanks", () => {
-  const s = parseAllowlist("# header\n10.0.2.2   # reason\n\n.182\n   # only a comment\n");
-  assert.deepEqual([...s].sort(), [".182", "10.0.2.2"]);
+  const s = parseAllowlist("# header\n10.0.2.2   # reason\n\n.200\n   # only a comment\n");
+  assert.deepEqual([...s].sort(), [".200", "10.0.2.2"]);
 });

@@ -100,6 +100,9 @@ docs/findings/runs/**/events.log
 # Environment-specific: host names, IPs, paths, device inventory live ONLY here.
 docs/ops-local/
 
+# docs-hygiene: the operator's real apex/brand token (template is apex.local.example).
+tools/docs-hygiene/apex.local
+
 # Operator-local deploy targets (real host/IP/path); template is .example.
 scripts/deploy.local.env
 # Defensive: any *.local.env anywhere is operator-local, never committed.

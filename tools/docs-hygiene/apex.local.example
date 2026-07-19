@@ -1,0 +1,14 @@
+# docs-hygiene apex/brand config — EXAMPLE. Copy to `apex.local` (gitignored).
+#
+# The gate flags the operator's real apex domain / brand leaking into public docs.
+# That brand is intentionally NOT committed (it's the very thing being protected),
+# so it's supplied out-of-band:
+#
+#   • Local runs:  copy this file to `apex.local` and put your brand token below
+#                  (the "acme" in acme.com / sub.acme.io). `apex.local` is gitignored.
+#   • CI:          set a repository variable DOCS_HYGIENE_APEX to the brand token
+#                  (ci.yml passes it through). Without it, CI can't catch the brand,
+#                  though every other leak class still runs.
+#
+# One brand token; the first non-comment line wins. Placeholder below matches nothing real:
+your-brand

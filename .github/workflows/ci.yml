@@ -61,6 +61,11 @@ jobs:
       # advisory ruff debt above): catches NEW topology / personal-config leakage
       # in public docs. Fast grep, no secret. Allowlist covers the deliberate keeps.
       - name: Docs-hygiene check (no topology / personal-config leakage)
+        # The real apex/brand is NOT in the repo; set repo variable DOCS_HYGIENE_APEX
+        # (Settings → Secrets and variables → Actions → Variables) so the gate catches
+        # it. Absent → the apex class is a no-op placeholder; every other class still runs.
+        env:
+          DOCS_HYGIENE_APEX: ${{ vars.DOCS_HYGIENE_APEX }}
         run: node tools/docs-hygiene/check.mjs
 
       - name: Docs-hygiene self-test (planted-leak fails / clean passes)
