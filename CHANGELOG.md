@@ -843,8 +843,7 @@ Review/analysis/audit reports are **operator deliverables**, not repo artifacts 
 the two prior `adversarial-review-*.md` write-ups (non-force, history-preserving), fixed the
 dangling references in README / AGENTS / SECURITY-PRACTICES, and added a narrow `.gitignore`
 backstop (`docs/adversarial-review-*.md`). Research that feeds build decisions stays tracked —
-`docs/findings/`, `BACKLOG.md`, `ARCHITECTURE.md`, `MAINTENANCE-CHARTER.md`, and the
-`PROFESSIONALIZATION-AUDIT.md` decision-record/baseline are untouched.
+`docs/findings/`, `BACKLOG.md`, `ARCHITECTURE.md`, and `MAINTENANCE-CHARTER.md` are untouched.
 
 ## feat(helper): white-whale ocean + eagle cams + Ocean/Eagles presets (2026-06-21)
 

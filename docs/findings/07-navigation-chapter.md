@@ -111,7 +111,7 @@ The consistency matters: when the operator's eyes flick from the feed to the gri
 
 ## A1 boundary in the feed-expand path — adversarially confirmed
 
-**Closed door from BUILD-PROMPT §4** (line 81): *"Opening an item on the TV shows whatever the helper safely provides (e.g., a text excerpt). Do **not** build a flow that requires the TV to fetch arbitrary web pages."*
+**Closed door — an early A1 design decision** (line 81): *"Opening an item on the TV shows whatever the helper safely provides (e.g., a text excerpt). Do **not** build a flow that requires the TV to fetch arbitrary web pages."*
 
 When the operator presses SELECT on a feed item, `feedExpanded` toggles to `true`. The `FeedPane` then renders the item's `summary` field as a larger `Text` widget with `maxLines = Int.MAX_VALUE`, still as native Compose `Text`. The summary is the helper's pre-rendered plain text (HTML stripped at `feeds/parser.py` in the helper; the wall treats it as inert). No WebView, no fetch, no HTML render.
 

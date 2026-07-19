@@ -15,7 +15,7 @@ The vision + trust posture (when in doubt, these win):
 4. `docs/foundation/04-TECHNICAL-APPROACH.md`
 5. `docs/foundation/00-READING.md` — anti-drift restatement + precedence order.
 
-Then the engineering brief: `docs/BUILD-PROMPT.md`, and [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the pieces fit.
+Then [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the pieces fit.
 
 The operational guardrails every contribution must honor (load-bearing — read them):
 
