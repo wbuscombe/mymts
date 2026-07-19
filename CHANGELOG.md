@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## docs: correct the README APK-availability claim (2026-07-19)
+
+- The README's self-host path stated the signed `mymts-<version>.apk` **"is published on
+  the GitHub Release"** as a standing fact. It isn't for the current `v0.4.1`/`v0.4.0`
+  (those carry the three desktop builds but no APK — the release keystore is signed locally
+  and kept off CI, so CI attaches an APK only when the keystore secrets are configured).
+  Reworded to reflect reality — the APK is a locally-signed sideload, attached to the
+  Release when the maintainer has uploaded one — matching `DOWNLOAD-AND-RUN.md` and
+  `ARCHITECTURE.md §"Desktop executable"`. Docs-only; no signing/CI behavior changed.
+- Context: this closes the last in-repo item of the PR-018 pre-flip gate clearance
+  (the preceding de-personalization pass generalized the sibling-project lineage, scrubbed
+  box octets, parameterized the docs-hygiene apex out of the detector, and removed the
+  internal audit/build-prompt artifacts).
+
 ## docs: public-readiness pass — showcase honesty, topology scrub, onboarding fixes (2026-07-18)
 
 A docs/metadata-only professionalization pass (no runtime behavior changed) ahead of making the

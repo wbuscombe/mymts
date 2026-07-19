@@ -39,9 +39,11 @@ Three paths, easiest first:
    working **clone-to-running** path: `cd helper && cp .env.example .env && docker
    compose up` brings up the helper on `http://localhost:8091` (migrations + seed on a
    fresh DB; `/health`, `/api/channels`, and the web client at `/app/` all serve,
-   keyless), then point a stock TV APK at it — the signed `mymts-<version>.apk` is
-   published on the [GitHub Release](https://github.com/wbuscombe/mymts/releases) (a
-   sideload; see [`DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md)). **Customize the
+   keyless), then point a stock TV APK at it — the release-signed `mymts-<version>.apk`
+   is a **sideload**, attached to the [GitHub Release](https://github.com/wbuscombe/mymts/releases)
+   when the maintainer has uploaded one (it's signed locally with the maintainer's keystore,
+   never in CI — so a release without it simply carries no APK; see
+   [`DOWNLOAD-AND-RUN.md`](docs/DOWNLOAD-AND-RUN.md)). **Customize the
    lineup** (optional, no rebuild): drop a `lineup.local.json` in the helper's data
    dir to add / disable / recategorize channels on top of the shipped list (see
    `helper/lineup.local.example.json`); no file → the curated default. *(The operator's
