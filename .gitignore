@@ -102,6 +102,9 @@ docs/ops-local/
 
 # Operator-local deploy targets (real host/IP/path); template is .example.
 scripts/deploy.local.env
+# Defensive: any *.local.env anywhere is operator-local, never committed.
+*.local.env
+**/*.local.env
 
 # Local-only working artifact (perf telemetry) — kept on disk, never committed
 docs/perf-analysis-2026-06.md

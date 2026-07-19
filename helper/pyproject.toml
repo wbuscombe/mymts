@@ -21,6 +21,10 @@ dependencies = [
     "yt-dlp==2026.3.17",
 ]
 
+[project.urls]
+Homepage = "https://github.com/wbuscombe/mymts"
+Repository = "https://github.com/wbuscombe/mymts"
+
 [project.optional-dependencies]
 dev = [
     "pytest==8.3.4",
