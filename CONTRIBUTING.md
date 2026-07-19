@@ -42,10 +42,10 @@ The operational guardrails every contribution must honor (load-bearing — read 
 - No flaky or expected-to-fail tests in the suite. Tests run green before any commit and before any release.
 - Run them locally before opening a PR (the same suites CI runs on every push):
   ```bash
-  cd helper && uv run pytest                        # helper: pytest + the zero-egress phantom contract
+  cd helper && uv run --extra dev pytest                        # helper: pytest + the zero-egress phantom contract
   ./gradlew :app:testReleaseUnitTest                # native app: JVM unit tests
   node --test web/test/*.test.mjs                   # web client: pure render/honesty logic (no deps)
-  python -m unittest discover -s renderer -p 'test_*.py'  # renderer: supervisor + run + fan-out (pure)
+  python3 -m unittest discover -s renderer -p 'test_*.py'  # renderer: supervisor + run + fan-out (pure)
   ```
 - The **web client** is served by the helper at `/app` (LAN-only, credential-free, same-origin); its honesty/render logic is unit-tested above and its DOM is verified against demo mode. See [`web/README.md`](web/README.md). The full walkthrough for running everything is [`ONBOARDING.md`](ONBOARDING.md).
 

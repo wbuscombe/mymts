@@ -51,7 +51,7 @@ All JSON responses carry `schema_version` (additive-only). Served on the helper'
 | `GET /api/feed` · `GET /api/feed/sources` | newest-first plain-text feed items · source inventory |
 | `GET /api/channels` | channel lineup (`current_url` only when `status==live`) |
 | `GET /api/ticker/markets` · `GET /api/ticker/sports` | real-or-SAMPLE markets · sports + per-sport cards |
-| `GET /api/presets` | server-authoritative wall presets (News Wall / Nature / Space / Chill / Mixed); `default` = `news` |
+| `GET /api/presets` | server-authoritative wall presets (News Wall / Nature / Space / Chill / Mixed / Ocean / Eagles); `default` = `news` |
 | `GET /api/playlist.m3u` | the **`default`** profile (every live channel) as an M3U playlist |
 | `GET /api/playlist/{name}.m3u` | a named **profile** (ordered channel subset); 404 if unknown |
 | `GET /app/` | the LAN web client (static; only when `WEB_CLIENT_DIR` is set) |

@@ -16,7 +16,7 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 - Long-lived secrets have a named owner and a documented rotation path.
 
 ### Dependencies
-- Lock files (`package-lock.json`, `uv.lock`, Gradle's verification metadata, etc.) are committed.
+- Lock files (`package-lock.json`, `uv.lock`) are committed. Gradle dependency-verification metadata is **not yet wired** (a known gap — same disclosure posture as the advisory-scanning note below).
 - Dependencies are pinned to exact versions. `latest` tags are forbidden in Docker images.
 - Advisory scanning (`npm audit`, `pip-audit`, equivalent for Kotlin/Gradle) is **not yet wired** into CI (CI exists, but no `pip-audit`/`npm audit` step yet — a known gap). When wired: fix-available advisories block; no-fix advisories annotate and post to the operator's notification channel.
 

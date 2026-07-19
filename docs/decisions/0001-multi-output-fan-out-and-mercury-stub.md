@@ -36,7 +36,7 @@ runs on a **GPU-less** box where the smoothness pass (ARCHITECTURE §31) establi
    setup checklist, and opens NO socket / mints NO token on start/stop/restart. The
    renderer's output manager routes the `mercury` output to this interface (not an
    ffmpeg encoder), so the real LiveKit publisher is a drop-in at the greppable
-   `MERCURY-WIRE-UP` boundary (see `docs/mercury-wireup-notes.md`). The non-connecting
+   `MERCURY-WIRE-UP` boundary (see `docs/mercury-wireup-notes.md`, removed in PR-018). The non-connecting
    tailnet probe is short-circuited until the key + channel are present, so the
    default (no creds) performs **zero** network egress.
 

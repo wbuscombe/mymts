@@ -14,6 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## docs: public-readiness pass — showcase honesty, topology scrub, onboarding fixes (2026-07-18)
+
+A docs/metadata-only professionalization pass (no runtime behavior changed) ahead of making the
+repo public. Driven by a five-lens public-reader audit.
+
+- **Onboarding correctness:** fixed the documented helper test command to `uv run --extra dev pytest`
+  (the dev deps are a `[project.optional-dependencies]` extra that `uv run` never auto-installs, so
+  the bare command failed), switched the renderer command to `python3`, and added the `uv` + Node.js
+  prerequisites to the quickstart / ONBOARDING.
+- **Showcase honesty:** regenerated `docs/screenshots/web/control.png` — it still advertised the
+  Discord + Mercury output cards removed in PR-018; the Outputs panel now shows only HLS/VLC. Corrected
+  the README hero + gallery captions to describe the honest zero-egress demo (reconnecting/offline
+  tiles, not "live HLS playing").
+- **Currency:** backfilled the Ocean + Eagles wall presets in the helper API doc, the presets docstring,
+  and the menu comment; noted `docs/mercury-wireup-notes.md` as removed in ADR 0001; corrected a stale
+  Gradle-verification claim in SECURITY-PRACTICES.
+- **Audience-aware docs:** scrubbed author-specific topology from public surfaces — an example LAN IP in
+  `deploy-app.sh`, `~/Dropbox` secrets paths in the threat model + changelog, and `.92`-box references in
+  the capture tooling — and reconciled the ONN-BOXES provisioning note with the committed signpost.
+- **Metadata/hardening:** added `SECURITY.md` (GitHub-discoverable), `[project.urls]` + a `package.json`
+  repository field, and a defensive `*.local.env` gitignore glob.
+
 ## refactor: remove the Discord Activity + Mercury/LiveKit outputs (PR-018) (2026-07-17)
 
 Removed the two non-shipping wall-output integrations. **No measurable resource reclaim is
@@ -1883,7 +1905,7 @@ Two hands-on issues from running the wall on the new box's 720p panel.
 ## MyMTS provisioned onto its permanent box + fresh release key + deploy-script fix (2026-06-07)
 
 - **Migration:** MyMTS now runs on the **dedicated MyMTS Android TV box** (`<LAN_IP>`, MAC `<MAC>`, 720p panel, no EDID emulator). Aggressive reversible debloat (12 pkgs); MyMTS installed **release-signed + kiosked** (sole kiosk, Model A) reaching LIVE (119 `TILE_READY`, 0 dead); all 4 default tiles LIVE on the box's WiFi path (bloomberg-tv, cbs-sports-hq, bbc-news, cnn); WyzeGrid installed debug-**dormant**. See `docs/OPERATIONS.md` (dedicated-box provisioning) + the operator's local box inventory.
-- **Fresh release key:** generated a new MyMTS release keystore (the prior `.182`-era key abandoned). `.jks` gitignored + backed up to `~/Dropbox/secrets/`; passwords in the operator's password manager. New signing identity going forward (cert SHA-256 `7acc6315…`).
+- **Fresh release key:** generated a new MyMTS release keystore (the prior `.182`-era key abandoned). `.jks` gitignored + backed up to an off-repo secrets store; passwords in the operator's password manager. New signing identity going forward (cert SHA-256 `7acc6315…`).
 - **`scripts/deploy-app.sh` fix:** the signing verification parsed apksigner's legacy `Subject:` label; build-tools 33+ prints `Signer #1 certificate DN:`. Now matches both, so a correctly-signed release no longer falsely fails the gate.
 - **Reboot/boot finding (known gap):** on reboot the box auto-restores 720p + the `KioskService` foreground service (network ADB survives reboot), but the **wall activity doesn't auto-foreground over the Google TV launcher** (Android 14 background-activity-launch blocks the boot-time `startActivity`). The HOME-launcher fix was **attempted and reverted** — Google TV's system launchers (`launcherx`, `setupwraith`, `tv.settings`) outrank a third-party HOME app by `android:priority` and win the boot home-race even when MyMTS holds the HOME role; disabling them to force it destabilized the box (recovered + restored to clean known-good). The boot-auto-foreground gap therefore **remains**; the wall works when launched. A code-only **full-screen-intent** from `KioskService` was then attempted (2026-06-07) — it fired correctly (`canUseFullScreenIntent=true`, FSI posted) but **did NOT foreground the wall** on the Google TV form factor (TVs treat FSI as a notification, not an auto-launch); reverted to clean known-good. Remaining options: accept manual-launch after the rare reboot, or a future device-owner/lock-task provisioning project (NOT the launcher-disabling path, which destabilizes this build). See `docs/OPERATIONS.md`.
 - No app code changed (provisioning + scripts/docs only); the `1b8d1b0` build is what shipped.

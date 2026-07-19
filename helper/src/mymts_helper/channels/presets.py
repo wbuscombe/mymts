@@ -1,5 +1,5 @@
 """Server-authoritative wall presets — switchable channel-sets the user applies to
-the grid (News Wall / Nature / Space / Chill). The helper DEFINES the presets and
+the grid (News Wall / Nature / Space / Chill / Mixed / Ocean / Eagles). The helper DEFINES the presets and
 serves them on ``/api/presets``; both clients render the SAME set, and a new preset
 flows with NO client rebuild (the server-authoritative pattern, mirroring categories).
 

@@ -171,7 +171,7 @@ private fun MenuPanel(
             // WyzeGrid family: a section title + a focusable row.
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             SectionTitle("WALL")
-            // Server-authoritative wall preset (News / Nature / Space / Chill).
+            // Server-authoritative wall preset (News / Nature / Space / Chill / Mixed / Ocean / Eagles).
             // SELECT opens the picker; the detail shows the active preset so the
             // operator sees the current set without opening it.
             MenuRow(

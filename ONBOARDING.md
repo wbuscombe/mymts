@@ -26,6 +26,7 @@ streams. See [`ARCHITECTURE.md`](ARCHITECTURE.md) and the foundation docs.
 ## Prerequisites (per component)
 - **Helper** (Python): Python 3.13 + [`uv`](https://github.com/astral-sh/uv) (`brew install uv` / `pipx install uv`).
 - **App** (Android): JDK 17+ and the Android SDK — Android Studio is easiest (it bundles a JBR + SDK + an emulator). An Android **TV** emulator (API 33+) or a real Android TV device.
+- **Web tests / screenshots** (optional): Node.js 20+ (ships `npm`) — only for the `node --test` web suite and the Playwright screenshot tool, not for the demo boot.
 - Git. That's it — no secrets to obtain.
 
 ---
@@ -95,10 +96,10 @@ for details (and to override the helper URL via `local.properties`).
 
 ## Run the tests
 ```bash
-cd helper && uv run pytest                        # helper suite
+cd helper && uv run --extra dev pytest                        # helper suite
 ./gradlew :app:testReleaseUnitTest                # app suite
 node --test web/test/*.test.mjs                   # web client suite (pure render/honesty logic, no deps)
-python -m unittest discover -s renderer -p 'test_*.py'  # renderer supervisor + run + fan-out (pure)
+python3 -m unittest discover -s renderer -p 'test_*.py'  # renderer supervisor + run + fan-out (pure)
 ```
 
 ## What you can play with

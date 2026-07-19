@@ -16,11 +16,11 @@ screenshots show exactly that.
 
 | File | Shows |
 |---|---|
-| `wall-overview.png` | The whole wall — agnostic feed (left), video grid (right, live HLS in the playable tiles + honest offline tiles), markets ticker on top. |
+| `wall-overview.png` | The whole wall — agnostic feed (left), video grid (right, honest "reconnecting / offline" tiles — the zero-egress demo makes no network calls, so nothing plays), markets ticker on top. |
 | `ticker-markets.png` | The markets ticker — indices / FX / gold / oil / yield / crypto, each with the honest `SAMPLE` tag (the demo poller isn't started, so every quote is sample). |
 | `ticker-sports.png` | The sports ticker — team game cards (MLB / NBA / NHL) with the ESPN-style league markers + status blocks, `sample`-tagged. |
 | `ticker-news.png` | News in the ticker (the 3rd mode) — source-labeled headline cards. |
-| `menu.png` | The **native-style side menu** (the gear opens it) — a CHANNELS list (one row per slot) + WALL actions: the **Preset** selector (server-authoritative wall presets — News / Nature / Space / Chill), Settings, Resync — mirroring the TV app's MenuOverlay (the old flat WALL SETTINGS modal is gone). |
+| `menu.png` | The **native-style side menu** (the gear opens it) — a CHANNELS list (one row per slot) + WALL actions: the **Preset** selector (server-authoritative wall presets — News / Nature / Space / Chill / Mixed / Ocean / Eagles), Settings, Resync — mirroring the TV app's MenuOverlay (the old flat WALL SETTINGS modal is gone). |
 | `wall-preset-nature.png` | A **non-default wall preset applied** — the **Nature** preset switches the whole grid to its server-defined channel-set (Explore Nature Cams · Monterey Bay Aquarium · EarthCam · earthTV) and its 2×2 layout in one step. The HLS nature cams show the honest "on the TV wall" placeholder in the demo browser; the point of the shot is the preset swap (channels + grid), not playback. |
 | `settings.png` | The settings modal (reached from the side menu) — grid rows×cols (**2×3 default**), feed width/size/recency, feed-source toggles **grouped by category**, the **captions-off** toggle, ticker speed/motion, sports-league toggles. |
 | `slot-controls.png` | The **per-slot controls** (click a tile / a menu channel row) — Channel · Audio · Reconnect · Close, the web analog of the native SlotControlsOverlay. No captions row (these streams' captions are burned-in / unremovable). |

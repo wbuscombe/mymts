@@ -9,9 +9,10 @@ sources, on-by-default, calm from the couch — and a 60-second demo you can run
 
 ![The MyMTS wall — live video grid, agnostic news feed, scrolling ticker](docs/screenshots/web/wall-overview.png)
 
-<sub>↑ the **LAN web client** in demo mode: a live video grid (real HLS playing in the playable
-tiles, honest offline tiles otherwise), an agnostic news feed, and a markets ticker —
-SAMPLE-labeled because the demo serves no live data (that honesty is the whole point).</sub>
+<sub>↑ the **LAN web client** in demo mode: the video grid, an agnostic news feed, and a markets
+ticker. The demo is **zero-egress**, so the tiles show honest "reconnecting / offline" states
+rather than live video, and every quote is SAMPLE-labeled — the wall never fakes live data, and
+the screenshot shows exactly that (that honesty is the whole point).</sub>
 
 [![CI](https://github.com/wbuscombe/mymts/actions/workflows/ci.yml/badge.svg)](https://github.com/wbuscombe/mymts/actions/workflows/ci.yml)
 &nbsp;·&nbsp; native Android TV (Compose + Media3) &nbsp;·&nbsp; Python/FastAPI helper &nbsp;·&nbsp; LAN web client &nbsp;·&nbsp; MIT
@@ -51,11 +52,12 @@ Three paths, easiest first:
 ## Try it in 60 seconds (no secrets, no NAS)
 
 The helper has a **demo / phantom mode** that serves mock data with **zero network egress** —
-no secrets, no NAS, nothing real to leak. Clone, boot it, open the web wall:
+no secrets, no NAS, nothing real to leak. Needs [`uv`](https://docs.astral.sh/uv/) (the Python
+runner; installs Python 3.13 for you) — no other toolchain. Clone, boot it, open the web wall:
 
 ```bash
 cd helper && PHANTOM_MODE=1 PORT=8091 uv run python -m mymts_helper
-#   → open http://localhost:8091/app   (the LAN web wall, mock data)
+#   → open http://localhost:8091/app/   (the LAN web wall, mock data)
 ```
 
 That's the whole thing — the ticker, the feed, the video grid, the settings, the channel
@@ -66,7 +68,7 @@ picker, all live in your browser against fixture data. Want it on a real TV emul
 adb shell am start -n com.mymts/.MainActivity --es helper "http://10.0.2.2:8091"
 ```
 
-Tests: `cd helper && uv run pytest` · `./gradlew :app:testReleaseUnitTest` · `node --test web/test/*.test.mjs` · `cd renderer && python3 -m unittest discover -s .` — all four run in CI and are required to pass.
+Tests: `cd helper && uv run --extra dev pytest` · `./gradlew :app:testReleaseUnitTest` · `node --test web/test/*.test.mjs` · `cd renderer && python3 -m unittest discover -s .` — all four run in CI and are required to pass.
 Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBOARDING.md`](ONBOARDING.md).
 
 ---
