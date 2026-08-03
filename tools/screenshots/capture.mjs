@@ -218,8 +218,9 @@ async function main() {
 
   // 10. Picker control surface (/control/) — the headless-container version's
   // wall editor: each cell is a feed-PICKER + per-cell audio + subtitle controls,
-  // PLUS a display-tuning panel (resolution ladder / feed width / feed font /
-  // ticker height) — no video decode. Drives the server-side wall config that
+  // PLUS a display-tuning panel (four 1–10 step sliders: feed width / feed text /
+  // ticker height / ticker text) and the Outputs cards (each output picks its own
+  // resolution + bitrate) — no video decode. Drives the server-side wall config that
   // /app/ renders. Captured fullPage so the tuning panel below the fold is in-frame.
   // A SEPARATE page so /app/'s localStorage init script doesn't apply here.
   try {

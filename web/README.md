@@ -78,9 +78,18 @@ mouse-driven settings (there's no D-pad in a browser).
   load shows the honest **"on the TV wall"** tile, never a faked-live one.
 - **Settings (gear)** — video cell count, feed width, feed text size, and
   feed source show/hide. **These are browser-local view prefs**
-  (localStorage) — the wall's own settings live on the TV; the web client
-  can't write them (no per-client helper state — that's the
-  cross-platform-profiles fork, deferred).
+  (localStorage): they tune *this browser's* view and are not the TV's own
+  on-device settings, which the web client can't write (no per-client helper
+  state — that's the cross-platform-profiles fork, deferred).
+  *(Correction: an earlier version of this line said the web client "can't
+  write them" without qualification, which read as though `/app/` writes no
+  server state at all. It does — a grid/channel/audio edit is persisted to the
+  server-side wall config, and `/control/` writes it too. What `/app/` cannot
+  write is the **TV's on-device settings**.)*
+  On the **rendered** wall (`?render=1`) the *server config* owns the feed
+  size instead — the four 1–10 sliders in `/control/` drive it, and they apply
+  live with no reload (ARCHITECTURE §44). The browser-local sliders here are
+  unaffected on a laptop.
 
 ## A1 / CSP — video playback is not web reading
 

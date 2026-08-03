@@ -140,7 +140,9 @@ correct a physical panel and are honestly absent from the web.
 **Headless-container version — a unified control panel + a multi-output wall.** A second web
 surface at `/control/` is the wall's layout in a browser, but **each cell is a feed-picker**
 (channel dropdown) + **per-tile audio + subtitle toggles** (any combination audible — they mix),
-**plus a display-tuning panel** (feed width, feed font, ticker height — fine-grained sliders). A cell
+**plus a display-tuning panel** — four independent **1–10 step** sliders (feed width, feed text,
+ticker height, ticker text; step 5 is the default), which **apply live on the rendered wall** with no
+reload and no interruption to playback. A cell
 can also be set to **Weather Radar** (free public NWS radar loops, region-selectable) instead of a
 video feed. **No video decode**, so `/control/` runs on a phone. It writes a **server-side wall
 config** the rendered wall (`/app/?render=1`) reads from, so a pick drives playback. A headless

@@ -14,6 +14,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## feat(web,helper): four 1–10 feed/ticker size steps + live-apply layout (2026-08-03)
+
+Supersedes the feed/ticker half of the 0.4.0 "finely-tunable wall" entry below (its resolution
+ladder is unaffected) and of ARCHITECTURE §32 — see the new **§44**. Web + helper only; **`app/` is
+untouched**, so this stays in `[Unreleased]` with no tag.
+
+Recon corrected the premise twice, and both corrections are worth recording. The web controls were
+**not** a 3-step enum — they were already continuous floats; the 3-step feel is the **native** app's
+(`WallSettings.FeedWidth` / `FeedFontScale` are deliberate 3-preset enums, and native has no
+ticker-size control at all). And the three tunables *did* already apply live on the rendered wall;
+what actually behaved like a force-reload was a **`layout.rows`/`cols` change**, which tore down
+every `<video>` and restarted every stream — even for a same-cell-count 2×3 → 3×2 transpose.
+
+- **Four independent controls, as 1–10 integer steps (default 5).** `feed.width_scale`,
+  `feed.text_scale`, `ticker.height_scale`, `ticker.text_scale`. The wire carries the *step*; each
+  resolves through a 10-rung ladder in `wall/store.py`, mirrored in `wallConfig.mjs`. **Step 5 is
+  exactly the old default on every control** (32 % / 1.0× / 1.0× / 1.0×), so a migrated wall renders
+  identically and every committed wall screenshot stays valid.
+- **Endpoints derived from what renders, not from round numbers.** Feed width **12 → 64 %** (was
+  18–58): 12 % is the smallest *honest* rung because `.feed-pane`'s `min-width` floor is 11.46 % of
+  the wall — below that the slider is a silent no-op (measured: a request for 10 % renders at
+  11.46 %). Feed text **0.60 → 2.00×** (was 0.7–1.6); **0.50× was rendered and rejected** at a
+  7.0 design-px headline. Ticker height **0.45 → 2.75×** (was 0.6–2.0; step 10 = 10.2 % of the wall).
+  Ticker text **0.55 → 2.75×** (new) — the least aggressive low end of the four *on purpose*, since
+  the ticker's smallest chip is already 8 design px at step 5; **0.50× was rendered and rejected**.
+- **Ticker text is decoupled from ticker height** (`--tu` box unit / new `--ttu` text unit; all 21
+  `font-size` declarations and their `letter-spacing` move to `--ttu`). The load-bearing correctness
+  change is that `.ticker-bar` now uses **`min-height`, not `height`**: with the units separated,
+  text larger than its bar would be clipped *symmetrically* by the viewport's `overflow: hidden`
+  (shaved ascenders **and** descenders — which reads as a font bug). Ticker height is therefore a
+  **floor, not a cap**. The two ticker ladders are identical from step 4 up, so matching steps
+  reproduce the old proportional feel exactly.
+- **Live-apply is a pure style update.** The steps reach the wall through the *existing* 5 s
+  `/api/wall` poll — no second mechanism, no push channel. `scaleCssVars()` is a pure, per-step
+  unit-tested config → CSS-variable function; the applier skips any variable whose value is
+  unchanged, so a poll that changed nothing does zero style writes. Nothing is torn down.
+- **Live-apply for layout.** `buildGrid()` (full teardown) is now reserved for boot and preset-apply;
+  a layout change goes through a new `reconcileGrid()` — a transpose touches no tile at all, a shrink
+  tears down only the removed tiles, a grow appends only the new ones.
+- **The crawl now re-keys on a ticker resize.** The marquee bakes a measured pixel period into a
+  WAAPI keyframe; resizing without re-keying left it translating by a stale distance until the next
+  mode rotation (≤18 s). A pre-existing defect this change had to fix rather than quadruple.
+- **Precedence bug found in verification and fixed.** `applyPrefs()` runs on every layout reconcile
+  and rewrote `--feed-pct`/`--feed-font` from *browser-local* prefs, overwriting the operator's
+  `/control/` setting on the next poll — and the new change-detection then saw "no change" and never
+  put it back. On the rendered wall the server config is now the sole writer; a laptop `/app/` keeps
+  its local sliders unchanged.
+- **Thrash guard.** Sliders re-label on `input` (no network) and commit on `change`, then debounce
+  250 ms and coalesce **per control**, so two sliders nudged in one window produce one PUT carrying
+  both rather than dropping the first. The panel also stops snapping a thumb the operator is holding
+  when the 60 s channel refresh re-renders it.
+- **Migration (load-time, idempotent).** `feed_pct`/`feed_font`/`ticker_scale` map to their nearest
+  rung; `ticker_scale` seeds **both** ticker keys. An explicitly-present new key always wins over a
+  legacy value (the `render` → `outputs` precedent) — which is what makes a `/control/` tab left open
+  across the deploy safe. `schema_version` deliberately **does not** bump: additive keys with a
+  load-time migration, and the native app hard-rejects a mismatched version.
+- **The honest residual:** discretising to 10 rungs costs at most half a rung — measured worst case
+  12.2 % (feed width, near the old minimum), 7.0 % (feed text), 11.1 % (ticker). The values a real
+  config is most likely to hold migrate with **zero** drift (rungs sit exactly on 32 %, 1.0×, and the
+  feed width's old 18 % minimum). The bound is pinned by a test, not claimed away.
+- **Verified for real, not asserted.** All 14 extreme + corner combinations driven through the real
+  config path (`PUT /api/wall` → the wall's own poll → CSS) and **rendered and inspected** at 1920×1080
+  and 1280×720: zero clipping, zero overflow, zero tile-chip collision. Live-apply proven in a real
+  browser, 10/10 checks: CSS followed within one poll with **zero navigations**, every stamped media
+  element the **same node** afterwards, `currentTime` advanced rather than rewound, the crawl period
+  re-measured, `restart_epoch`/`resolution`/`reload_epoch` unmoved (no encoder respawn), and a
+  2×3 → 3×2 transpose with **zero** teardown where the old path tore down all six tiles. Migration
+  verified on a real existing on-disk config: it loaded as step 5 on every control with the legacy
+  keys gone.
+- **Honest limit:** `--ux` normalises design px, so the geometry is resolution-independent, but real
+  device px are ×0.667 at 720p — feed text at step 1 is 5.6 real px there. The low steps are usable
+  at 1080p (the default) and a squint at 720p. That is a property of the canvas, not the ladder.
+- Tests: helper **601** green (was 526), web **158** green (was 137), renderer **41** green; native
+  `:app:testReleaseUnitTest` green (untouched). The generalized partial-write invariant gained a
+  **second pass** that iterates *into* every grouped block, so a new key inside an existing block is
+  auto-covered too.
+
+Blast radius: `web/` (styles, `wallConfig.mjs`, `app.mjs`, `/control/`) + `helper/wall/store.py` and
+its tests, plus docs + the regenerated `control.png`. **No `app/` change, no APK, no tag.** No CI
+machinery, no renderer code change, no `schema_version` bump, no history rewrite. Chromium-147 pin
+untouched. PIA / other containers untouched.
+
 ## docs: correct the README APK-availability claim (2026-07-19)
 
 - The README's self-host path stated the signed `mymts-<version>.apk` **"is published on
