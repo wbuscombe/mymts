@@ -17,16 +17,36 @@ import {
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withCellAudio,
   withLayout, withPreset, cellCount, withCellReload, withWallReload,
-  withFeedPct, withFeedFont, withTickerScale,
+  withScaleSteps, stepValue,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
   withOutputRestart,
   RENDER_RESOLUTIONS, RESOLUTION_INFO, bitrateBounds,
-  deriveRenderResolution, FEED_PCT, FEED_FONT, TICKER_SCALE,
+  deriveRenderResolution, SCALE_STEP_MIN, SCALE_STEP_MAX,
 } from "/app/js/wallConfig.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
 const OUTPUTS_POLL_MS = 5_000;
+// A slider commit is coalesced by this much. The sliders already write on `change`
+// (pointer/touch release, or a keyboard commit) rather than `input`, so a drag is ONE
+// PUT — but a keyboard arrow-key run, or a touch drag that emits several `change`
+// events, would otherwise be a write storm. Short enough to feel immediate against
+// the wall's 5 s config poll, long enough to swallow a held arrow key.
+const SCALE_COMMIT_DEBOUNCE_MS = 250;
 const el = (id) => document.getElementById(id);
+
+/** The four display sliders: DOM id → the config block + key it writes, and how its
+ *  realised value reads. One table so the markup, the wiring, the label and the
+ *  hydrate can never drift apart. */
+const SCALE_SLIDERS = [
+  { id: "feed-width", block: "feed", key: "width_scale", what: "feed width",
+    fmt: (v) => `${v}%` },
+  { id: "feed-text", block: "feed", key: "text_scale", what: "feed text",
+    fmt: (v) => `${v.toFixed(2)}×` },
+  { id: "ticker-height", block: "ticker", key: "height_scale", what: "ticker height",
+    fmt: (v) => `${v.toFixed(2)}×` },
+  { id: "ticker-text", block: "ticker", key: "text_scale", what: "ticker text",
+    fmt: (v) => `${v.toFixed(2)}×` },
+];
 
 let config = null;              // the normalized server wall config (source of truth)
 let stored = false;             // false = a server default not yet customised
@@ -146,17 +166,24 @@ function syncLayoutControls() {
   if (el("audio-hint")) {
     el("audio-hint").textContent = audioCount > 1 ? `${audioCount} cells audible — mixed` : "";
   }
-  setSlider("feed-width", config.feed_pct, "feed-width-val", `${Math.round(config.feed_pct)}%`);
-  setSlider("feed-font", config.feed_font, "feed-font-val", `${Number(config.feed_font).toFixed(2)}×`);
-  setSlider("ticker-height", config.ticker_scale, "ticker-height-val",
-    `${Number(config.ticker_scale).toFixed(2)}×`);
+  for (const s of SCALE_SLIDERS) setSlider(s, config[s.block][s.key]);
 }
 
-function setSlider(id, value, labelId, labelText) {
-  const s = el(id);
-  if (s) s.value = String(value);
-  const lab = el(labelId);
-  if (lab) lab.textContent = labelText;
+/** The label for a step: the STEP is what the operator sets, the realised value is
+ *  the honest hint about what it means ("7 · 44%"). */
+function scaleLabel(slider, step) {
+  return `${step} · ${slider.fmt(stepValue(slider.block, slider.key, step))}`;
+}
+
+/** Reflect a step onto its slider + label. Skips the thumb of a range the operator
+ *  is CURRENTLY holding: the 60 s channel refresh re-renders this panel, and writing
+ *  `value` mid-drag would snap the thumb back to the last-committed step. The label
+ *  still updates, so a value that genuinely changed server-side is never hidden. */
+function setSlider(slider, step) {
+  const s = el(slider.id);
+  if (s && document.activeElement !== s) s.value = String(step);
+  const lab = el(`${slider.id}-val`);
+  if (lab) lab.textContent = scaleLabel(slider, step);
 }
 
 // ----- the picker cells (the wall editor) -----
@@ -355,20 +382,47 @@ function wire() {
     commit(withLayout(config, Number(e.target.value), config.layout.cols), "layout"));
   el("cols").addEventListener("change", (e) =>
     commit(withLayout(config, config.layout.rows, Number(e.target.value)), "layout"));
-  const liveLabel = (sliderId, labelId, fmt) => {
-    const s = el(sliderId), lab = el(labelId);
-    if (s && lab) s.addEventListener("input", () => { lab.textContent = fmt(Number(s.value)); });
+  // The four 1–10 display sliders. Their bounds come from the shared ladder
+  // constants, so the markup carries no copy of the range to drift.
+  //
+  // THRASH GUARD, two layers:
+  //   1. `input` only re-labels (no network) — dragging is free;
+  //   2. `change` (release / keyboard commit) schedules a DEBOUNCED commit, so a held
+  //      arrow key or a touch drag that emits several `change` events coalesces into
+  //      one PUT instead of a write storm. The wall then applies it as a pure style
+  //      update — no encoder respawn, no tile teardown.
+  // Pending edits are keyed PER CONTROL, so nudging two sliders inside one debounce
+  // window coalesces into a single PUT carrying BOTH — it never drops the first.
+  let scaleCommitTimer = null;
+  const pendingScales = new Map();
+  const flushScales = () => {
+    scaleCommitTimer = null;
+    if (pendingScales.size === 0) return;
+    const edits = [...pendingScales.values()];
+    pendingScales.clear();
+    commit(
+      withScaleSteps(config, edits),
+      edits.length === 1 ? edits[0].what : `${edits.length} display controls`,
+    );
   };
-  liveLabel("feed-width", "feed-width-val", (v) => `${Math.round(v)}%`);
-  liveLabel("feed-font", "feed-font-val", (v) => `${v.toFixed(2)}×`);
-  liveLabel("ticker-height", "ticker-height-val", (v) => `${v.toFixed(2)}×`);
-  const onRelease = (sliderId, transform, what) => {
-    const s = el(sliderId);
-    if (s) s.addEventListener("change", () => commit(transform(config, Number(s.value)), what));
-  };
-  onRelease("feed-width", withFeedPct, "feed width");
-  onRelease("feed-font", withFeedFont, "feed font");
-  onRelease("ticker-height", withTickerScale, "ticker height");
+  for (const slider of SCALE_SLIDERS) {
+    const s = el(slider.id);
+    if (!s) continue;
+    s.min = String(SCALE_STEP_MIN);
+    s.max = String(SCALE_STEP_MAX);
+    s.step = "1";
+    s.addEventListener("input", () => {
+      const lab = el(`${slider.id}-val`);
+      if (lab) lab.textContent = scaleLabel(slider, Number(s.value));
+    });
+    s.addEventListener("change", () => {
+      pendingScales.set(`${slider.block}.${slider.key}`, {
+        block: slider.block, key: slider.key, step: Number(s.value), what: slider.what,
+      });
+      if (scaleCommitTimer) clearTimeout(scaleCommitTimer);
+      scaleCommitTimer = setTimeout(flushScales, SCALE_COMMIT_DEBOUNCE_MS);
+    });
+  }
   el("preset").addEventListener("change", (e) => {
     const p = presets.find((x) => x.id === e.target.value);
     if (!p) return;

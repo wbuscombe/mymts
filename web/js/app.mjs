@@ -25,7 +25,7 @@ import {
   presetLineup, newsLineup, PRESETS_SCHEMA_VERSION,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
-import { normalizeConfig } from "./wallConfig.mjs";
+import { normalizeConfig, scaleCssVars } from "./wallConfig.mjs";
 import { meterRequested, startFpsMeter, benchClockConfig, benchUrlFor } from "./fpsmeter.mjs";
 
 // Bench high-motion control (inert unless ?fpsmeter=1&benchclock=…): which cells
@@ -78,8 +78,16 @@ function applyPrefs() {
   const layout = gridConfig();
   document.documentElement.style.setProperty("--grid-cols", String(layout.cols));
   document.documentElement.style.setProperty("--grid-rows", String(layout.rows));
-  document.documentElement.style.setProperty("--feed-pct", prefs.feedPct + "%");
-  document.documentElement.style.setProperty("--feed-font", String(prefs.feedFont));
+  // PRECEDENCE (PR-024): on the RENDERED wall the server config owns the feed size —
+  // applyWallViewTunables is its only writer. Writing the browser-local prefs here too
+  // would fight it: applyPrefs runs on every layout reconcile, so a local value would
+  // overwrite the operator's /control/ setting on the very next poll (and the live-
+  // apply change-detection would then see "no change" and never put it back).
+  // On a laptop /app/ the local sliders + drag divider still own it, unchanged.
+  if (!document.body.classList.contains("render-mode")) {
+    document.documentElement.style.setProperty("--feed-pct", prefs.feedPct + "%");
+    document.documentElement.style.setProperty("--feed-font", String(prefs.feedFont));
+  }
   // Feed side (native Feed side): the wall is a flex row; "right" visually swaps
   // the feed pane to the right edge (CSS order) without moving it in the DOM.
   const wall = el("wall");
@@ -247,13 +255,23 @@ function stopCrawl() {
 /** A signature of what the crawl is currently showing — the mode + the group
  *  CONTENT (display models, not raw envelopes, so a poll with identical visible
  *  data hashes the same) + the levers that change the motion timing (scroll speed,
- *  motion mode). Identical signature ⇒ nothing genuine changed ⇒ don't restart. */
+ *  motion mode) + the ticker SIZE. Identical signature ⇒ nothing genuine changed ⇒
+ *  don't restart.
+ *
+ *  Size is in the signature because the marquee bakes a MEASURED pixel period into a
+ *  WAAPI keyframe (see startCrawl): resizing the strip without re-keying leaves it
+ *  translating by a stale distance, which seams visibly, and can leave the overflow
+ *  gate on the wrong side (small enough text stops the crawl; larger starts it).
+ *  Before PR-024 a ticker resize self-healed only at the next mode rotation (≤18 s). */
 function crawlSignature(cur, plan, p) {
   return JSON.stringify({
     mode: cur ? cur.mode : null,
     news: !!(cur && cur.news),
     motion: p.tickerMotion,
     scroll: clampTickerSpeedPct(p.tickerScrollPct),
+    size: lastScaleVars
+      ? `${lastScaleVars["--ticker-scale"]}/${lastScaleVars["--ticker-text-scale"]}`
+      : "",
     body: plan.kind === "cards" ? plan.groups : (plan.text || ""),
   });
 }
@@ -611,7 +629,7 @@ function applyWallAudioCaptions() {
  *  per-cell subtitles all come from it. */
 function hydrateFromWall(config) {
   const rows = config.layout.rows, cols = config.layout.cols;
-  const dimsChanged = rows !== prefs.gridRows || cols !== prefs.gridCols;
+  const before = cells.length;
   prefs.gridRows = rows; prefs.gridCols = cols;
   const assignments = {};
   cellSubtitles = {};
@@ -624,31 +642,62 @@ function hydrateFromWall(config) {
   prefs.assignments = assignments;
   if (config.preset) prefs.activePreset = config.preset;
   autoFilled = true;   // a stored config supersedes the news autofill
-  if (dimsChanged) buildGrid(); else renderGrid();
-  // buildGrid() rebuilds the tiles; re-apply the per-cell audio + captions to the
-  // (possibly fresh) stream handles from the hydrated config.
+  // LIVE-APPLY (PR-024): reconcile the grid IN PLACE instead of rebuilding it. A
+  // count-preserving change (a 2×3 → 3×2 transpose) then touches no tile at all —
+  // it is a CSS re-flow — where the old unconditional buildGrid() tore down every
+  // <video> and restarted every stream for zero reason.
+  reconcileGrid();
+  // A grid rebuild would replace the stream handles; re-apply the per-cell audio +
+  // captions from the hydrated config either way (renderGrid only re-renders
+  // CHANGED cells, so an audio-only change wouldn't otherwise reach the handle).
   applyWallAudioCaptions();
-  applyReloadSignal(config, dimsChanged);   // honor a /control/ force-reload
-  applyWallViewTunables(config);            // feed width / font / ticker height (rendered wall)
+  // `rebuilt` means "tiles were created/destroyed, so they are already freshly
+  // attached and a force-reload would only tear them straight back down". A
+  // transpose creates no tiles, so a concurrent reload_epoch bump must still fire.
+  applyReloadSignal(config, cells.length !== before);
+  // The four view tunables — a PURE style update (no teardown). A ticker size change
+  // additionally re-renders the strip so the crawl re-measures its period.
+  if (applyWallViewTunables(config)) renderTicker();
 }
 
-/** Apply the config's fine-grained view tunables (feed_pct / feed_font /
- *  ticker_scale, set in /control/) to the CSS vars — ONLY on the rendered wall
- *  (?render=1). The laptop /app/ keeps its OWN local feed-width/font sliders (a
- *  personal view), so the config never overwrites them mid-drag; /control/ tunes
- *  the TV output. ticker_scale has no laptop control, so it's render-mode-only too
- *  (the laptop ticker stays the default height). All are proportional within --ux:
- *  --feed-pct is a %, --feed-font scales the feed text, --ticker-scale drives --tu
- *  so the whole ticker (height + content) scales together. */
+// The CSS vars last written by applyWallViewTunables, so a routine 5 s poll that
+// changed nothing does NO layout work at all — and so a poll that DID change a
+// ticker size can tell the crawl to re-measure. `null` until the first apply.
+let lastScaleVars = null;
+
+/** Apply the config's four view-tunable STEPS (feed width / feed text / ticker
+ *  height / ticker text, set in /control/) to the CSS vars — ONLY on the rendered
+ *  wall (?render=1). The laptop /app/ keeps its OWN local feed-width/font sliders (a
+ *  personal view), so the config never overwrites them mid-drag; /control/ tunes the
+ *  TV output. The step → CSS value mapping is the pure, unit-tested scaleCssVars()
+ *  in wallConfig.mjs, so this function is only the DOM write.
+ *
+ *  LIVE-APPLY (PR-024): this is a pure style update — it writes custom properties and
+ *  nothing else. No tile is torn down, no <video> is re-created, no hls.js instance is
+ *  replaced, so a slider nudge can never restart playback (hls.js caps its level to
+ *  the player size, so a resize is an ABR switch, not a re-attach). The ONE thing a
+ *  size change must also do is re-key the ticker crawl: the marquee bakes a measured
+ *  pixel period into a WAAPI keyframe, so a ticker resize leaves it translating by a
+ *  stale distance (a visible seam) until the next genuine re-key. Returns true when
+ *  a TICKER size actually changed, so the caller can re-render the strip.
+ *
+ *  THRASH GUARD: unchanged vars are not written at all — a poll that changed nothing
+ *  performs zero style writes and zero re-layout, so the 5 s poll is free. */
 function applyWallViewTunables(config) {
-  if (!document.body.classList.contains("render-mode")) return;
+  if (!document.body.classList.contains("render-mode")) return false;
+  const vars = scaleCssVars(config);
   const root = document.documentElement.style;
-  const pct = Number(config.feed_pct);
-  if (Number.isFinite(pct)) root.setProperty("--feed-pct", pct + "%");
-  const font = Number(config.feed_font);
-  if (Number.isFinite(font)) root.setProperty("--feed-font", String(font));
-  const ticker = Number(config.ticker_scale);
-  if (Number.isFinite(ticker)) root.setProperty("--ticker-scale", String(ticker));
+  let tickerChanged = false;
+  for (const [name, value] of Object.entries(vars)) {
+    if (lastScaleVars && lastScaleVars[name] === value) continue;   // nothing to do
+    root.setProperty(name, value);
+    if (name === "--ticker-scale" || name === "--ticker-text-scale") tickerChanged = true;
+  }
+  // A FIRST apply seeds the baseline without claiming the ticker "changed" — the
+  // strip is about to be rendered for the first time anyway.
+  const first = lastScaleVars === null;
+  lastScaleVars = vars;
+  return tickerChanged && !first;
 }
 
 /** Honor the force-reload epochs in a freshly-hydrated config (the /control/
@@ -783,7 +832,10 @@ function teardownCells() {
   cells = [];
 }
 
-/** Rebuild the grid layout (cell count changed) from scratch. */
+/** Rebuild the grid layout from scratch — every tile torn down and re-created, so
+ *  every stream restarts. Reserved for the paths that genuinely mean it: first boot,
+ *  and applying a preset (which replaces the whole channel set anyway). A LAYOUT
+ *  change goes through reconcileGrid() instead. */
 function buildGrid() {
   teardownCells();
   // fresh cells start muted; per-cell audio is re-applied from the config on hydrate
@@ -799,12 +851,50 @@ function buildGrid() {
   renderGrid();
 }
 
+/** Bring the grid to the current rows × cols WITHOUT disturbing the tiles that
+ *  survive — the live-apply path for a layout change (PR-024).
+ *
+ *  Three tiers, cheapest first:
+ *    - TRANSPOSE (2×3 → 3×2, same count): nothing is added or removed. applyPrefs()
+ *      writes --grid-rows/--grid-cols and the CSS grid re-flows; renderGrid() then
+ *      finds every cell's key unchanged and skips it. ZERO teardown — the streams
+ *      never notice. (`.tile video { width:100%; height:100% }`, and hls.js caps its
+ *      level to the player size, so a resize is an ABR switch, not a re-attach.)
+ *    - SHRINK: only the removed tiles are torn down + detached.
+ *    - GROW: only the new tiles are appended; renderGrid() renders just those (the
+ *      existing cells' keys are unchanged).
+ *
+ *  Idempotent — calling it when nothing changed does nothing. */
+function reconcileGrid() {
+  const layout = gridConfig();
+  applyPrefs();
+  const grid = el("grid");
+  if (!grid) return;
+  // The open slot-controls modal may point past the shrunk grid.
+  if (slotModalIndex != null && slotModalIndex >= layout.count) closeSlotControls();
+  while (cells.length > layout.count) {
+    const c = cells.pop();
+    clearCellRetry(c);
+    if (c.teardown) { try { c.teardown(); } catch {} }
+    c.el.remove();
+  }
+  while (cells.length < layout.count) {
+    const tile = node("div", "tile");
+    grid.appendChild(tile);
+    cells.push({ index: cells.length, el: tile, key: null, teardown: null });
+  }
+  renderGrid();
+}
+
 /** Reconcile each cell with its assigned channel WITHOUT tearing down a
  *  cell whose content is unchanged (so a playing video isn't interrupted
  *  on every poll). */
 function renderGrid() {
   const layout = gridConfig();
-  if (cells.length !== layout.count) { buildGrid(); return; }
+  // Self-heal a desynced cell count via the RECONCILE path (not a full rebuild), so
+  // the correction costs only the tiles that actually differ. reconcileGrid brings
+  // the count into line before calling back, so this branch can't recurse.
+  if (cells.length !== layout.count) { reconcileGrid(); return; }
   for (const cell of cells) {
     const slug = prefs.assignments[cell.index] || null;
     const ch = slug ? channelsBySlug.get(slug) : null;
@@ -1466,7 +1556,9 @@ function wireSettings() {
   const onGridDim = (sel, key) => sel.addEventListener("change", () => {
     prefs[key] = clampGridDim(Number(sel.value));
     sel.value = String(prefs[key]);   // reflect the clamp
-    savePrefs(); buildGrid(); updateGridNote();
+    // reconcileGrid (not buildGrid): a transpose keeps every tile playing, and a
+    // grow/shrink only touches the tiles that actually appear or disappear.
+    savePrefs(); reconcileGrid(); updateGridNote();
     pushWallConfig();   // grid layout is wall-config state — persist it
   });
   onGridDim(gridRows, "gridRows");

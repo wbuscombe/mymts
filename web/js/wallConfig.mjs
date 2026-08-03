@@ -156,42 +156,135 @@ export function normalizeConfig(raw, validSlugs = null) {
     if (RENDER_RESOLUTIONS.includes(legacyRes)) def.hls.resolution = legacyRes;
     outputs = normalizeOutputs(def);
   }
+  const legacy = legacyScaleInputs(cfg);
   return {
     schema_version: WALL_SCHEMA_VERSION,
     layout: { rows, cols },
     preset: typeof cfg.preset === "string" ? cfg.preset : null,
     reload_epoch: reloadInt(cfg.reload_epoch),
-    feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
-    feed_font: clampScale(cfg.feed_font, FEED_FONT),
-    ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
+    feed: normalizeScaleBlock(cfg.feed, "feed", legacy),
+    ticker: normalizeScaleBlock(cfg.ticker, "ticker", legacy),
     outputs,
     cells,
   };
 }
 
-/** Fine-grained, proportional view tunables — bounds mirror the helper. Clamped on
- *  read; absent → default. Pure. */
-export const FEED_PCT = { min: 18, max: 58, step: 1, default: 32 };
-export const FEED_FONT = { min: 0.7, max: 1.6, step: 0.05, default: 1 };
-export const TICKER_SCALE = { min: 0.6, max: 2.0, step: 0.05, default: 1 };
-function clampScale(v, b) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(b.max, Math.max(b.min, n)) : b.default;
+// ----- the four view tunables (1..10 integer steps, default 5) -----
+// MIRROR of helper store.py's ladders — the wire carries the STEP; the ladder maps
+// it to the realised CSS value. Keep in lockstep with the helper (the same contract
+// the resolution ladder has with the renderer). See ARCHITECTURE §44 for how each
+// endpoint was derived from what actually renders.
+export const SCALE_STEP_MIN = 1;
+export const SCALE_STEP_MAX = 10;
+export const SCALE_STEP_DEFAULT = 5;
+
+export const FEED_WIDTH_STEPS = [12, 18, 23, 27, 32, 38, 44, 50, 57, 64];   // % of the wall
+export const FEED_TEXT_STEPS = [0.60, 0.70, 0.80, 0.90, 1.00, 1.15, 1.32, 1.52, 1.75, 2.00];
+// The ticker ladders are identical from step 4 up (matching steps ⇒ the old
+// proportional feel); they diverge at 1-3 only, where the text has a legibility
+// floor the box does not.
+export const TICKER_HEIGHT_STEPS = [0.45, 0.58, 0.70, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75];
+export const TICKER_TEXT_STEPS = [0.55, 0.62, 0.72, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75];
+
+/** block → key → ladder. The single source of truth for what the four controls are. */
+export const SCALE_BLOCKS = {
+  feed: { width_scale: FEED_WIDTH_STEPS, text_scale: FEED_TEXT_STEPS },
+  ticker: { height_scale: TICKER_HEIGHT_STEPS, text_scale: TICKER_TEXT_STEPS },
+};
+
+/** Clamp+coerce one step to an integer 1..10 (absent/garbage → 5). Mirrors the
+ *  helper's _validate_step, except a non-number degrades to the default here rather
+ *  than throwing: the client repairs, the server is the one that rejects. Pure. */
+export function clampStep(v) {
+  // Only a number, or the numeric STRING a range input's .value actually is. NOT a
+  // blanket Number(): Number(null) and Number([]) are 0, which would silently snap a
+  // null/garbage step to 1 (the narrowest setting) instead of the default.
+  const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  if (!Number.isFinite(n)) return SCALE_STEP_DEFAULT;
+  return Math.min(SCALE_STEP_MAX, Math.max(SCALE_STEP_MIN, Math.round(n)));
 }
 
-/** Set the feed-column width (% of the wall), clamped fine-grained. Pure. */
-export function withFeedPct(config, pct) {
-  return { ...normalizeConfig(config), feed_pct: clampScale(pct, FEED_PCT) };
+/** The realised CSS value for a step on one control's ladder. Pure. */
+export function stepValue(block, key, step) {
+  const ladder = SCALE_BLOCKS[block]?.[key];
+  if (!ladder) return null;
+  return ladder[clampStep(step) - 1];
 }
 
-/** Set the feed text scale (proportional, within --ux), clamped. Pure. */
-export function withFeedFont(config, scale) {
-  return { ...normalizeConfig(config), feed_font: clampScale(scale, FEED_FONT) };
+/** The nearest 1..10 step for a legacy continuous value (migration). `null` when the
+ *  value isn't a finite number, so the caller falls through to the default. Ties go
+ *  to the LOWER step, so migration is deterministic + idempotent. Pure. */
+export function nearestStep(value, ladder) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  let best = 0;
+  for (let i = 1; i < ladder.length; i++) {
+    if (Math.abs(ladder[i] - n) < Math.abs(ladder[best] - n)) best = i;
+  }
+  return best + 1;
 }
 
-/** Set the ticker height+content scale (proportional), clamped. Pure. */
-export function withTickerScale(config, scale) {
-  return { ...normalizeConfig(config), ticker_scale: clampScale(scale, TICKER_SCALE) };
+/** A scale block at its defaults (every key on step 5 — the pre-PR-024 look). */
+export function defaultScaleBlock(block) {
+  const out = {};
+  for (const key of Object.keys(SCALE_BLOCKS[block])) out[key] = SCALE_STEP_DEFAULT;
+  return out;
+}
+
+/** Normalise ONE scale block, MIGRATING from the retired continuous keys when a key
+ *  is absent (feed_pct → feed.width_scale, feed_font → feed.text_scale, ticker_scale
+ *  → BOTH ticker keys). An explicitly-present new key always wins. Pure. */
+export function normalizeScaleBlock(raw, block, legacy = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const [key, ladder] of Object.entries(SCALE_BLOCKS[block])) {
+    if (src[key] !== undefined && src[key] !== null) { out[key] = clampStep(src[key]); continue; }
+    const migrated = nearestStep(legacy[`${block}.${key}`], ladder);
+    out[key] = migrated === null ? SCALE_STEP_DEFAULT : migrated;
+  }
+  return out;
+}
+
+/** The retired continuous keys, mapped onto the new keys they migrate into. Pure. */
+export function legacyScaleInputs(cfg) {
+  return {
+    "feed.width_scale": cfg?.feed_pct,
+    "feed.text_scale": cfg?.feed_font,
+    "ticker.height_scale": cfg?.ticker_scale,
+    "ticker.text_scale": cfg?.ticker_scale,
+  };
+}
+
+/** THE render contract: a config → the exact CSS custom properties the wall needs.
+ *  Pure (no DOM), so the per-step mapping is unit-tested against the real code path
+ *  the render page uses — see applyWallViewTunables in app.mjs. */
+export function scaleCssVars(config) {
+  const feed = normalizeScaleBlock(config?.feed, "feed", legacyScaleInputs(config));
+  const ticker = normalizeScaleBlock(config?.ticker, "ticker", legacyScaleInputs(config));
+  return {
+    "--feed-pct": `${stepValue("feed", "width_scale", feed.width_scale)}%`,
+    "--feed-font": String(stepValue("feed", "text_scale", feed.text_scale)),
+    "--ticker-scale": String(stepValue("ticker", "height_scale", ticker.height_scale)),
+    "--ticker-text-scale": String(stepValue("ticker", "text_scale", ticker.text_scale)),
+  };
+}
+
+/** Set ONE control's step (clamped 1..10). Partial by construction: the other three
+ *  keys ride through untouched, so a slider can never clobber its neighbours. Pure. */
+export function withScaleStep(config, block, key, step) {
+  const cfg = normalizeConfig(config);
+  if (!SCALE_BLOCKS[block]?.[key]) return cfg;
+  return { ...cfg, [block]: { ...cfg[block], [key]: clampStep(step) } };
+}
+
+/** Apply SEVERAL control edits at once — the pure core of /control/'s debounced
+ *  commit. Nudging two sliders inside one debounce window must produce ONE write
+ *  carrying BOTH, never a write that drops the earlier one; a later edit of the SAME
+ *  control wins. Edits are `{block, key, step}`. Pure. */
+export function withScaleSteps(config, edits) {
+  let cfg = normalizeConfig(config);
+  for (const e of edits || []) cfg = withScaleStep(cfg, e.block, e.key, e.step);
+  return cfg;
 }
 
 /** Bump the WHOLE-WALL force-reload epoch (+1): the rendered wall reattaches
@@ -296,9 +389,10 @@ export function withPreset(config, preset, validSlugs) {
     layout: { rows, cols },
     preset: preset.id ?? null,
     reload_epoch: reloadInt(cfg.reload_epoch),
-    feed_pct: clampScale(cfg.feed_pct, FEED_PCT),
-    feed_font: clampScale(cfg.feed_font, FEED_FONT),
-    ticker_scale: clampScale(cfg.ticker_scale, TICKER_SCALE),
+    // The view tunables are ORTHOGONAL to a channel preset — they ride through
+    // unchanged (cfg is already normalized, so these are the live steps, not defaults).
+    feed: { ...cfg.feed },
+    ticker: { ...cfg.ticker },
     outputs: normalizeOutputs(cfg.outputs),
     cells,
   };

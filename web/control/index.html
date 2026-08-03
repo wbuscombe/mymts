@@ -50,22 +50,29 @@
               title="Force every video tile on the wall to re-attach its player (re-resolving a fresh stream URL)">↻ Reload all tiles</button>
     </section>
 
-    <!-- Fine-grained DISPLAY tuning — small-step sliders (gradual, never radical).
-         Feed width / font + ticker height scale the wall proportionally. The render
-         RESOLUTION now lives on the output cards (each output picks its own); the
-         render canvas is derived = max(enabled), shown read-only above. -->
+    <!-- DISPLAY tuning — FOUR independent 1–10 step sliders (PR-024). Ticker height
+         and ticker text are separate knobs, so a tall bar with small text (or the
+         reverse) is expressible; matching steps keep the old proportional feel.
+         Step 5 is the default on every control. min/max/step are set from the shared
+         ladder constants at wire time (control.mjs) rather than hardcoded here, so
+         there is ONE source of truth with the helper. The render RESOLUTION lives on
+         the output cards; the render canvas is derived = max(enabled), read-only above. -->
     <section class="display-row" aria-label="Display tuning">
       <label class="slab">
         <span class="slab-head">Feed width <em id="feed-width-val"></em></span>
-        <input type="range" id="feed-width" min="18" max="58" step="1" aria-label="News-feed column width" />
+        <input type="range" id="feed-width" aria-label="News-feed column width, step 1 to 10" />
       </label>
       <label class="slab">
-        <span class="slab-head">Feed font <em id="feed-font-val"></em></span>
-        <input type="range" id="feed-font" min="0.7" max="1.6" step="0.05" aria-label="Feed text size" />
+        <span class="slab-head">Feed text <em id="feed-text-val"></em></span>
+        <input type="range" id="feed-text" aria-label="Feed text size, step 1 to 10" />
       </label>
       <label class="slab">
         <span class="slab-head">Ticker height <em id="ticker-height-val"></em></span>
-        <input type="range" id="ticker-height" min="0.6" max="2" step="0.05" aria-label="Markets ticker height" />
+        <input type="range" id="ticker-height" aria-label="Ticker bar height, step 1 to 10" />
+      </label>
+      <label class="slab">
+        <span class="slab-head">Ticker text <em id="ticker-text-val"></em></span>
+        <input type="range" id="ticker-text" aria-label="Ticker text size, step 1 to 10" />
       </label>
     </section>
 

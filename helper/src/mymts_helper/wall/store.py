@@ -8,9 +8,8 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "layout": {"rows": 2, "cols": 2},
       "preset": "news",                       # informational: last-applied preset
       "reload_epoch": 0,                      # whole-wall force-reload counter
-      "feed_pct": 32.0,                       # feed-column width (% of the wall)
-      "feed_font": 1.0,                       # feed text scale (proportional)
-      "ticker_scale": 1.0,                    # ticker height + content scale
+      "feed":   {"width_scale": 5, "text_scale": 5},    # 1..10 steps, 5 == default
+      "ticker": {"height_scale": 5, "text_scale": 5},   # height and text are INDEPENDENT
       "outputs": {                            # the unified multi-output fan-out
         "hls":     {"enabled": true,  "resolution": "1080p", "bitrate_kbps": 8000,
                     "audio": true, "restart_epoch": 0}
@@ -41,11 +40,21 @@ stored file without them loads fine.
   - per-cell ``subtitles`` on/off (native ``captionsOnSlots`` is per-slot),
   - per-cell ``reload`` (force-reload epoch).
 
+**View tunables** are FOUR independent **1..10 integer steps** (default 5), grouped
+into a ``feed`` and a ``ticker`` block. The wire carries the STEP; each step resolves
+through a 10-rung ladder of CSS values (:data:`FEED_WIDTH_STEPS` &co) that the web
+client mirrors. Ticker HEIGHT and ticker TEXT are separate knobs — a tall bar with
+small text (or the reverse) is expressible — but matching steps reproduce the old
+single-``--tu`` proportional feel exactly.
+
 **Migration (load-time, idempotent):** an old stored file is upgraded in memory on
 read — an absent ``outputs`` block is seeded (``hls.resolution`` from the old
 ``render.resolution``); a present ``audible_cell`` sets
-that cell's ``audio:true``. The legacy ``render`` + ``audible_cell`` keys are dropped
-from the validated result. The first PUT persists the new shape.
+that cell's ``audio:true``; the retired continuous scales
+(``feed_pct``/``feed_font``/``ticker_scale``) map onto their NEAREST step, with
+``ticker_scale`` seeding BOTH ticker keys. The legacy ``render``, ``audible_cell``
+and :data:`LEGACY_SCALE_KEYS` are dropped from the validated result. The first PUT
+persists the new shape.
 
 All validation is **pure + testable here** (no FastAPI); the router calls
 :func:`validate_wall_config` with the live channel registry's slug set so a
@@ -86,13 +95,65 @@ RENDER_RESOLUTIONS = (
 )
 DEFAULT_RESOLUTION = "1080p"
 
-# Fine-grained, proportional view tunables (bounds chosen so nothing collapses or
-# overflows). All are CLAMPED on read (a slider stays in range; a malformed PUT is
-# pulled to a sane value rather than rejected — these are continuous knobs, not the
-# strict enums/counters elsewhere).
-FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT = 18.0, 58.0, 32.0
-FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT = 0.7, 1.6, 1.0
-TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT = 0.6, 2.0, 1.0
+# ---- the four view tunables (1..10 integer steps, default 5) ----
+# Each control is a 10-rung LADDER of realised CSS values, not a continuous float:
+# the wire carries the STEP, the ladder carries the value. Explicit tuples (the same
+# idiom as RENDER_RESOLUTIONS / RES_BITRATE_KBPS) so every rung is reviewable and the
+# endpoints are auditable against the measurements that chose them.
+#
+# Step 5 is EXACTLY the pre-PR-024 default on every control (32 % / 1.0x / 1.0x /
+# 1.0x), so a migrated config renders identically — no visible jump.
+#
+# Endpoints were DERIVED from what renders correctly at 1920x1080 (PR-024 §D2), not
+# picked as round numbers:
+#   feed width   step 1 = 12 %  — .feed-pane's min-width floor is 220 design px =
+#                                 11.46 % of the wall, so anything below ~12 % is a
+#                                 SILENT NO-OP. 12 % is the smallest honest rung.
+#                step 10 = 64 % — measured: the 2x2 tiles stay 334 design px wide and
+#                                 a 3x3 stays ~215; nothing overflows or collides.
+#   feed text    step 1 = 0.60x — measured: headline 8.4 design px, still legible;
+#                                 0.50x (7.0 px) was rendered and REJECTED.
+#                step 10 = 2.00x — measured: wraps cleanly even in a step-1 pane.
+#   ticker ht    step 1 = 0.45x — bar 18 design px (1.7 % of the wall).
+#                step 10 = 2.75x — bar 110 design px = 10.2 % of the wall; sized to
+#                                 stay a strip, not swallow the wall.
+#   ticker text  step 1 = 0.55x — the LEAST aggressive low end of the four, on
+#                                 purpose: the ticker's own smallest chip is 8 design
+#                                 px at step 5, so it is already at the legibility
+#                                 floor. 0.50x was rendered and REJECTED (the SAMPLE
+#                                 chips stop reading as text at 4.0 design px).
+#                step 10 = 2.75x — measured: cards grow the bar rather than clip.
+# See ARCHITECTURE §44 for the full reasoning + the rejected candidates.
+SCALE_STEP_MIN = 1
+SCALE_STEP_MAX = 10
+SCALE_STEP_DEFAULT = 5
+
+# Rungs 2 and 5 sit EXACTLY on the retired range's minimum (18 %) and default (32 %),
+# so the two values an existing config is most likely to hold migrate with zero drift.
+FEED_WIDTH_STEPS = (12, 18, 23, 27, 32, 38, 44, 50, 57, 64)          # % of the wall
+FEED_TEXT_STEPS = (0.60, 0.70, 0.80, 0.90, 1.00, 1.15, 1.32, 1.52, 1.75, 2.00)
+# The two TICKER ladders are DELIBERATELY IDENTICAL from step 4 up, so matching steps
+# reproduce the old single-``--tu`` proportional feel exactly (taller bar ⇒ bigger
+# text). They diverge only at steps 1-3, where the text ladder is held back by its
+# measured legibility floor and the box ladder is not — the one place a measured
+# constraint forces a difference.
+TICKER_HEIGHT_STEPS = (0.45, 0.58, 0.70, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75)
+TICKER_TEXT_STEPS = (0.55, 0.62, 0.72, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75)
+
+# The two grouped blocks the steps live in on the wire, and which ladder each key
+# resolves through. The helper only stores/validates the STEP; the web client owns
+# the ladder → CSS mapping (mirrored in wallConfig.mjs) exactly like the resolution
+# ladder is mirrored in the renderer.
+SCALE_BLOCKS: dict[str, dict[str, tuple[float, ...]]] = {
+    "feed": {"width_scale": FEED_WIDTH_STEPS, "text_scale": FEED_TEXT_STEPS},
+    "ticker": {"height_scale": TICKER_HEIGHT_STEPS, "text_scale": TICKER_TEXT_STEPS},
+}
+
+# ---- retired (PR-024): the pre-1..10 continuous keys ----
+# Kept ONLY as migration inputs — they are never emitted. A stored file (or a stale
+# /control/ tab) carrying them maps onto the nearest step; an explicitly-present new
+# block always wins, the same precedence the `outputs`/`render` migration uses.
+LEGACY_SCALE_KEYS = ("feed_pct", "feed_font", "ticker_scale")
 
 # ---- outputs (the multi-output fan-out) ----
 # The outputs the wall fans out to. The block is a MAP so more can be added later
@@ -173,24 +234,80 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
         "layout": {"rows": DEFAULT_ROWS, "cols": DEFAULT_COLS},
         "preset": DEFAULT_PRESET_ID,
         "reload_epoch": 0,
-        "feed_pct": FEED_PCT_DEFAULT,
-        "feed_font": FEED_FONT_DEFAULT,
-        "ticker_scale": TICKER_SCALE_DEFAULT,
+        "feed": default_scale_block("feed"),
+        "ticker": default_scale_block("ticker"),
         "outputs": default_outputs(),
         "cells": cells,
     }
 
 
-def _validate_scale(value: Any, name: str, lo: float, hi: float, default: float) -> float:
-    """A fine-grained, proportional view tunable: a number CLAMPED to [lo, hi]
-    (absent → default). Additive to schema v1. Clamped (not rejected) on read so a
-    boundary slider value or a slightly-off PUT lands at a sane value — these are
-    continuous knobs. A non-number is still a type error (rejected)."""
+def default_scale_block(block: str) -> dict[str, int]:
+    """A grouped scale block at its defaults (every key on step 5 — the pre-PR-024
+    appearance). Built fresh each call (never shared)."""
+    return {key: SCALE_STEP_DEFAULT for key in SCALE_BLOCKS[block]}
+
+
+def _validate_step(value: Any, name: str) -> int:
+    """One view-tunable STEP: an integer CLAMPED to 1..10 (absent → 5).
+
+    Clamped rather than rejected, for the same reason the old continuous knobs were:
+    a boundary slider value or a slightly-off PUT should land on a sane rung, not 422
+    the whole wall. A NUMERIC non-integer is coerced (a slider that sends ``5.0`` — or
+    ``5.4`` — means step 5), because the wire type of a JSON number is not something a
+    control surface should have to be careful about. A NON-numeric value is still a
+    type error, named by field, so a genuine client bug is loud rather than silently
+    snapped to the default.
+    """
     if value is None:
-        return default
+        return SCALE_STEP_DEFAULT
     if not isinstance(value, int | float) or isinstance(value, bool):
-        raise WallConfigError(f"{name} must be a number")
-    return float(min(hi, max(lo, value)))
+        raise WallConfigError(f"{name} must be an integer step 1-10")
+    return int(min(SCALE_STEP_MAX, max(SCALE_STEP_MIN, round(value))))
+
+
+def _nearest_step(value: Any, ladder: tuple[float, ...]) -> int | None:
+    """MIGRATION helper: the 1-based step whose ladder value is closest to a legacy
+    continuous value. ``None`` when the legacy value is absent/not a number, so the
+    caller falls through to the default. Ties go to the lower step (``min`` keeps the
+    first index at equal distance) — deterministic, so migration is idempotent."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    idx = min(range(len(ladder)), key=lambda i: abs(ladder[i] - float(value)))
+    return idx + 1
+
+
+def _validate_scale_block(
+    raw_block: Any, block: str, legacy: dict[str, Any]
+) -> dict[str, int]:
+    """Validate ONE grouped scale block (``feed`` / ``ticker``) to its 1..10 steps.
+
+    MIGRATION (load-time, idempotent): a key that is ABSENT falls back to the nearest
+    step for its retired continuous key when the stored file still carries one —
+    ``feed_pct`` → ``feed.width_scale``, ``feed_font`` → ``feed.text_scale``, and
+    ``ticker_scale`` → BOTH ticker keys (it drove the bar height and the card text
+    through a single ``--tu`` unit, so the matching-step mapping is what preserves the
+    old appearance). An explicitly-present new key ALWAYS wins over the legacy value,
+    the same precedence as the ``render`` → ``outputs`` migration.
+    """
+    src = raw_block if isinstance(raw_block, dict) else {}
+    out: dict[str, int] = {}
+    for key, ladder in SCALE_BLOCKS[block].items():
+        if key in src and src[key] is not None:
+            out[key] = _validate_step(src[key], f"{block}.{key}")
+            continue
+        migrated = _nearest_step(legacy.get(f"{block}.{key}"), ladder)
+        out[key] = SCALE_STEP_DEFAULT if migrated is None else migrated
+    return out
+
+
+def _legacy_scale_inputs(raw: dict[str, Any]) -> dict[str, Any]:
+    """Map the retired continuous keys onto the new keys they migrate into. Pure."""
+    return {
+        "feed.width_scale": raw.get("feed_pct"),
+        "feed.text_scale": raw.get("feed_font"),
+        "ticker.height_scale": raw.get("ticker_scale"),
+        "ticker.text_scale": raw.get("ticker_scale"),
+    }
 
 
 def _coerce_bool(value: Any, default: bool) -> bool:
@@ -360,25 +477,17 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
 
     reload_epoch = _validate_reload(raw.get("reload_epoch"), "reload_epoch")
     outputs = _validate_outputs(raw.get("outputs"), raw.get("render"))
-    feed_pct = _validate_scale(
-        raw.get("feed_pct"), "feed_pct", FEED_PCT_MIN, FEED_PCT_MAX, FEED_PCT_DEFAULT
-    )
-    feed_font = _validate_scale(
-        raw.get("feed_font"), "feed_font", FEED_FONT_MIN, FEED_FONT_MAX, FEED_FONT_DEFAULT
-    )
-    ticker_scale = _validate_scale(
-        raw.get("ticker_scale"), "ticker_scale",
-        TICKER_SCALE_MIN, TICKER_SCALE_MAX, TICKER_SCALE_DEFAULT,
-    )
+    legacy_scales = _legacy_scale_inputs(raw)
+    feed = _validate_scale_block(raw.get("feed"), "feed", legacy_scales)
+    ticker = _validate_scale_block(raw.get("ticker"), "ticker", legacy_scales)
 
     return {
         "schema_version": WALL_SCHEMA_VERSION,
         "layout": {"rows": rows, "cols": cols},
         "preset": preset,
         "reload_epoch": reload_epoch,
-        "feed_pct": feed_pct,
-        "feed_font": feed_font,
-        "ticker_scale": ticker_scale,
+        "feed": feed,
+        "ticker": ticker,
         "outputs": outputs,
         "cells": cells,
     }
@@ -423,6 +532,17 @@ def _merge_outputs(
     return out
 
 
+def _merge_flat_block(stored_block: Any, incoming_block: dict[str, Any]) -> dict[str, Any]:
+    """Merge an incoming ONE-LEVEL block (``feed`` / ``ticker``) onto the stored one
+    PER-KEY: writing ``feed.text_scale`` alone overrides only that key and preserves
+    ``feed.width_scale`` (and the whole ``ticker`` block, which the top-level merge
+    leaves alone because it was omitted). The same no-clobber defence ``outputs`` has,
+    one level shallower. Pure."""
+    out: dict[str, Any] = copy.deepcopy(stored_block) if isinstance(stored_block, dict) else {}
+    out.update(copy.deepcopy(incoming_block))
+    return out
+
+
 def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
     """**PATCH / partial-merge** an incoming wall config onto the stored one, the
     structural defence against the partial-write clobber class: a write that OMITS
@@ -433,7 +553,10 @@ def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
         stored value (so ``reload_epoch`` / ``render`` / any future field survive an
         ``/app/`` edit that doesn't mention them);
       - ``cells`` (when provided as a list): merged per-index by :func:`_merge_cells`
-        (so a per-cell field like ``reload`` survives a cells write that omits it).
+        (so a per-cell field like ``reload`` survives a cells write that omits it);
+      - ``outputs`` per-output AND per-field, and the ``feed`` / ``ticker`` scale
+        blocks per-key — so writing ``feed.text_scale`` alone preserves
+        ``feed.width_scale`` and both ticker keys.
 
     Semantics: **absent = preserve, explicit null = set** (e.g. ``audible_cell:
     null`` to mute, ``channel: null`` to clear a cell — both are PRESENT keys, so
@@ -454,6 +577,8 @@ def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
             merged["cells"] = _merge_cells(stored.get("cells") or [], value)
         elif key == "outputs" and isinstance(value, dict):
             merged["outputs"] = _merge_outputs(stored.get("outputs"), value)
+        elif key in SCALE_BLOCKS and isinstance(value, dict):
+            merged[key] = _merge_flat_block(stored.get(key), value)
         else:
             merged[key] = copy.deepcopy(value)
     return merged

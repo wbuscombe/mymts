@@ -13,10 +13,17 @@ import {
   withCellReload, withWallReload,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
   withOutputRestart, deriveRenderResolution, bitrateBounds,
-  withFeedPct, withFeedFont, withTickerScale,
+  withScaleStep, withScaleSteps, stepValue, clampStep, nearestStep, scaleCssVars,
+  normalizeScaleBlock, defaultScaleBlock,
   RENDER_RESOLUTIONS, RESOLUTION_INFO,
-  FEED_PCT, FEED_FONT, TICKER_SCALE,
+  SCALE_BLOCKS, SCALE_STEP_MIN, SCALE_STEP_MAX, SCALE_STEP_DEFAULT,
+  FEED_WIDTH_STEPS, FEED_TEXT_STEPS, TICKER_HEIGHT_STEPS, TICKER_TEXT_STEPS,
 } from "../js/wallConfig.mjs";
+
+/** Every (block, key) view-tunable control, derived from the shared table so a fifth
+ *  control is covered by these tests the moment it is added there. */
+const SCALE_KEYS = Object.entries(SCALE_BLOCKS)
+  .flatMap(([block, keys]) => Object.keys(keys).map((key) => [block, key]));
 
 const VALID = ["bbc-news", "cnn", "cbs-sports-hq", "bloomberg-tv"];
 
@@ -224,20 +231,227 @@ test("outputs survive the other edit transforms (orthogonal)", () => {
   assert.equal(out.outputs.hls.resolution, "1440p");
 });
 
-// ---- fine-grained view tunables ----
+// ---- the four view tunables: 1..10 integer steps ----
 
-test("normalizeConfig defaults + carries the view tunables", () => {
+test("normalizeConfig defaults every view tunable to step 5", () => {
   const out = normalizeConfig({ layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }] });
-  assert.equal(out.feed_pct, FEED_PCT.default);
-  assert.equal(out.feed_font, FEED_FONT.default);
-  assert.equal(out.ticker_scale, TICKER_SCALE.default);
+  assert.deepEqual(out.feed, { width_scale: 5, text_scale: 5 });
+  assert.deepEqual(out.ticker, { height_scale: 5, text_scale: 5 });
+  assert.deepEqual(out.feed, defaultScaleBlock("feed"));
 });
 
-test("with* view-tunable transforms set + clamp (fine-grained)", () => {
-  assert.equal(withFeedPct(cfg2x2(), 41).feed_pct, 41);
-  assert.equal(withFeedPct(cfg2x2(), 999).feed_pct, FEED_PCT.max);
-  assert.equal(withFeedFont(cfg2x2(), 1.25).feed_font, 1.25);
-  assert.equal(withTickerScale(cfg2x2(), 0).ticker_scale, TICKER_SCALE.min);
+test("every ladder has ten rungs and is strictly increasing", () => {
+  for (const [block, keys] of Object.entries(SCALE_BLOCKS)) {
+    for (const [key, ladder] of Object.entries(keys)) {
+      assert.equal(ladder.length, SCALE_STEP_MAX, `${block}.${key} rung count`);
+      for (let i = 1; i < ladder.length; i++) {
+        assert.ok(ladder[i] > ladder[i - 1], `${block}.${key} rung ${i + 1} not larger`);
+      }
+    }
+  }
+});
+
+test("step 5 reproduces the pre-PR-024 defaults on every control", () => {
+  // The no-visible-jump contract. If this changes, every stored wall shifts.
+  assert.equal(FEED_WIDTH_STEPS[4], 32);
+  assert.equal(FEED_TEXT_STEPS[4], 1.0);
+  assert.equal(TICKER_HEIGHT_STEPS[4], 1.0);
+  assert.equal(TICKER_TEXT_STEPS[4], 1.0);
+});
+
+test("the ladders MIRROR the helper's (bounds must move in lockstep)", () => {
+  // Spelled out literally, not derived, so a one-sided edit fails here loudly.
+  assert.deepEqual(FEED_WIDTH_STEPS, [12, 18, 23, 27, 32, 38, 44, 50, 57, 64]);
+  assert.deepEqual(FEED_TEXT_STEPS, [0.60, 0.70, 0.80, 0.90, 1.00, 1.15, 1.32, 1.52, 1.75, 2.00]);
+  assert.deepEqual(TICKER_HEIGHT_STEPS, [0.45, 0.58, 0.70, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75]);
+  assert.deepEqual(TICKER_TEXT_STEPS, [0.55, 0.62, 0.72, 0.85, 1.00, 1.25, 1.55, 1.90, 2.30, 2.75]);
+});
+
+test("ticker height + text stay proportional from step 4 up", () => {
+  assert.deepEqual(TICKER_HEIGHT_STEPS.slice(3), TICKER_TEXT_STEPS.slice(3));
+  assert.ok(TICKER_TEXT_STEPS[0] > TICKER_HEIGHT_STEPS[0]);   // text floor is higher
+});
+
+test("feed width step 1 clears the .feed-pane min-width floor", () => {
+  // min-width: calc(220 * var(--u)) = 220/1920 = 11.46 % of the wall. Below that the
+  // slider's bottom rung would be a SILENT NO-OP.
+  assert.ok(FEED_WIDTH_STEPS[0] > (220 / 1920) * 100);
+});
+
+test("clampStep clamps to 1..10 and coerces a numeric non-integer", () => {
+  for (const [given, expected] of [[0, 1], [1, 1], [10, 10], [11, 10], [-99, 1], [999, 10],
+                                   [5.0, 5], [5.4, 5], [5.6, 6], [7.5, 8]]) {
+    assert.equal(clampStep(given), expected, `clampStep(${given})`);
+  }
+  // A range input's .value is a STRING — it must be accepted, not repaired away.
+  assert.equal(clampStep("7"), 7);
+  // The client REPAIRS garbage (the server is the surface that rejects it). null and
+  // [] are the trap here: Number() turns both into 0, which would snap to step 1.
+  for (const bad of ["wide", "", null, undefined, NaN, {}, [], true, false]) {
+    assert.equal(clampStep(bad), SCALE_STEP_DEFAULT, `clampStep(${JSON.stringify(bad)})`);
+  }
+  assert.equal(SCALE_STEP_MIN, 1);
+});
+
+test("stepValue maps each step onto its ladder rung", () => {
+  for (const [block, key] of SCALE_KEYS) {
+    const ladder = SCALE_BLOCKS[block][key];
+    for (let step = 1; step <= SCALE_STEP_MAX; step++) {
+      assert.equal(stepValue(block, key, step), ladder[step - 1], `${block}.${key} step ${step}`);
+    }
+    assert.equal(stepValue(block, key, 99), ladder[9], "out-of-range clamps");
+  }
+  assert.equal(stepValue("nope", "nope", 5), null);
+});
+
+// ---- the CSS-variable contract (what the render page actually writes) ----
+
+test("scaleCssVars emits exactly the four wall custom properties", () => {
+  const vars = scaleCssVars(normalizeConfig(cfg2x2()));
+  assert.deepEqual(Object.keys(vars).sort(),
+    ["--feed-font", "--feed-pct", "--ticker-scale", "--ticker-text-scale"]);
+});
+
+test("scaleCssVars at step 5 reproduces the pre-PR-024 stylesheet defaults", () => {
+  assert.deepEqual(scaleCssVars(normalizeConfig(cfg2x2())), {
+    "--feed-pct": "32%",
+    "--feed-font": "1",
+    "--ticker-scale": "1",
+    "--ticker-text-scale": "1",
+  });
+});
+
+test("scaleCssVars tracks each control independently, per step", () => {
+  let c = normalizeConfig(cfg2x2());
+  c = withScaleStep(c, "feed", "width_scale", 1);
+  c = withScaleStep(c, "ticker", "text_scale", 10);
+  const vars = scaleCssVars(c);
+  assert.equal(vars["--feed-pct"], "12%");                 // step 1 of the width ladder
+  assert.equal(vars["--ticker-text-scale"], "2.75");       // step 10 of the text ladder
+  assert.equal(vars["--feed-font"], "1");                  // untouched
+  assert.equal(vars["--ticker-scale"], "1");               // ticker HEIGHT is independent
+});
+
+test("scaleCssVars covers every step of every control without a gap", () => {
+  for (const [block, key] of SCALE_KEYS) {
+    const seen = new Set();
+    for (let step = 1; step <= SCALE_STEP_MAX; step++) {
+      const vars = scaleCssVars(withScaleStep(normalizeConfig(cfg2x2()), block, key, step));
+      const all = Object.values(vars).join("|");
+      assert.ok(!seen.has(all), `${block}.${key} step ${step} duplicates another step`);
+      seen.add(all);
+    }
+    assert.equal(seen.size, SCALE_STEP_MAX);
+  }
+});
+
+// ---- migration off the retired continuous keys ----
+
+test("normalizeConfig migrates the retired continuous scales to the nearest step", () => {
+  const out = normalizeConfig({
+    layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }],
+    feed_pct: 32.0, feed_font: 1.0, ticker_scale: 1.0,
+  });
+  assert.deepEqual(out.feed, { width_scale: 5, text_scale: 5 });
+  assert.deepEqual(out.ticker, { height_scale: 5, text_scale: 5 });
+  // the legacy keys do not survive normalisation
+  assert.ok(!("feed_pct" in out) && !("feed_font" in out) && !("ticker_scale" in out));
+});
+
+test("the retired ticker_scale seeds BOTH ticker keys", () => {
+  const out = normalizeConfig({
+    layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }], ticker_scale: 1.55,
+  });
+  assert.deepEqual(out.ticker, { height_scale: 7, text_scale: 7 });
+});
+
+test("an explicit step beats a legacy value (a stale /control/ tab is safe)", () => {
+  const out = normalizeConfig({
+    layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }],
+    feed_pct: 58.0, feed: { width_scale: 3 },
+  });
+  assert.equal(out.feed.width_scale, 3);
+});
+
+test("migration is idempotent", () => {
+  const base = {
+    layout: { rows: 1, cols: 1 }, cells: [{ channel: "bbc-news" }],
+    feed_pct: 41.0, feed_font: 1.25, ticker_scale: 1.5,
+  };
+  assert.deepEqual(normalizeConfig(normalizeConfig(base)), normalizeConfig(base));
+});
+
+test("nearestStep picks the nearest rung, ties to the lower step", () => {
+  assert.equal(nearestStep(32, FEED_WIDTH_STEPS), 5);
+  assert.equal(nearestStep(0, FEED_WIDTH_STEPS), 1);
+  assert.equal(nearestStep(999, FEED_WIDTH_STEPS), 10);
+  assert.equal(nearestStep(41, FEED_WIDTH_STEPS), 6);      // |38-41| == |44-41| → lower
+  assert.equal(nearestStep("wide", FEED_WIDTH_STEPS), null);
+  assert.equal(normalizeScaleBlock({}, "feed", {}).width_scale, SCALE_STEP_DEFAULT);
+});
+
+// ---- in-block no-clobber (the partner to the server's partial-merge invariant) ----
+
+test("withScaleStep sets ONE control and never disturbs the other three", () => {
+  for (const [block, key] of SCALE_KEYS) {
+    let c = normalizeConfig(cfg2x2());
+    c = withScaleStep(c, "feed", "width_scale", 2);
+    c = withScaleStep(c, "feed", "text_scale", 8);
+    c = withScaleStep(c, "ticker", "height_scale", 9);
+    c = withScaleStep(c, "ticker", "text_scale", 3);
+    const before = { feed: { ...c.feed }, ticker: { ...c.ticker } };
+    const after = withScaleStep(c, block, key, 6);
+    assert.equal(after[block][key], 6, `${block}.${key} set`);
+    for (const [b, k] of SCALE_KEYS) {
+      if (b === block && k === key) continue;
+      assert.equal(after[b][k], before[b][k], `${block}.${key} clobbered ${b}.${k}`);
+    }
+  }
+});
+
+test("withScaleSteps coalesces a debounce window WITHOUT dropping an earlier edit", () => {
+  // The guarantee /control/'s debounced commit relies on: two sliders nudged inside
+  // one window produce ONE write carrying BOTH.
+  const out = withScaleSteps(normalizeConfig(cfg2x2()), [
+    { block: "feed", key: "width_scale", step: 2 },
+    { block: "ticker", key: "text_scale", step: 8 },
+  ]);
+  assert.equal(out.feed.width_scale, 2);
+  assert.equal(out.ticker.text_scale, 8);
+  assert.equal(out.feed.text_scale, 5);          // untouched
+  assert.equal(out.ticker.height_scale, 5);      // untouched
+});
+
+test("withScaleSteps lets the LAST edit of one control win", () => {
+  const out = withScaleSteps(normalizeConfig(cfg2x2()), [
+    { block: "feed", key: "width_scale", step: 3 },
+    { block: "feed", key: "width_scale", step: 9 },
+  ]);
+  assert.equal(out.feed.width_scale, 9);
+});
+
+test("withScaleSteps with no pending edits is a no-op normalise", () => {
+  const base = normalizeConfig(cfg2x2());
+  assert.deepEqual(withScaleSteps(base, []), base);
+  assert.deepEqual(withScaleSteps(base, null), base);
+});
+
+test("withScaleStep ignores an unknown control", () => {
+  const c = normalizeConfig(cfg2x2());
+  assert.deepEqual(withScaleStep(c, "feed", "nope", 3).feed, c.feed);
+  assert.deepEqual(withScaleStep(c, "nope", "width_scale", 3), c);
+});
+
+test("applying a preset carries the view tunables through unchanged", () => {
+  // REGRESSION: the preset builder is a SECOND literal key dict — an easy place to
+  // silently reset the tunables to their defaults.
+  let c = normalizeConfig(cfg2x2());
+  c = withScaleStep(c, "feed", "width_scale", 9);
+  c = withScaleStep(c, "ticker", "text_scale", 2);
+  const out = withPreset(c, { id: "weather", grid: { rows: 1, cols: 2 }, slugs: ["cnn"] }, VALID);
+  assert.equal(out.feed.width_scale, 9);
+  assert.equal(out.ticker.text_scale, 2);
+  assert.equal(out.feed.text_scale, 5);
 });
 
 test("the resolution ladder has 8 rungs, each with display info", () => {
