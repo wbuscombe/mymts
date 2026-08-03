@@ -78,7 +78,7 @@ BUILD_SHA=$(git rev-parse --short HEAD)
 # `pre-professionalization-*` rollback/snapshot tag, which `git describe` would
 # otherwise pick when it's the closest tag, tagging the running image with an
 # incident-era name (the §5 advisory). So the image is always `mymts-helper:<semver>`.
-BUILD_VERSION=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "0.0.0-dev")
+BUILD_VERSION=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "0.0.0-dev")
 BUILD_VERSION="${BUILD_VERSION#v}"
 # Docker tags reject '+'; semver build-metadata ('+dirty') would break the
 # image tag. We track dirty-ness via a '-dirty' suffix instead, which is a

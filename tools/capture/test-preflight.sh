@@ -68,21 +68,26 @@ echo "== record-demo.sh preflight guards =="
 mkdir -p "$TMP/empty"
 run_case "scrcpy-missing → install guidance" 1 "scrcpy is not installed" "$TMP/empty:$SYS"
 
+# The synthetic "connected device" address is RFC 5737 TEST-NET-2 (198.51.100.0/24),
+# deliberately NOT the TEST-NET-1 placeholder — case 3 asserts the wrong-box guard
+# REFUSES 192.0.2.*, so every other case needs an address the guard accepts. Both are
+# documentation ranges, so neither is real topology (docs-hygiene now scans *.sh).
+
 # 2. scrcpy too old (1.25) → upgrade guidance, rc 1 (version check precedes device check).
-make_stubs "$TMP/old" "1.25" "192.168.99.99:5555 device"
-run_case "scrcpy-too-old → upgrade guidance" 1 "too old" "$TMP/old:$SYS" --device 192.168.99.99:5555
+make_stubs "$TMP/old" "1.25" "198.51.100.99:5555 device"
+run_case "scrcpy-too-old → upgrade guidance" 1 "too old" "$TMP/old:$SYS" --device 198.51.100.99:5555
 
 # 3. placeholder device (192.0.2.*) → wrong-box guard, rc 2.
-make_stubs "$TMP/new" "2.4" "192.168.99.99:5555 device"
+make_stubs "$TMP/new" "2.4" "198.51.100.99:5555 device"
 run_case "placeholder-device → wrong-box guard" 2 "placeholder/unset" "$TMP/new:$SYS" --device 192.0.2.10:5555
 
 # 4. device not connected (adb lists nothing) → reconnect-then-fail guidance, rc 1.
 make_stubs "$TMP/nope" "2.4" ""
-run_case "device-not-connected → reconnect guidance" 1 "not connected as 'device'" "$TMP/nope:$SYS" --device 192.168.99.99:5555
+run_case "device-not-connected → reconnect guidance" 1 "not connected as 'device'" "$TMP/nope:$SYS" --device 198.51.100.99:5555
 
 # 5. happy path → records + reaches the verify reminder, rc 0.
-make_stubs "$TMP/ok" "2.4" "192.168.99.99:5555 device"
-run_case "happy-path → verify reminder" 0 "VERIFY THE RECORDING" "$TMP/ok:$SYS" --device 192.168.99.99:5555 --no-window
+make_stubs "$TMP/ok" "2.4" "198.51.100.99:5555 device"
+run_case "happy-path → verify reminder" 0 "VERIFY THE RECORDING" "$TMP/ok:$SYS" --device 198.51.100.99:5555 --no-window
 
 # 6. forbidden-pattern lint. Strip comment lines + single-quoted spans first (the
 #    'adb kill-server' warnings live there) so only a REAL invocation fails.

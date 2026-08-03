@@ -8,13 +8,21 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// versionName tracks the latest git tag (e.g. "v0.1.0" -> "0.1.0") so released
+// versionName tracks the latest RELEASE tag (e.g. "v0.1.0" -> "0.1.0") so released
 // builds are self-describing. Falls back to a literal when git is unavailable
 // (source tarball, shallow checkout with no tags, etc.).
+//
+// --match 'v[0-9]*' is load-bearing, not cosmetic: the repo deliberately carries
+// local `pre-*` scaffolding tags as rollback anchors, and a bare `git describe
+// --tags --abbrev=0` returns whichever tag is nearest — so a build made after a
+// rollback tag would stamp the APK with a versionName like
+// "pre-housekeeping-sweep". Matching only v<digit> keeps semver tags authoritative
+// and ignores every scaffolding tag, present or future. Mirrors the same guard in
+// scripts/deploy-helper.sh + scripts/deploy-app.sh.
 fun getVersionFromGit(): String = try {
     val out = ByteArrayOutputStream()
     val result = exec {
-        commandLine("git", "describe", "--tags", "--abbrev=0")
+        commandLine("git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*")
         workingDir = rootDir
         standardOutput = out
         errorOutput = ByteArrayOutputStream()

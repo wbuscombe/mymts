@@ -70,7 +70,13 @@ picker, all live in your browser against fixture data. Want it on a real TV emul
 adb shell am start -n com.mymts/.MainActivity --es helper "http://10.0.2.2:8091"
 ```
 
-Tests: `cd helper && uv run --extra dev pytest` · `./gradlew :app:testReleaseUnitTest` · `node --test web/test/*.test.mjs` · `cd renderer && python3 -m unittest discover -s .` — all four run in CI and are required to pass.
+Tests: **`make test`** runs everything that needs no device, NAS or secrets — the helper
+suite, the web client, the renderer, docs-hygiene (and its self-test), the cross-surface
+parity contracts, and the shell gates. It works from a clean clone and reports a loud
+`SKIP` (never a silent pass) for any missing prerequisite. The native Android suite is
+**`make test-app`**, separate because it needs a JDK 17 + the Android SDK. Both mirror
+what CI runs, and CI requires them to pass. The individual commands are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#tests) if you want to run just one.
 Full walkthrough (real public-data path, prerequisites, troubleshooting): [`ONBOARDING.md`](ONBOARDING.md).
 
 ---

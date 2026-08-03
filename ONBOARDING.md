@@ -95,6 +95,14 @@ for details (and to override the helper URL via `local.properties`).
 ---
 
 ## Run the tests
+One command for everything that needs no device, NAS or secrets — this is the one to use
+from a fresh clone:
+```bash
+make test        # helper + web + renderer + docs-hygiene + parity contracts + shell gates
+make test-app    # the native Android suite (needs JDK 17 + the Android SDK)
+```
+A missing prerequisite is reported as a loud `SKIP`, never a silent pass. To run a single
+suite:
 ```bash
 cd helper && uv run --extra dev pytest                        # helper suite
 ./gradlew :app:testReleaseUnitTest                # app suite

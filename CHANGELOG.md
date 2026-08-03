@@ -14,6 +14,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## chore: housekeeping sweep — version guard, hygiene scope, test aggregator (2026-08-04)
+
+Four leftovers from the PR-018 gate clearance and the PR-024 audit. No `app/` source
+change, no APK, no tag.
+
+- **`versionName` could be stamped from a scaffolding tag.** The repo deliberately keeps
+  local `pre-*` rollback anchors, and a bare `git describe --tags --abbrev=0` returns
+  whichever tag is nearest. Reproduced concretely: with `pre-housekeeping-sweep` present,
+  the bare describe returned `pre-housekeeping-sweep` where the guarded one returns
+  `v0.4.1`. Added `--match 'v[0-9]*'` to `app/build.gradle.kts` **and** to the same defect
+  class in `scripts/deploy-app.sh` (which named archived APKs the same way); tightened
+  `scripts/deploy-helper.sh` from `'v*'` so all three agree. Verified by building: the
+  release APK carries `versionName='0.4.1'` with all six `pre-*` tags still present.
+  *Judgment call, stated rather than assumed:* a build-script change is **not** a native
+  change for the no-tag convention — no app source, resource or shipped behaviour changes,
+  and the fix exists precisely to keep `versionName` correct. `[Unreleased]` holds.
+- **A private-range LAN address in `deploy-app.sh`'s help text survived the entire
+  public-flip sweep** because docs-hygiene only ever scanned docs. Replaced it, then closed
+  the class: **the gate now scans committed shell scripts** (67 → 81 files, 14 of them
+  `.sh`). Both the replacement and the equivalent fixture in
+  `tools/capture/test-preflight.sh` use RFC 5737 **TEST-NET-2** (198.51.100.0/24), not the
+  TEST-NET-1 placeholder the wrong-box guard *refuses* — an example the operator cannot
+  follow is worse than none — so the new scope needed no allowlist entry at all. The
+  "clean" line now reports scope by class, so it can't quietly mean "scanned fewer files
+  than you think" after a future scope change. **Proven non-no-op on the new scope:** a
+  canary planted in a `.sh` was caught for both leak classes — something the gate could not
+  detect before — and it returned clean once removed.
+- **`make test`** runs the 11 suites that need no device, NAS or secrets: helper pytest,
+  web `node:test`, renderer unittest, docs-hygiene + its self-test, both parity contracts,
+  and the three shell gates. It runs them all even after one fails, exits non-zero if any
+  did, and reports a loud `SKIP` — never a silent pass — for a missing prerequisite.
+  `make test-app` is separate (needs JDK 17 + the Android SDK) and its probe *runs* java
+  rather than testing `command -v java`, because macOS ships a `/usr/bin/java` shim that
+  exists on PATH but errors. Verified from a genuinely clean clone: 11/11.
+  **Proven non-no-op:** a planted failing assertion made the aggregator name the failing
+  suite and exit 1.
+- **PEP 735 dev group — skipped, and not because it was fiddly.** It changes `--extra dev`
+  to `--group dev` at seven call sites, **two of which are `.github/workflows/*.yml`**, and
+  this pass prohibits CI machinery changes. It would also break `pip install .[dev]` for
+  non-uv consumers of a now-public repo, since dependency-groups are not installable as
+  extras. Left alone.
+
+Blast radius: build script, two deploy scripts, one test fixture, the hygiene gate, the
+Makefile, a new `scripts/run-tests.sh`, and docs. **No CI machinery, no `.kt`, no APK, no
+tag, no `schema_version` change.** Chromium-147 pin untouched. PIA / other containers
+untouched.
+
 ## feat(web,helper): four 1–10 feed/ticker size steps + live-apply layout (2026-08-03)
 
 Supersedes the feed/ticker half of the 0.4.0 "finely-tunable wall" entry below (its resolution

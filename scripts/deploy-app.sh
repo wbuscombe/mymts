@@ -99,8 +99,12 @@ done
 # Refuse the scrubbed placeholder / an unset target, and require the device be
 # actually connected BEFORE the multi-minute build. Pass --device explicitly.
 if [[ -z "$DEVICE" || "$DEVICE" == 192.0.2.* || "$DEVICE" == *"<"* ]]; then
+    # The worked example uses RFC 5737 TEST-NET-2 (198.51.100.0/24), NOT the
+    # TEST-NET-1 placeholder this guard refuses — an example the operator can't
+    # actually follow is worse than no example. Both are documentation ranges, so
+    # neither is real topology.
     echo "FATAL: deploy device is the placeholder/unset ('$DEVICE')." >&2
-    echo "       Pass --device <ip:port> explicitly (e.g. --device 192.168.1.50:5555)" >&2
+    echo "       Pass --device <ip:port> explicitly (e.g. --device 198.51.100.50:5555)" >&2
     echo "       or set a real MYMTS_DEPLOY_DEVICE in scripts/deploy.local.env." >&2
     exit 2
 fi
@@ -232,9 +236,10 @@ archive_release() {
     # records the exact mapping. Older APKs are retained so a manual
     # rollback to any prior version is one command.
     local version sha ts archived_name
-    version="$(grep '^MYMTS_DEFAULT_MAX_TILES\|^# Version' "$PROJECT_ROOT/gradle.properties" \
-        2>/dev/null | head -1 || true)"
-    version="$(cd "$PROJECT_ROOT" && git describe --tags --abbrev=0 2>/dev/null \
+    # --match 'v[0-9]*' for the same reason as app/build.gradle.kts + deploy-helper.sh:
+    # the repo carries local `pre-*` rollback tags, and a bare describe would name an
+    # archived APK after one of them. Only semver release tags are considered.
+    version="$(cd "$PROJECT_ROOT" && git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null \
         | sed 's/^v//' || echo "0.0.0")"
     sha="$(cd "$PROJECT_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo dev)"
     ts="$(date -u +%Y%m%dT%H%M%SZ)"

@@ -125,15 +125,24 @@ export function scanText(text, allowSet = new Set(), patterns = PATTERNS) {
   return violations;
 }
 
-/** Tracked scan targets: public-doc files (markdown + .phantom.yml) AND the committed
- *  CONFIG TEMPLATES (`*.env.example`, compose files). The config templates are in scope
- *  because a real topology leak (the LiveKit tailnet IP, 2026-07-08 audit) slipped past a
- *  docs-only scan — it lived in `.env.example` + the NAS compose. Excludes the check's own
- *  fixtures + the gitignored ops-local notes. (Benign infra IPs in compose — 127.0.0.1,
- *  0.0.0.0 — are covered by the allowlist.) */
-export function listDocFiles() {
+/** Tracked scan targets: public-doc files (markdown + .phantom.yml), the committed
+ *  CONFIG TEMPLATES (`*.env.example`, compose files), AND the committed SHELL SCRIPTS.
+ *
+ *  Each class was added because a real leak slipped past the narrower scope:
+ *    - config templates — the LiveKit tailnet IP (2026-07-08 audit) lived in
+ *      `.env.example` + the NAS compose, invisible to a docs-only scan;
+ *    - shell scripts — a private-range LAN address sat in `scripts/deploy-app.sh`'s
+ *      help text right through the public-flip sweep (PR-023) because the gate only
+ *      ever read docs. Scripts are as public as the README and carry example
+ *      addresses, hostnames and paths by their nature, so they belong in scope.
+ *
+ *  Excludes the check's own fixtures + the gitignored ops-local notes. Benign infra
+ *  IPs (127.0.0.1, 0.0.0.0, the emulator alias) are covered by the allowlist, and the
+ *  RFC 5737 documentation ranges by isDocumentationIp(). */
+export function listScanTargets() {
   const out = execSync(
-    "git ls-files -z -- '*.md' '.phantom.yml' '*.env.example' '*compose*.yml' '*compose*.yaml'",
+    "git ls-files -z -- '*.md' '.phantom.yml' '*.env.example' " +
+      "'*compose*.yml' '*compose*.yaml' '*.sh'",
     { cwd: REPO },
   )
     .toString("utf8")
@@ -145,17 +154,21 @@ export function listDocFiles() {
 
 function main() {
   const allowSet = parseAllowlist(readFileSync(path.join(HERE, "allowlist.txt"), "utf8"));
-  const files = listDocFiles();
+  const files = listScanTargets();
   const all = [];
   for (const rel of files) {
     const text = readFileSync(path.join(REPO, rel), "utf8");
     for (const v of scanText(text, allowSet)) all.push({ file: rel, ...v });
   }
+  // Report the scope by class, so a "clean" line can't quietly mean "scanned fewer
+  // files than you think" after a scope change.
+  const shells = files.filter((f) => f.endsWith(".sh")).length;
+  const scope = `${files.length} public files (${files.length - shells} docs/config, ${shells} shell scripts)`;
   if (all.length === 0) {
-    console.log(`docs-hygiene: clean — ${files.length} public docs scanned, 0 leaks.`);
+    console.log(`docs-hygiene: clean — ${scope} scanned, 0 leaks.`);
     return;
   }
-  console.error(`docs-hygiene: ${all.length} leak(s) in public docs — FAIL:\n`);
+  console.error(`docs-hygiene: ${all.length} leak(s) across ${scope} — FAIL:\n`);
   for (const v of all) {
     console.error(`  ${v.file}:${v.line}  [${v.id}]  "${v.match}"  → ${v.why}`);
   }

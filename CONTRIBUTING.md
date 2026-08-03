@@ -42,10 +42,19 @@ The operational guardrails every contribution must honor (load-bearing — read 
 - No flaky or expected-to-fail tests in the suite. Tests run green before any commit and before any release.
 - Run them locally before opening a PR (the same suites CI runs on every push):
   ```bash
+  make test        # everything that needs no device/NAS/secrets (see below for what that is)
+  make test-app    # the native Android suite (needs JDK 17 + the Android SDK)
+  ```
+  `make test` reports a loud `SKIP` rather than a silent pass if a prerequisite is
+  missing, and exits non-zero if any suite fails. To run just one:
+  ```bash
   cd helper && uv run --extra dev pytest                        # helper: pytest + the zero-egress phantom contract
   ./gradlew :app:testReleaseUnitTest                # native app: JVM unit tests
   node --test web/test/*.test.mjs                   # web client: pure render/honesty logic (no deps)
   python3 -m unittest discover -s renderer -p 'test_*.py'  # renderer: supervisor + run + fan-out (pure)
+  node tools/docs-hygiene/check.mjs                 # docs + config templates + shell scripts: no topology/personal-config leakage
+  python3 scripts/check_schema_consistency.py       # cross-component schema_version contract
+  python3 scripts/check_channel_parity.py           # cross-surface channel-picker parity
   ```
 - The **web client** is served by the helper at `/app` (LAN-only, credential-free, same-origin); its honesty/render logic is unit-tested above and its DOM is verified against demo mode. See [`web/README.md`](web/README.md). The full walkthrough for running everything is [`ONBOARDING.md`](ONBOARDING.md).
 
