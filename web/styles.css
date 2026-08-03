@@ -14,12 +14,21 @@
   --ux: 1;
   --u: calc(1px * var(--ux));
   --gap: calc(8 * var(--u));   /* one shared gutter rhythm: tiles, grid inset, overlays */
-  /* Ticker scale (operator-tunable via /control/, default 1): --tu is the ticker's
-     OWN design-px unit = --u × --ticker-scale, so EVERY ticker dimension (bar height,
-     gaps, paddings AND the card text) is calc(N * var(--tu)) — the whole strip scales
-     proportionally with its height (taller bar ⇒ bigger text, not a tall empty bar). */
+  /* Ticker scale — TWO independent operator knobs (/control/, both default 1), so a
+     tall bar with small text (or the reverse) is expressible:
+       --tu  = the ticker's BOX design-px unit  (bar height, gaps, paddings, radii)
+       --ttu = the ticker's TEXT design-px unit (every font-size + its letter-spacing)
+     Tracking (letter-spacing) rides the TEXT unit — it is a glyph metric, so it must
+     track the glyphs, not the box. Setting both knobs to the same step reproduces the
+     old single-unit behaviour exactly (taller bar ⇒ bigger text), which is what the
+     matching-step default preserves. See ARCHITECTURE §44.
+     The bar uses MIN-height, not height: text bigger than its bar grows the bar rather
+     than being clipped by .ticker-viewport's overflow:hidden (which shaves ascenders
+     AND descenders symmetrically and reads as a font bug, not a sizing mistake). */
   --ticker-scale: 1;
+  --ticker-text-scale: 1;
   --tu: calc(var(--u) * var(--ticker-scale));
+  --ttu: calc(var(--u) * var(--ticker-text-scale));
 
   --bg: #000; --panel: #0a0a0a; --panel-2: #080808; --line: #ffffff22;
   --label: #ccc; --muted: #ffffff99; --ghost: #ffffff66;
@@ -38,12 +47,18 @@ body { display: flex; flex-direction: column; }
 .hidden { display: none !important; }
 
 /* ---- ticker bar (scrolling marquee, ESPN-BottomLine league markers) ---- */
-.ticker-bar { display: flex; align-items: center; gap: calc(10 * var(--tu)); height: calc(40 * var(--tu));
+.ticker-bar { display: flex; align-items: center; gap: calc(10 * var(--tu)); min-height: calc(40 * var(--tu));
   background: #050505; border-bottom: 1px solid var(--line); padding: 0 calc(10 * var(--tu)); flex: 0 0 auto; }
-.ticker-mode-tag { color: var(--ghost); font-size: calc(10 * var(--tu)); letter-spacing: calc(2 * var(--tu)); min-width: calc(62 * var(--tu)); }
-.ticker-note { color: var(--recover); font-size: calc(11 * var(--tu)); flex: 0 0 auto; white-space: nowrap; }
+/* The mode tag's min-width reserves a stable slot for its OWN label ("MARKETS" /
+   "SPORTS" / "NEWS"), so it tracks the TEXT unit — on the box unit an oversized
+   label would silently steal width from .ticker-viewport (the crawl runway). */
+.ticker-mode-tag { color: var(--ghost); font-size: calc(10 * var(--ttu)); letter-spacing: calc(2 * var(--ttu)); min-width: calc(62 * var(--ttu)); }
+.ticker-note { color: var(--recover); font-size: calc(11 * var(--ttu)); flex: 0 0 auto; white-space: nowrap; }
 .ticker-note:empty { display: none; }
-.ticker-viewport { flex: 1; overflow: hidden; position: relative; height: 100%; }
+/* align-self:stretch (not height:100%) so the viewport still fills the bar now that
+   the bar's height is min-height — a percentage height against an auto-height parent
+   would collapse to the content box and re-introduce the clipping this avoids. */
+.ticker-viewport { flex: 1; overflow: hidden; position: relative; align-self: stretch; }
 /* CRAWL marquee — driven by the Web Animations API in app.mjs (startCrawl):
    scroll one seamless period (copyWidth + gap) at distance/speed, then DWELL,
    matching the native TickerStrip. Compositor-timed (constant velocity under
@@ -61,7 +76,7 @@ body { display: flex; flex-direction: column; }
    card is a discrete bordered cell — the native model where the card IS the
    divider unit (rounded bordered cell + gap, no separate divider element). */
 .t-group { display: inline-flex; gap: calc(8 * var(--tu)); align-items: center; }
-.t-league { font-size: calc(10 * var(--tu)); font-weight: 700; letter-spacing: calc(1.2 * var(--tu)); color: #000;
+.t-league { font-size: calc(10 * var(--ttu)); font-weight: 700; letter-spacing: calc(1.2 * var(--ttu)); color: #000;
   background: var(--accent); border-radius: calc(3 * var(--tu)); padding: calc(3 * var(--tu)) calc(8 * var(--tu)); flex: 0 0 auto; }
 
 /* shared card cell — native cardRow register (CardBg #15171A, 1px border,
@@ -71,55 +86,59 @@ body { display: flex; flex-direction: column; }
   padding: calc(3 * var(--tu)) calc(8 * var(--tu)); white-space: nowrap; }
 
 /* market/news fallback cell (direction arrow + value) */
-.t-card--cell .t-val { font-family: ui-monospace, Menlo, monospace; font-size: calc(12 * var(--tu)); color: var(--muted); }
+.t-card--cell .t-val { font-family: ui-monospace, Menlo, monospace; font-size: calc(12 * var(--ttu)); color: var(--muted); }
 .t-card--cell.t-card--sample .t-val { color: var(--ghost); }     /* dimmed when sample */
-.t-arrow { font-size: calc(11 * var(--tu)); }
+.t-arrow { font-size: calc(11 * var(--ttu)); }
 .dir-up { color: var(--live); } .dir-down { color: var(--down); } .dir-flat { color: var(--muted); }
 .t-card--sample .t-arrow { opacity: 0.5; }                        /* arrow alpha halved when sample */
-.t-sample-inline { font-size: calc(8 * var(--tu)); font-style: italic; letter-spacing: calc(0.5 * var(--tu)); color: var(--ghost); }
+.t-sample-inline { font-size: calc(8 * var(--ttu)); font-style: italic; letter-spacing: calc(0.5 * var(--ttu)); color: var(--ghost); }
 
 /* team game card — abbrs + scores (or "@"), status chip */
 .t-matchup { display: inline-flex; align-items: center; gap: calc(8 * var(--tu));
   font-family: ui-monospace, Menlo, monospace; }
 .t-side { display: inline-flex; align-items: baseline; gap: calc(4 * var(--tu)); }
-.t-team { font-size: calc(13 * var(--tu)); font-weight: 600; color: var(--label); }
+.t-team { font-size: calc(13 * var(--ttu)); font-weight: 600; color: var(--label); }
 .t-side--final .t-team { color: var(--muted); }                   /* FINAL → muted teams */
-.t-at { font-size: calc(12 * var(--tu)); color: var(--ghost); }
-.t-score { font-size: calc(14 * var(--tu)); font-weight: 700; color: var(--muted); }
+.t-at { font-size: calc(12 * var(--ttu)); color: var(--ghost); }
+.t-score { font-size: calc(14 * var(--ttu)); font-weight: 700; color: var(--muted); }
 .t-score--lead { color: #fff; }                                   /* leader (LIVE only) → primary */
 
 /* individual sport cards — title + lines */
 .t-card--sport { flex-direction: row; }
-.t-title { font-size: calc(12 * var(--tu)); font-weight: 600; color: var(--label); }
-.t-card--fight .t-title { font-size: calc(13 * var(--tu)); }
-.t-line { font-size: calc(12 * var(--tu)); color: var(--muted); }
-.t-card--fight .t-line { font-size: calc(10 * var(--tu)); }
+.t-title { font-size: calc(12 * var(--ttu)); font-weight: 600; color: var(--label); }
+.t-card--fight .t-title { font-size: calc(13 * var(--ttu)); }
+.t-line { font-size: calc(12 * var(--ttu)); color: var(--muted); }
+.t-card--fight .t-line { font-size: calc(10 * var(--ttu)); }
 .t-line--mono { font-family: ui-monospace, Menlo, monospace; }    /* leaderboard / match alignment */
 
 /* news card — SOURCE label (green) + headline, inert plain text */
-.t-card--news .t-news-source { font-size: calc(9 * var(--tu)); font-weight: 700; letter-spacing: calc(1 * var(--tu)); color: var(--accent); }
-.t-card--news .t-news-headline { font-size: calc(12 * var(--tu)); color: var(--muted); }
+.t-card--news .t-news-source { font-size: calc(9 * var(--ttu)); font-weight: 700; letter-spacing: calc(1 * var(--ttu)); color: var(--accent); }
+.t-card--news .t-news-headline { font-size: calc(12 * var(--ttu)); color: var(--muted); }
 
 /* status chip (shared color-rule engine — native StatusBlock) */
-.t-status { font-size: calc(10 * var(--tu)); font-weight: 700; letter-spacing: calc(0.8 * var(--tu)); border-radius: calc(3 * var(--tu)); padding: calc(2 * var(--tu)) calc(6 * var(--tu)); }
+.t-status { font-size: calc(10 * var(--ttu)); font-weight: 700; letter-spacing: calc(0.8 * var(--ttu)); border-radius: calc(3 * var(--tu)); padding: calc(2 * var(--tu)) calc(6 * var(--tu)); }
 .t-status--live { color: var(--live); background: rgba(0,229,160,0.13); }
 .t-status--final { color: var(--muted); background: rgba(255,255,255,0.10); }
 .t-status--upcoming { color: #bfc6cc; background: rgba(255,255,255,0.08); }
 
 /* per-card SAMPLE chip (boxed) — honest degradation, never faked live */
-.t-sample { font-size: calc(8 * var(--tu)); letter-spacing: calc(1 * var(--tu)); color: var(--ghost);
+.t-sample { font-size: calc(8 * var(--ttu)); letter-spacing: calc(1 * var(--ttu)); color: var(--ghost);
   background: rgba(255,255,255,0.20); border-radius: calc(2 * var(--tu)); padding: calc(1 * var(--tu)) calc(4 * var(--tu)); }
 
 /* schema-guard / unavailability fallbacks inside the track */
-.t-stale { color: var(--recover); font-size: calc(11 * var(--tu)); }
-.t-schema-warn { color: var(--stale); font-size: calc(12 * var(--tu)); font-weight: 600; }
+.t-stale { color: var(--recover); font-size: calc(11 * var(--ttu)); }
+.t-schema-warn { color: var(--stale); font-size: calc(12 * var(--ttu)); font-weight: 600; }
 
 /* envelope-level STALE chip pinned to the strip's RIGHT edge (native StaleChip) */
-.t-stale-chip { flex: 0 0 auto; font-size: calc(9 * var(--tu)); font-weight: 600; letter-spacing: calc(1.4 * var(--tu));
+.t-stale-chip { flex: 0 0 auto; font-size: calc(9 * var(--ttu)); font-weight: 600; letter-spacing: calc(1.4 * var(--ttu));
   color: var(--stale); background: rgba(5,5,5,0.9); border-radius: calc(2 * var(--tu)); padding: calc(2 * var(--tu)) calc(6 * var(--tu)); }
 
+/* The gear's BOX rides the box unit but its glyph rides the text unit, so a small-text
+   step can't overflow the button (it sets no overflow, so an oversized glyph escapes
+   its border box). Hidden entirely on the rendered wall (body.render-mode, below). */
 .gear { flex: 0 0 auto; background: transparent; border: 1px solid var(--line); color: var(--label);
-  font-size: calc(16 * var(--tu)); width: calc(30 * var(--tu)); height: calc(28 * var(--tu)); border-radius: calc(4 * var(--tu)); cursor: pointer; }
+  font-size: calc(16 * var(--ttu)); width: calc(30 * var(--tu)); height: calc(28 * var(--tu)); border-radius: calc(4 * var(--tu)); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
 .gear:hover { background: #ffffff14; }
 
 /* ---- wall body: feed pane | video grid ---- */
@@ -144,8 +163,10 @@ body { display: flex; flex-direction: column; }
 
 .pane-head { display: flex; justify-content: space-between; align-items: center;
   padding: calc(8 * var(--u)) calc(12 * var(--u)); background: var(--panel-2); border-bottom: 1px solid var(--line); }
-.pane-title { font-size: calc(12 * var(--u)); letter-spacing: calc(2 * var(--u)); font-weight: 600; }
-.pane-status { font-size: calc(10 * var(--u)); color: var(--ghost); }
+/* The pane's own chrome rides --feed-font too, so the header can't visibly desync
+   from the stories it labels at the high steps (it stayed fixed before PR-024). */
+.pane-title { font-size: calc(12 * var(--u) * var(--feed-font)); letter-spacing: calc(2 * var(--u)); font-weight: 600; }
+.pane-status { font-size: calc(10 * var(--u) * var(--feed-font)); color: var(--ghost); }
 .feed { overflow-y: auto; flex: 1; padding: 0 0 calc(20 * var(--u)); }
 
 /* ---- agnostic chronological feed (source next to each headline) ---- */
@@ -161,6 +182,13 @@ body { display: flex; flex-direction: column; }
 .feed-title { font-size: calc(14 * var(--u) * var(--feed-font)); line-height: 1.3; font-weight: 600; margin: calc(1 * var(--u)) 0; }
 .feed-summary { font-size: calc(11 * var(--u) * var(--feed-font)); line-height: 1.4; color: var(--muted); margin: calc(3 * var(--u)) 0 0; }
 .empty { color: var(--ghost); font-size: calc(12 * var(--u)); padding: calc(16 * var(--u)); line-height: 1.5; }
+/* Scoped to the feed pane only — the same .empty class is reused inside the settings
+   modals, which are chrome and must NOT follow the wall's feed text scale. */
+.feed-pane .empty { font-size: calc(12 * var(--u) * var(--feed-font)); }
+/* A single unbreakable token (a URL / hashtag in a headline) sets a min-content width
+   larger than a narrow pane, which would otherwise force a horizontal scroll inside
+   .feed — invisible on the TV output (Chromium runs --hide-scrollbars) and simply cut. */
+.feed-title, .feed-summary, .feed-source { overflow-wrap: anywhere; }
 
 /* ---- cell-count video grid ---- */
 .video-grid { display: grid; gap: var(--gap); width: 100%; height: 100%;
