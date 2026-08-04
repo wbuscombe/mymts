@@ -47,6 +47,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mymts.data.settings.TickerMotion
@@ -87,13 +93,26 @@ fun TickerStrip(
     scrollPct: Int = 100,
     flipPct: Int = 100,
     motion: TickerMotion = TickerMotion.Flip,
+    boxScale: Float = 1f,
+    textScale: Float = 1f,
 ) {
     val entries by source.state.collectAsState()
     val stale by source.stale.collectAsState()
+    CompositionLocalProvider(
+        LocalTickerScale provides TickerScale(box = boxScale, text = textScale),
+    ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(40.dp)
+            // heightIn(min=), NOT height(): a FLOOR, not a cap. Compose's height()
+            // is a hard constraint, so text larger than the bar would be clipped —
+            // and because the content is centre-aligned it clips ascenders AND
+            // descenders equally, which reads as a broken font rather than a sizing
+            // mistake. This is the same hazard the web wall hit when --tu/--ttu were
+            // split (ARCHITECTURE §44); the fix is the same shape. Ticker height is
+            // therefore a minimum: oversized text grows the bar instead of losing its
+            // ascenders.
+            .heightIn(min = tu(40))
             .background(Color(0xFF050505))
             .then(
                 if (focused) Modifier.border(width = 2.dp, color = WallColors.BadgeLive)
@@ -107,14 +126,15 @@ fun TickerStrip(
         when (motion) {
             TickerMotion.Crawl -> CrawlTicker(
                 pages, stale = stale, paused = paused, scrollPct = scrollPct,
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = tu(12)),
             )
             TickerMotion.Flip -> PagedTicker(
                 pages, stale = stale, paused = paused,
                 scrollPct = scrollPct, flipPct = flipPct,
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = tu(12)),
             )
         }
+    }
     }
 }
 
@@ -125,6 +145,30 @@ private const val BASE_DWELL_MS = 9000L
 
 /** Base horizontal reveal velocity at 100% scroll speed for the FLIP's per-page
  *  reveal; the "Scroll speed" slider scales it linearly. */
+/**
+ * The ticker's two INDEPENDENT design units — the native mirror of the web wall's
+ * `--tu` (box) / `--ttu` (text) split (PR-026, ARCHITECTURE §47).
+ *
+ * [box] scales bar height, gaps, paddings and corner radii; [text] scales font sizes
+ * and their letter spacing. Independent, so a tall bar with small text (or the reverse)
+ * is expressible; identical values reproduce the old single-unit proportional feel.
+ *
+ * Carried in a CompositionLocal rather than threaded through every private composable:
+ * the strip is ~10 nested composables deep and every one of them sizes something.
+ */
+@Immutable
+data class TickerScale(val box: Float = 1f, val text: Float = 1f)
+
+val LocalTickerScale = compositionLocalOf { TickerScale() }
+
+/** A ticker BOX dimension: `N.tu` is the analogue of CSS `calc(N * var(--tu))`. */
+@Composable
+private fun tu(v: Number): Dp = (v.toFloat() * LocalTickerScale.current.box).dp
+
+/** A ticker TEXT dimension: the analogue of CSS `calc(N * var(--ttu))`. */
+@Composable
+private fun ttu(v: Number): TextUnit = (v.toFloat() * LocalTickerScale.current.text).sp
+
 private val BASE_SCROLL_VELOCITY = 32.dp
 
 /** Base velocity (dp/sec at 100% scroll speed) for the CRAWL marquee — separate
@@ -245,7 +289,8 @@ internal fun crawlDurationMs(distancePx: Float, pxPerSec: Float): Int {
  *  used in the crawl Rows. It is part of the seamless-loop repeat period: the row
  *  lays out `[copy1][CRAWL_GAP][copy2]`, so copy 2 begins one gap PAST copy 1's
  *  width. The single source of truth for both the layout spacing and the period. */
-private val CRAWL_GAP = 8.dp
+/** Inter-card gap — a BOX dimension, so it tracks the ticker's box scale. */
+private val CRAWL_GAP: Dp @Composable get() = tu(8)
 
 /** Pure: the seamless-loop REPEAT PERIOD (px) = one copy's width PLUS the inter-copy
  *  gap. Wrapping at the copy width ALONE (ignoring the gap) lands copy 2 one gap-width
@@ -316,10 +361,14 @@ private fun CrawlTicker(
         // (speed, pause, overflow) — NOT on `pages`, so a content refresh never
         // restarts it. Each cycle: animate one copy-width, snap back (seamless —
         // copy 2 sits exactly where copy 1 began), then DWELL (the slip time).
-        LaunchedEffect(scrollPct, paused, overflow) {
+        // CRAWL_GAP is a @Composable accessor now that it tracks the ticker's box scale,
+        // so it must be read HERE (composable scope) and captured — a LaunchedEffect body
+        // is not a composable context. Keyed into the effect below so a box-scale change
+        // re-derives the loop period instead of scrolling to a stale one.
+        val gapPx = CRAWL_GAP.value * density   // the inter-copy gap, in px (part of the loop period)
+        LaunchedEffect(scrollPct, paused, overflow, gapPx) {
             if (paused || !overflow) { offset.snapTo(0f); return@LaunchedEffect }
             val pxPerSec = crawlPxPerSec(CRAWL_BASE_DP_PER_SEC, scrollPct, density)
-            val gapPx = CRAWL_GAP.value * density   // the inter-copy gap, in px (part of the loop period)
             while (true) {
                 // The repeat PERIOD is one copy width + the inter-copy gap (read fresh
                 // each cycle, so new content integrates here). Wrapping at the full
@@ -365,15 +414,15 @@ private fun CrawlContent(pages: List<TickerPaging.Page>, modifier: Modifier = Mo
 @Composable
 private fun CrawlMarker(label: String) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(WallColors.BadgeLive).padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(tu(3))).background(WallColors.BadgeLive).padding(horizontal = tu(6), vertical = tu(2)),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = Color(0xFF000000),
-            fontSize = 9.sp,
+            fontSize = ttu(9),
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
+            letterSpacing = ttu(1),
             maxLines = 1,
         )
     }
@@ -446,7 +495,7 @@ private fun PageRow(
         Row(
             modifier = Modifier.fillMaxSize().horizontalScroll(scrollState, enabled = false),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(tu(8)),
         ) {
             // Leading reserve: holds a static page's cards to the right of the
             // pinned marker; scrolls away (cards pass behind the curtain) on overflow.
@@ -475,12 +524,12 @@ private val CardBorder = Color(0x2EFFFFFF)
 private fun cardRow(content: @Composable () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(RoundedCornerShape(tu(5)))
             .background(CardBg)
-            .border(1.dp, CardBorder, RoundedCornerShape(5.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .border(1.dp, CardBorder, RoundedCornerShape(tu(5)))
+            .padding(horizontal = tu(8), vertical = tu(3)),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(tu(6)),
     ) { content() }
 }
 
@@ -499,13 +548,13 @@ private fun MarketCard(entry: TickerEntry) = cardRow {
     Text(
         entry.symbol,
         color = if (sample) WallColors.LabelMuted else WallColors.LabelPrimary,
-        fontSize = 12.sp,
+        fontSize = ttu(12),
         fontWeight = FontWeight.SemiBold,
     )
     Text(
         entry.display,
         color = if (sample) WallColors.LabelGhost else WallColors.LabelMuted,
-        fontSize = 12.sp,
+        fontSize = ttu(12),
         fontFamily = FontFamily.Monospace,
     )
     val (arrow, color) = when (entry.direction) {
@@ -514,14 +563,14 @@ private fun MarketCard(entry: TickerEntry) = cardRow {
         TickerEntry.Direction.FLAT -> "■" to WallColors.LabelMuted
         TickerEntry.Direction.NONE -> null to WallColors.LabelMuted
     }
-    if (arrow != null) Text(arrow, color = if (sample) color.copy(alpha = 0.5f) else color, fontSize = 11.sp)
+    if (arrow != null) Text(arrow, color = if (sample) color.copy(alpha = 0.5f) else color, fontSize = ttu(11))
     if (sample) {
         Text(
             text = "sample",
             color = WallColors.LabelGhost,
-            fontSize = 7.sp,
+            fontSize = ttu(7),
             fontStyle = FontStyle.Italic,
-            letterSpacing = 0.5.sp,
+            letterSpacing = ttu(0.5),
         )
     }
 }
@@ -532,11 +581,11 @@ private fun NewsCard(entry: TickerEntry) = cardRow {
     Text(
         text = entry.symbol.uppercase(),
         color = WallColors.BadgeLive,
-        fontSize = 9.sp,
+        fontSize = ttu(9),
         fontWeight = FontWeight.Bold,
-        letterSpacing = 1.sp,
+        letterSpacing = ttu(1),
     )
-    Text(text = entry.display, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+    Text(text = entry.display, color = WallColors.LabelMuted, fontSize = ttu(12), maxLines = 1)
     if (entry.isSample) SampleChip()
 }
 
@@ -568,9 +617,9 @@ private fun SportsEntryCard(entry: TickerEntry) {
  */
 @Composable
 private fun MatchCard(card: SportCard, isSample: Boolean) = cardRow {
-    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = ttu(12), fontWeight = FontWeight.SemiBold, maxLines = 1)
     card.lines.forEach { sets ->
-        Text(sets, color = WallColors.LabelMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
+        Text(sets, color = WallColors.LabelMuted, fontSize = ttu(12), fontFamily = FontFamily.Monospace, maxLines = 1)
     }
     if (card.status.isNotBlank()) {
         StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
@@ -585,9 +634,9 @@ private fun MatchCard(card: SportCard, isSample: Boolean) = cardRow {
  */
 @Composable
 private fun RaceCard(card: SportCard, isSample: Boolean) = cardRow {
-    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = ttu(12), fontWeight = FontWeight.SemiBold, maxLines = 1)
     card.lines.forEach { pos ->
-        Text(pos, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+        Text(pos, color = WallColors.LabelMuted, fontSize = ttu(12), maxLines = 1)
     }
     if (card.status.isNotBlank()) {
         StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
@@ -606,12 +655,12 @@ private fun FightCard(card: SportCard, isSample: Boolean) = cardRow {
     Text(
         text = card.title,
         color = WallColors.LabelPrimary,
-        fontSize = 13.sp,
+        fontSize = ttu(13),
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
     )
     card.lines.forEach { wclass ->
-        Text(text = wclass, color = WallColors.LabelMuted, fontSize = 10.sp, maxLines = 1)
+        Text(text = wclass, color = WallColors.LabelMuted, fontSize = ttu(10), maxLines = 1)
     }
     if (card.status.isNotBlank()) {
         StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
@@ -630,7 +679,7 @@ private fun LeaderboardCard(card: SportCard, isSample: Boolean) = cardRow {
     Text(
         text = card.title,
         color = WallColors.LabelPrimary,
-        fontSize = 12.sp,
+        fontSize = ttu(12),
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
     )
@@ -638,7 +687,7 @@ private fun LeaderboardCard(card: SportCard, isSample: Boolean) = cardRow {
         Text(
             text = line,
             color = WallColors.LabelMuted,
-            fontSize = 12.sp,
+            fontSize = ttu(12),
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
         )
@@ -653,9 +702,9 @@ private fun LeaderboardCard(card: SportCard, isSample: Boolean) = cardRow {
  *  fallback render until a kind gets its own bespoke composable. */
 @Composable
 private fun SportCardGeneric(card: SportCard, isSample: Boolean) = cardRow {
-    Text(card.title, color = WallColors.LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    Text(card.title, color = WallColors.LabelPrimary, fontSize = ttu(12), fontWeight = FontWeight.SemiBold, maxLines = 1)
     card.lines.forEach { line ->
-        Text(line, color = WallColors.LabelMuted, fontSize = 12.sp, maxLines = 1)
+        Text(line, color = WallColors.LabelMuted, fontSize = ttu(12), maxLines = 1)
     }
     if (card.status.isNotBlank()) {
         StatusBlock(SportsTicker.formatStatus(card.state, card.status), SportsTicker.kindOf(card.state))
@@ -686,13 +735,13 @@ private fun Matchup(game: TickerGame, kind: SportsTicker.StatusKind) {
         game.awayScore.isBlank() || game.homeScore.isBlank()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(tu(6)),
     ) {
         if (noScores) {
             Text(
                 text = "${game.away} @ ${game.home}",
                 color = teamColor,
-                fontSize = 13.sp,
+                fontSize = ttu(13),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -708,12 +757,12 @@ private fun Matchup(game: TickerGame, kind: SportsTicker.StatusKind) {
 
 @Composable
 private fun TeamScore(abbr: String, score: String, color: Color, leading: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = abbr, color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(tu(4))) {
+        Text(text = abbr, color = color, fontSize = ttu(13), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
         Text(
             text = score,
             color = if (leading) WallColors.LabelPrimary else color,
-            fontSize = 14.sp,
+            fontSize = ttu(14),
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
         )
@@ -729,9 +778,9 @@ private fun StatusBlock(text: String, kind: SportsTicker.StatusKind) {
         SportsTicker.StatusKind.UPCOMING -> Color(0xFFBFC6CC) to Color(0x14FFFFFF)
     }
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(bg).padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(tu(3))).background(bg).padding(horizontal = tu(6), vertical = tu(2)),
     ) {
-        Text(text = text, color = fg, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+        Text(text = text, color = fg, fontSize = ttu(10), fontWeight = FontWeight.Bold, letterSpacing = ttu(0.8))
     }
 }
 
@@ -758,9 +807,9 @@ private fun PageMarker(label: String, modifier: Modifier = Modifier) {
         Text(
             text = label,
             color = Color(0xFF000000),
-            fontSize = 10.sp,
+            fontSize = ttu(10),
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
+            letterSpacing = ttu(1.2),
             maxLines = 1,
         )
     }
@@ -770,9 +819,9 @@ private fun PageMarker(label: String, modifier: Modifier = Modifier) {
 @Composable
 private fun SampleChip() {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 4.dp, vertical = 1.dp),
+        modifier = Modifier.clip(RoundedCornerShape(tu(2))).background(Color(0x33FFFFFF)).padding(horizontal = tu(4), vertical = tu(1)),
     ) {
-        Text(text = "SAMPLE", color = WallColors.LabelGhost, fontSize = 8.sp, letterSpacing = 1.sp)
+        Text(text = "SAMPLE", color = WallColors.LabelGhost, fontSize = ttu(8), letterSpacing = ttu(1))
     }
 }
 
@@ -782,17 +831,17 @@ private fun SampleChip() {
 @Composable
 private fun StaleChip(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.clip(RoundedCornerShape(2.dp)).background(Color(0xE6050505)).padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = modifier.clip(RoundedCornerShape(tu(2))).background(Color(0xE6050505)).padding(horizontal = tu(6), vertical = tu(2)),
     ) {
-        Text(text = "STALE", color = WallColors.BadgeStale, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = "STALE", color = WallColors.BadgeStale, fontSize = ttu(9), letterSpacing = ttu(1.4), fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 private fun PausedChip() {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(2.dp)).background(Color(0x33FFFFFF)).padding(horizontal = 6.dp, vertical = 2.dp),
+        modifier = Modifier.clip(RoundedCornerShape(tu(2))).background(Color(0x33FFFFFF)).padding(horizontal = tu(6), vertical = tu(2)),
     ) {
-        Text(text = "PAUSED", color = WallColors.BadgeLive, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = "PAUSED", color = WallColors.BadgeLive, fontSize = ttu(9), letterSpacing = ttu(1.4), fontWeight = FontWeight.SemiBold)
     }
 }

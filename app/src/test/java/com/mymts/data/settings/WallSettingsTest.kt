@@ -24,10 +24,12 @@ class WallSettingsTest {
 
     // ============== Defaults ==============
 
-    @Test fun `WallSettings Default has Default values across all three knobs`() {
+    @Test fun `WallSettings Default puts every view tunable on step 5`() {
         val d = WallSettings.Default
-        assertEquals(FeedWidth.Default, d.feedWidth)
-        assertEquals(FeedFontScale.Default, d.feedFontScale)
+        assertEquals(WallScaleSteps.DEFAULT, d.feedWidthStep)
+        assertEquals(WallScaleSteps.DEFAULT, d.feedTextStep)
+        assertEquals(WallScaleSteps.DEFAULT, d.tickerHeightStep)
+        assertEquals(WallScaleSteps.DEFAULT, d.tickerTextStep)
         assertEquals(FeedSide.Left, d.feedSide)
     }
 
@@ -141,20 +143,22 @@ class WallSettingsTest {
 
     @Test fun `WallSettings copy preserves untouched fields`() {
         val s = WallSettings(
-            feedWidth = FeedWidth.Wide,
-            feedFontScale = FeedFontScale.Large,
+            feedWidthStep = 9,
+            feedTextStep = 8,
             feedSide = FeedSide.Right,
         )
-        val next = s.copy(feedWidth = FeedWidth.Narrow)
-        assertEquals(FeedWidth.Narrow, next.feedWidth)
-        assertEquals(FeedFontScale.Large, next.feedFontScale)
+        val next = s.copy(feedWidthStep = 2)
+        assertEquals(2, next.feedWidthStep)
+        assertEquals(8, next.feedTextStep)
         assertEquals(FeedSide.Right, next.feedSide)
     }
 
     @Test fun `WallSettings equality differentiates each field`() {
         val a = WallSettings.Default
-        assertNotEquals(a, a.copy(feedWidth = FeedWidth.Wide))
-        assertNotEquals(a, a.copy(feedFontScale = FeedFontScale.Large))
+        assertNotEquals(a, a.copy(feedWidthStep = 9))
+        assertNotEquals(a, a.copy(feedTextStep = 2))
+        assertNotEquals(a, a.copy(tickerHeightStep = 10))
+        assertNotEquals(a, a.copy(tickerTextStep = 1))
         assertNotEquals(a, a.copy(feedSide = FeedSide.Right))
     }
 
@@ -220,7 +224,7 @@ class WallSettingsTest {
         assertNotEquals(a, a.copy(gridRows = 3))
         assertNotEquals(a, a.copy(gridCols = 3))
         // copy preserves the panel-fit fields when other knobs change.
-        val next = a.copy(feedWidth = FeedWidth.Wide)
+        val next = a.copy(feedWidthStep = 9)
         assertEquals(UiScale.Default, next.uiScale)
         assertEquals(Overscan.Medium, next.overscan)
     }

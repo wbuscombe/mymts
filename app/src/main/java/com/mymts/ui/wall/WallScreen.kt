@@ -53,6 +53,7 @@ import com.mymts.data.helper.HelperClient
 import com.mymts.data.helper.Preset
 import com.mymts.data.lineup.LineupStore
 import com.mymts.data.settings.FeedSide
+import com.mymts.data.settings.WallScaleSteps
 import com.mymts.data.ticker.HelperTickerSource
 import com.mymts.ui.menu.AudioState
 import com.mymts.ui.menu.BackOutcome
@@ -530,6 +531,8 @@ fun WallScreen(
                 scrollPct = wallSettings.tickerScrollPct,
                 flipPct = wallSettings.tickerFlipPct,
                 motion = wallSettings.tickerMotion,
+                boxScale = WallScaleSteps.tickerHeightScale(wallSettings.tickerHeightStep),
+                textScale = WallScaleSteps.tickerTextScale(wallSettings.tickerTextStep),
             )
             Divider(color = Color(0x22FFFFFF), thickness = 1.dp)
             // Compose three children — the feed pane, a thin divider,
@@ -543,13 +546,13 @@ fun WallScreen(
             val feedPane = @Composable {
                 FeedPane(
                     repository = feed,
-                    modifier = Modifier.fillMaxHeight().fillMaxWidth(wallSettings.feedWidth.fraction),
+                    modifier = Modifier.fillMaxHeight().fillMaxWidth(WallScaleSteps.feedWidthFraction(wallSettings.feedWidthStep)),
                     focusedIndex = if (focus.active == WallZone.Feed) focus.feedIndex else null,
                     expandedIndex = if (focus.active == WallZone.Feed && focus.feedExpanded) {
                         focus.feedIndex
                     } else null,
                     onItemCountChanged = { feedItemCount = it },
-                    fontScale = wallSettings.feedFontScale.multiplier,
+                    fontScale = WallScaleSteps.feedTextScale(wallSettings.feedTextStep),
                     hiddenSources = wallSettings.hiddenSources,
                     hiddenLeagues = wallSettings.hiddenLeagues,
                     hiddenGenres = wallSettings.hiddenGenres,
@@ -675,8 +678,10 @@ fun WallScreen(
         if (pending is MenuState.PendingSelection.Settings) {
             SettingsOverlay(
                 settings = wallSettings,
-                onCycleFeedWidth = { lineupStore.cycleFeedWidth() },
-                onCycleFeedFontScale = { lineupStore.cycleFeedFontScale() },
+                onNudgeFeedWidth = { lineupStore.nudgeFeedWidthStep(it) },
+                onNudgeFeedText = { lineupStore.nudgeFeedTextStep(it) },
+                onNudgeTickerHeight = { lineupStore.nudgeTickerHeightStep(it) },
+                onNudgeTickerText = { lineupStore.nudgeTickerTextStep(it) },
                 onCycleFeedSide = { lineupStore.cycleFeedSide() },
                 onCycleFeedRecency = { lineupStore.cycleFeedRecency() },
                 onOpenNewsFilter = { menu.openNewsFilter() },

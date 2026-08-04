@@ -35,8 +35,15 @@ import androidx.compose.runtime.Immutable
  */
 @Immutable
 data class WallSettings(
-    val feedWidth: FeedWidth = FeedWidth.Default,
-    val feedFontScale: FeedFontScale = FeedFontScale.Default,
+    // View tunables — FOUR independent 1..10 steps (default 5), mirroring the web and
+    // helper ladders rung-for-rung so a step means the same thing on every surface
+    // (PR-026; see WallScaleSteps + ARCHITECTURE §47). These REPLACE the 3-preset
+    // FeedWidth/FeedFontScale enums, which survive only as migration inputs.
+    // Ticker height and ticker text are new on native — it had no ticker size control.
+    val feedWidthStep: Int = WallScaleSteps.DEFAULT,
+    val feedTextStep: Int = WallScaleSteps.DEFAULT,
+    val tickerHeightStep: Int = WallScaleSteps.DEFAULT,
+    val tickerTextStep: Int = WallScaleSteps.DEFAULT,
     val feedSide: FeedSide = FeedSide.Left,
     // Feed-filtering chapter (2026-06-06). `hiddenSources` is a DENYLIST
     // of source labels the operator has switched off — stored as "hide
@@ -332,11 +339,32 @@ enum class FeedSide(val displayName: String) {
     Right("Feed Right"),
 }
 
+// RETIRED (PR-026) — kept ONLY as migration inputs, never as live state. A device that
+// stored a FeedWidth/FeedFontScale ordinal maps onto the nearest rung of the new ladder
+// on first load; see LineupStore's readWallSettings.
 internal fun feedWidthFromOrdinal(ordinal: Int): FeedWidth =
     FeedWidth.values().getOrNull(ordinal) ?: FeedWidth.Default
 
 internal fun feedFontScaleFromOrdinal(ordinal: Int): FeedFontScale =
     FeedFontScale.values().getOrNull(ordinal) ?: FeedFontScale.Default
+
+/**
+ * MIGRATION (PR-026, load-time + idempotent): a stored 3-preset ordinal → the nearest
+ * rung of the new 1..10 ladder. Verified no-visible-jump — each legacy preset lands
+ * within ~5 % of the value it had:
+ *
+ *   FeedWidth   Narrow 0.22 → step 3 (23 %)   Default 0.28 → step 4 (27 %)   Wide 0.36 → step 6 (38 %)
+ *   FeedFont    Small  0.88 → step 4 (0.90×)  Default 1.00 → step 5 (1.00×)  Large 1.18 → step 6 (1.15×)
+ *
+ * Note Default lands on step 4, not step 5: native's old default pane (0.28) was
+ * narrower than web's (0.32). Mapping to the NEAREST rung preserves the operator's
+ * existing look, which matters more than landing on the nominal default.
+ */
+internal fun feedWidthStepFromLegacy(preset: FeedWidth): Int =
+    WallScaleSteps.nearestStep((preset.fraction * 100).toInt(), WallScaleSteps.FEED_WIDTH_PCT)
+
+internal fun feedTextStepFromLegacy(preset: FeedFontScale): Int =
+    WallScaleSteps.nearestStep(preset.multiplier, WallScaleSteps.FEED_TEXT)
 
 internal fun feedSideFromOrdinal(ordinal: Int): FeedSide =
     FeedSide.values().getOrNull(ordinal) ?: FeedSide.Left

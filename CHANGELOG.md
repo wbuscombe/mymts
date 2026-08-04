@@ -5,6 +5,61 @@ All notable changes to MyMTS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-08-04
+
+**The native feature `v0.5.0` was being held for.** The TV app gains the same four
+view-tunable controls the web wall got in PR-024, so a step means the same thing on every
+surface. `versionCode 500`, signed with the standing release key. See ARCHITECTURE **§47**.
+
+### Added
+- **Four 1–10 step controls on the TV: feed width, feed text, ticker height, ticker text.**
+  `WallScaleSteps` mirrors the helper's (`store.py`) and web's (`wallConfig.mjs`) ladders
+  **rung-for-rung**; `WallScaleStepsTest` pins the literals so a one-sided edit fails the
+  build rather than letting "step 7" mean two different things. Step 5 is the default on
+  every control, matching web. Feed width is the one unit conversion — the web ladder is a
+  percent, native needs a fraction for `fillMaxWidth`.
+- **Ticker size control on native at all** — it previously had none, and its ticker scaled
+  with nothing (hardcoded `height(40.dp)` and `9/11/12.sp`). Height and text are
+  independent, as on web.
+
+### Changed
+- **The 3-preset `FeedWidth`/`FeedFontScale` enums are retired** in favour of the step
+  model. They survive only as migration inputs. This keeps the native *philosophy*
+  (discrete steps suit a D-pad, and the legibility floor is asserted by rung 1 rather than
+  a slider's lower bound) while adopting the web's resolution and range.
+- **D-pad ergonomics.** The UI reuses the settings screen's existing `AdjustRow` (the ‹ · ›
+  pattern already used for Grid columns), so the interaction is one the operator knows.
+  Nudges **clamp** at the ends rather than wrapping — with ten rungs, jumping
+  widest→narrowest on one extra press would be a trap. Ten presses traverse the range, and
+  the label shows the step *and* what it resolves to (`7 · 44%`), matching `/control/`.
+- **The native ticker now scales**, via a `CompositionLocal` box/text split (`tu()`/`ttu()`)
+  — the Compose analogue of the web wall's `--tu`/`--ttu`.
+
+### Fixed
+- **The Compose clipping hazard, before it could ship.** `Modifier.height()` is a *hard*
+  constraint: text larger than the bar is clipped, and because the content is
+  centre-aligned it loses ascenders **and** descenders equally — reading as a broken font
+  rather than a sizing mistake, exactly as on the web (§44). The bar uses
+  **`heightIn(min = …)`** instead, so ticker height is a floor, not a cap.
+- `CRAWL_GAP` became a box dimension, so it is now read in composable scope and **keyed
+  into the crawl's `LaunchedEffect`** — otherwise a box-scale change would leave the
+  marquee scrolling to a stale loop period (the native twin of the web's WAAPI re-key).
+
+### Migration
+Load-time and idempotent: a stored 3-preset ordinal maps onto the **nearest** rung, and the
+new step keys win whenever present. Measured drift ≤6 % on every preset —
+Narrow→3 (23 %), Default→**4** (27 %), Wide→6 (38 %), Small→4 (0.90×), Default→5 (1.00×),
+Large→6 (1.15×). `Default` lands on step 4, not 5, because native's old default pane (0.28)
+was narrower than web's (0.32); mapping to the nearest rung preserves the operator's
+existing look. **One-way migration of live device state** (the A1 Lens 4 class from
+PR-024) — the device profile is backed up before deploying.
+
+### Verified
+Native suite **410 tests, 0 failures**, including the locked `WallSettingsRoundTripTest`;
+the panel-fit levers (fit scale / vertical stretch / overscan / position) are untouched —
+0 hits in the diff. 13 new `WallScaleStepsTest` cases cover ladder mirroring, per-step
+resolution, clamping, D-pad nudge semantics, and the enum→step migration incl. idempotency.
+
 ## [Unreleased]
 
 > **Version note (2026-07-08, amended 2026-07-13):** the post-0.4.0 helper/renderer/discord/

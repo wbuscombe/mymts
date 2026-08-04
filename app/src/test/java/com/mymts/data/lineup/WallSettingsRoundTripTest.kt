@@ -90,8 +90,10 @@ class WallSettingsRoundTripTest {
      * both booleans, and all four locked panel-fit fields.
      */
     private val tuned = WallSettings(
-        feedWidth = FeedWidth.Wide,            // default Default
-        feedFontScale = FeedFontScale.Large,   // default Default
+        feedWidthStep = 9,                     // default 5
+        feedTextStep = 2,                      // default 5
+        tickerHeightStep = 10,                 // default 5
+        tickerTextStep = 1,                    // default 5
         feedSide = FeedSide.Right,             // default Left
         hiddenSources = setOf("espn", "cbs-sports-hq"), // default empty
         hiddenGenres = setOf("Business", "Global News"), // default empty (Part E)

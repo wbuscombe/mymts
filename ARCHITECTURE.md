@@ -1474,3 +1474,32 @@ PR-024 shipped four 1–10 sliders to `/control/` and verified the server served
 Keying on **content-type, not path**, keeps the guard off everything that isn't an asset: the HLS passthrough keeps the stream router's own headers, images are untouched, and the JSON API keeps its own semantics. All four properties are pinned by tests, including a negative one asserting a non-asset content-type served from the *same* mount is **not** stamped.
 
 **Answering "which build is this browser running?"** Every asset now carries `x-mymts-build`, so `curl -I` answers it without view-source, and `/control/` shows the build + version in its footer. The two cannot disagree: with `no-store` the page can no longer be older than the helper serving it, which is what makes the helper's SHA an honest stamp for the page. A SHA baked into the asset bytes would need a build step this repo deliberately does not have (the web tree ships as authored, rsynced by the deploy).
+
+## 47. Native view-tunable parity — the same four 1–10 steps on the TV (v0.5.0, 2026-08-04)
+
+PR-024 gave the web wall four independent 1–10 controls. The native app still had two **3-preset enums** (`FeedWidth` Narrow/Default/Wide, `FeedFontScale` Small/Default/Large) and **no ticker size control at all**. PR-026 brings the TV to the same model, so a step means the same thing on every surface.
+
+**Parity of MODEL and VALUES, not of storage.** Native keeps its device-local `WallSettings` profile (SharedPreferences via `LineupStore`); it does not read the server-side wall config, and this change does not make it. What is shared is the ladder: `WallScaleSteps` mirrors `store.py`/`wallConfig.mjs` **rung-for-rung**, and `WallScaleStepsTest` pins the literals so a one-sided edit fails the build rather than letting "step 7" quietly mean two different things. Feed width is the one unit conversion: the web ladder is a percent, native needs a fraction for `fillMaxWidth`, so `feedWidthFraction` divides by 100 — same ladder, each platform's unit.
+
+**Ten discrete rungs suit a D-pad better than a slider.** That was already the native philosophy — the retired enums' own comment argued discrete steps survive D-pad cycling and let the legibility floor be asserted by the smallest preset rather than a slider's lower bound. PR-026 keeps the philosophy and adopts the web's resolution and range. The UI reuses the settings screen's existing **`AdjustRow`** (the ‹ · › pattern already used for Grid columns), so the interaction is one the operator already knows. Nudges **clamp** at the ends rather than wrapping: with ten rungs, jumping widest→narrowest on one extra press would be a trap. Ten presses traverse the range end to end, and the label shows the step *and* what it resolves to (`7 · 44%`) in the same format `/control/` uses.
+
+**Migration (load-time, idempotent).** A stored 3-preset ordinal maps onto the nearest rung; the new step keys win whenever present, so once the first save writes them the legacy branch is never taken again. Measured drift, all ≤6 %:
+
+| legacy | value | → step | resolves to |
+|---|---|---|---|
+| `FeedWidth.Narrow` | 0.22 | 3 | 23 % |
+| `FeedWidth.Default` | 0.28 | **4** | 27 % |
+| `FeedWidth.Wide` | 0.36 | 6 | 38 % |
+| `FeedFontScale.Small` | 0.88 | 4 | 0.90× |
+| `FeedFontScale.Default` | 1.00 | 5 | 1.00× |
+| `FeedFontScale.Large` | 1.18 | 6 | 1.15× |
+
+Note `Default` lands on step **4**, not 5: native's old default pane (0.28) was narrower than web's (0.32). Mapping to the *nearest* rung preserves the operator's existing look, which matters more than landing on the nominal default. This is a **one-way migration of live device state** — the same class as the A1 Lens 4 flag raised in PR-024 — so the device profile is backed up before deploying.
+
+**Ticker scaling, and the clipping hazard (B5).** The native ticker was entirely hardcoded — `Modifier.height(40.dp)`, `fontSize = 9/11/12.sp`, paddings in `.dp` — and scaled with nothing. It now carries the same **box/text split** the web wall has, expressed as a `CompositionLocal` (`LocalTickerScale`) rather than threading two floats through ~10 nested composables: `tu(n)` is the analogue of `calc(n * var(--tu))`, `ttu(n)` of `--ttu`.
+
+**The hazard is real in Compose and needs the same shape of fix.** `Modifier.height(40.dp)` is a *hard* constraint: text larger than the bar is clipped, and because the content is centre-aligned it loses ascenders **and** descenders equally — which reads as a broken font rather than a sizing mistake, exactly as it did on the web (§44). The bar therefore uses **`heightIn(min = tu(40))`** — a floor, not a cap — so oversized text grows the bar instead. Ticker height is a minimum on both platforms.
+
+One consequence worth recording: `CRAWL_GAP` became a `@Composable` accessor (it is a box dimension now), so it must be read in composable scope and captured before the crawl's `LaunchedEffect`, and it is keyed into that effect — otherwise a box-scale change would leave the marquee scrolling to a stale loop period. The web wall hit the same class of bug with its WAAPI keyframe (§44); the native crawl needed the same re-key.
+
+**Scope held:** the locked panel-fit levers (fit scale / vertical stretch / overscan / position) are untouched, and `WallSettingsRoundTripTest` still passes.

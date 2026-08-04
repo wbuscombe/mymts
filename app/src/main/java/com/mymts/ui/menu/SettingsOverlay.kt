@@ -57,6 +57,7 @@ import com.mymts.data.settings.FIT_SCALE_STEP_PCT
 import com.mymts.data.settings.FIT_STRETCH_Y_STEP_PCT
 import com.mymts.data.settings.OFFSET_STEP_DP
 import com.mymts.data.settings.TICKER_SPEED_STEP_PCT
+import com.mymts.data.settings.WallScaleSteps
 import com.mymts.data.settings.WallSettings
 
 /**
@@ -84,8 +85,10 @@ import com.mymts.data.settings.WallSettings
 @Composable
 fun SettingsOverlay(
     settings: WallSettings,
-    onCycleFeedWidth: () -> Unit,
-    onCycleFeedFontScale: () -> Unit,
+    onNudgeFeedWidth: (Int) -> Unit,
+    onNudgeFeedText: (Int) -> Unit,
+    onNudgeTickerHeight: (Int) -> Unit,
+    onNudgeTickerText: (Int) -> Unit,
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
     onOpenNewsFilter: () -> Unit,
@@ -125,8 +128,10 @@ fun SettingsOverlay(
             SettingsCard(
                 maxCardHeight = maxCardHeight,
                 settings = settings,
-                onCycleFeedWidth = onCycleFeedWidth,
-                onCycleFeedFontScale = onCycleFeedFontScale,
+                onNudgeFeedWidth = onNudgeFeedWidth,
+                onNudgeFeedText = onNudgeFeedText,
+                onNudgeTickerHeight = onNudgeTickerHeight,
+                onNudgeTickerText = onNudgeTickerText,
                 onCycleFeedSide = onCycleFeedSide,
                 onCycleFeedRecency = onCycleFeedRecency,
                 onOpenNewsFilter = onOpenNewsFilter,
@@ -156,8 +161,10 @@ fun SettingsOverlay(
 private fun SettingsCard(
     maxCardHeight: Dp,
     settings: WallSettings,
-    onCycleFeedWidth: () -> Unit,
-    onCycleFeedFontScale: () -> Unit,
+    onNudgeFeedWidth: (Int) -> Unit,
+    onNudgeFeedText: (Int) -> Unit,
+    onNudgeTickerHeight: (Int) -> Unit,
+    onNudgeTickerText: (Int) -> Unit,
     onCycleFeedSide: () -> Unit,
     onCycleFeedRecency: () -> Unit,
     onOpenNewsFilter: () -> Unit,
@@ -279,15 +286,39 @@ private fun SettingsCard(
             onLeft = { onNudgeGridCols(-1) },
             onRight = { onNudgeGridCols(1) },
         )
-        SettingRow(
-            title = "Feed width",
-            valueLabel = settings.feedWidth.displayName,
-            onCycle = onCycleFeedWidth,
+        // The four view tunables — 1..10 steps driven by the D-pad, matching /control/
+        // rung-for-rung (PR-026). AdjustRow (not SettingRow) because ten rungs must be
+        // nudged left/right and CLAMP at the ends; cycling would wrap widest→narrowest.
+        // The label shows the step AND what it resolves to, exactly like the web panel.
+        AdjustRow(
+            title = "Feed width  ‹ narrower · wider ›",
+            valueLabel = WallScaleSteps.feedWidthLabel(settings.feedWidthStep),
+            onLeft = { onNudgeFeedWidth(-1) },
+            onRight = { onNudgeFeedWidth(1) },
         )
-        SettingRow(
-            title = "Feed font",
-            valueLabel = settings.feedFontScale.displayName,
-            onCycle = onCycleFeedFontScale,
+        AdjustRow(
+            title = "Feed text  ‹ smaller · larger ›",
+            valueLabel = WallScaleSteps.scaleLabel(
+                settings.feedTextStep, WallScaleSteps.feedTextScale(settings.feedTextStep)
+            ),
+            onLeft = { onNudgeFeedText(-1) },
+            onRight = { onNudgeFeedText(1) },
+        )
+        AdjustRow(
+            title = "Ticker height  ‹ shorter · taller ›",
+            valueLabel = WallScaleSteps.scaleLabel(
+                settings.tickerHeightStep, WallScaleSteps.tickerHeightScale(settings.tickerHeightStep)
+            ),
+            onLeft = { onNudgeTickerHeight(-1) },
+            onRight = { onNudgeTickerHeight(1) },
+        )
+        AdjustRow(
+            title = "Ticker text  ‹ smaller · larger ›",
+            valueLabel = WallScaleSteps.scaleLabel(
+                settings.tickerTextStep, WallScaleSteps.tickerTextScale(settings.tickerTextStep)
+            ),
+            onLeft = { onNudgeTickerText(-1) },
+            onRight = { onNudgeTickerText(1) },
         )
         SettingRow(
             title = "Feed side",

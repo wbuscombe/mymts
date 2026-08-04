@@ -7,6 +7,7 @@ import com.mymts.data.settings.OFFSET_RANGE_DP
 import com.mymts.data.settings.Overscan
 import com.mymts.data.settings.TickerMotion
 import com.mymts.data.settings.UiScale
+import com.mymts.data.settings.WallScaleSteps
 import com.mymts.data.settings.WallSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -111,7 +112,9 @@ class LineupStoreWallSettingsResolveTest {
         )
         assertEquals(UiScale.Compact, s.uiScale)     // ordinal 0
         assertEquals(Overscan.None, s.overscan)      // ordinal 0
-        assertEquals(FeedWidth.Narrow, s.feedWidth)  // ordinal 0 — general read works
+        // getInt returns 0 for the step keys too; the resolver CLAMPS to the legal
+        // range, so 0 becomes step 1 rather than an out-of-range index.
+        assertEquals(WallScaleSteps.MIN, s.feedWidthStep)
     }
 
     @Test fun `absent-field defaults are wired correctly (overscan Medium, scale Default)`() {
@@ -127,7 +130,9 @@ class LineupStoreWallSettingsResolveTest {
         )
         assertEquals(Overscan.Medium, s.overscan)
         assertEquals(UiScale.Default, s.uiScale)
-        assertEquals(FeedWidth.Default, s.feedWidth)
+        assertEquals(WallScaleSteps.DEFAULT, s.feedWidthStep)
+        assertEquals(WallScaleSteps.DEFAULT, s.tickerHeightStep)   // new on native
+        assertEquals(WallScaleSteps.DEFAULT, s.tickerTextStep)
         assertEquals(TickerMotion.Flip, s.tickerMotion)   // absent → native default
     }
 

@@ -6,6 +6,9 @@ import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import com.mymts.data.settings.WallScaleSteps
+import com.mymts.data.settings.feedWidthStepFromLegacy
+import com.mymts.data.settings.feedTextStepFromLegacy
 import com.mymts.data.settings.FeedFontScale
 import com.mymts.data.settings.FeedSide
 import com.mymts.data.settings.clampGridDim
@@ -121,8 +124,10 @@ class LineupStore(context: Context) {
     fun updateWallSettings(settings: WallSettings) {
         _wallSettings.value = settings
         prefs.edit()
-            .putInt(KEY_FEED_WIDTH, settings.feedWidth.ordinal)
-            .putInt(KEY_FEED_FONT, settings.feedFontScale.ordinal)
+            .putInt(KEY_FEED_WIDTH_STEP, settings.feedWidthStep)
+            .putInt(KEY_FEED_TEXT_STEP, settings.feedTextStep)
+            .putInt(KEY_TICKER_HEIGHT_STEP, settings.tickerHeightStep)
+            .putInt(KEY_TICKER_TEXT_STEP, settings.tickerTextStep)
             .putInt(KEY_FEED_SIDE, settings.feedSide.ordinal)
             .putString(KEY_FEED_HIDDEN_SOURCES, encodeStringSet(settings.hiddenSources))
             .putString(KEY_FEED_HIDDEN_GENRES, encodeStringSet(settings.hiddenGenres))
@@ -268,15 +273,32 @@ class LineupStore(context: Context) {
         updateWallSettings(_wallSettings.value.copy(hiddenSources = next))
     }
 
-    fun cycleFeedWidth() {
-        val next = FeedWidth.values().let { it[(_wallSettings.value.feedWidth.ordinal + 1) % it.size] }
-        updateWallSettings(_wallSettings.value.copy(feedWidth = next))
-    }
+    // The four view tunables are NUDGED by the D-pad (±1, clamped at the ends) rather
+    // than cycled: with ten rungs, wrapping from widest to narrowest on one extra press
+    // would be a trap. Clamping means a held key simply stops. (PR-026)
+    fun nudgeFeedWidthStep(delta: Int) = updateWallSettings(
+        _wallSettings.value.copy(
+            feedWidthStep = WallScaleSteps.nudge(_wallSettings.value.feedWidthStep, delta)
+        )
+    )
 
-    fun cycleFeedFontScale() {
-        val next = FeedFontScale.values().let { it[(_wallSettings.value.feedFontScale.ordinal + 1) % it.size] }
-        updateWallSettings(_wallSettings.value.copy(feedFontScale = next))
-    }
+    fun nudgeFeedTextStep(delta: Int) = updateWallSettings(
+        _wallSettings.value.copy(
+            feedTextStep = WallScaleSteps.nudge(_wallSettings.value.feedTextStep, delta)
+        )
+    )
+
+    fun nudgeTickerHeightStep(delta: Int) = updateWallSettings(
+        _wallSettings.value.copy(
+            tickerHeightStep = WallScaleSteps.nudge(_wallSettings.value.tickerHeightStep, delta)
+        )
+    )
+
+    fun nudgeTickerTextStep(delta: Int) = updateWallSettings(
+        _wallSettings.value.copy(
+            tickerTextStep = WallScaleSteps.nudge(_wallSettings.value.tickerTextStep, delta)
+        )
+    )
 
     fun cycleFeedSide() {
         val next = FeedSide.values().let { it[(_wallSettings.value.feedSide.ordinal + 1) % it.size] }
@@ -432,8 +454,15 @@ class LineupStore(context: Context) {
         private const val KEY_OVERRIDES = "lineup_overrides"
         private const val KEY_AUDIBLE_SLOT = "audible_slot"
         private const val KEY_CAPTIONS_ON = "captions_on_slots"
+        // RETIRED (PR-026) — read-only migration inputs. Never written again; a device
+        // that has them keeps them harmlessly until SharedPreferences is cleared.
         private const val KEY_FEED_WIDTH = "wall_settings_feed_width"
         private const val KEY_FEED_FONT = "wall_settings_feed_font"
+        // The four 1..10 view-tunable steps (PR-026).
+        private const val KEY_FEED_WIDTH_STEP = "wall_settings_feed_width_step"
+        private const val KEY_FEED_TEXT_STEP = "wall_settings_feed_text_step"
+        private const val KEY_TICKER_HEIGHT_STEP = "wall_settings_ticker_height_step"
+        private const val KEY_TICKER_TEXT_STEP = "wall_settings_ticker_text_step"
         private const val KEY_FEED_SIDE = "wall_settings_feed_side"
         private const val KEY_FEED_HIDDEN_SOURCES = "wall_settings_feed_hidden_sources"
         private const val KEY_FEED_HIDDEN_GENRES = "wall_settings_feed_hidden_genres"
@@ -487,7 +516,9 @@ class LineupStore(context: Context) {
             getStringSet: (String) -> Set<String>,
             getBoolean: (String, Boolean) -> Boolean,
         ): WallSettings {
-            if (!contains(KEY_FEED_WIDTH) && !contains(KEY_FEED_FONT) &&
+            if (!contains(KEY_FEED_WIDTH_STEP) && !contains(KEY_FEED_TEXT_STEP) &&
+                !contains(KEY_TICKER_HEIGHT_STEP) && !contains(KEY_TICKER_TEXT_STEP) &&
+                !contains(KEY_FEED_WIDTH) && !contains(KEY_FEED_FONT) &&
                 !contains(KEY_FEED_SIDE) && !contains(KEY_FEED_HIDDEN_SOURCES) &&
                 !contains(KEY_FEED_HIDDEN_GENRES) &&
                 !contains(KEY_FEED_RECENCY) && !contains(KEY_HIDDEN_LEAGUES) &&
@@ -502,8 +533,31 @@ class LineupStore(context: Context) {
                 return WallSettings.Default
             }
             return WallSettings(
-                feedWidth = feedWidthFromOrdinal(getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal)),
-                feedFontScale = feedFontScaleFromOrdinal(getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal)),
+                // MIGRATION (PR-026), load-time + idempotent: the new step keys win when
+                // present; otherwise a stored 3-preset ORDINAL maps onto the nearest rung
+                // of the new ladder, so an existing device keeps the look it had. Same
+                // precedence as the helper's render→outputs migration: an explicitly
+                // present new key always beats the legacy one. Once the first save writes
+                // the step keys, the legacy branch is never taken again.
+                feedWidthStep = WallScaleSteps.clampStep(
+                    if (contains(KEY_FEED_WIDTH_STEP)) getInt(KEY_FEED_WIDTH_STEP, WallScaleSteps.DEFAULT)
+                    else feedWidthStepFromLegacy(
+                        feedWidthFromOrdinal(getInt(KEY_FEED_WIDTH, FeedWidth.Default.ordinal))
+                    )
+                ),
+                feedTextStep = WallScaleSteps.clampStep(
+                    if (contains(KEY_FEED_TEXT_STEP)) getInt(KEY_FEED_TEXT_STEP, WallScaleSteps.DEFAULT)
+                    else feedTextStepFromLegacy(
+                        feedFontScaleFromOrdinal(getInt(KEY_FEED_FONT, FeedFontScale.Default.ordinal))
+                    )
+                ),
+                // New on native — no legacy source to migrate from, so absent → default.
+                tickerHeightStep = WallScaleSteps.clampStep(
+                    getInt(KEY_TICKER_HEIGHT_STEP, WallScaleSteps.DEFAULT)
+                ),
+                tickerTextStep = WallScaleSteps.clampStep(
+                    getInt(KEY_TICKER_TEXT_STEP, WallScaleSteps.DEFAULT)
+                ),
                 feedSide = feedSideFromOrdinal(getInt(KEY_FEED_SIDE, FeedSide.Left.ordinal)),
                 hiddenSources = getStringSet(KEY_FEED_HIDDEN_SOURCES),
                 hiddenGenres = getStringSet(KEY_FEED_HIDDEN_GENRES),
