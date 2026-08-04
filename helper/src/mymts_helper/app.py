@@ -242,7 +242,13 @@ def create_app(
         web_dir = Path(cfg.web_client_dir)
         if web_dir.is_dir():
             from fastapi.staticfiles import StaticFiles
-            app.mount("/app", StaticFiles(directory=str(web_dir), html=True), name="web-client")
+            app.mount(
+                "/app",
+                NoStoreStatic(
+                    StaticFiles(directory=str(web_dir), html=True), cfg.build_sha
+                ),
+                name="web-client",
+            )
             log.info("web_client_mounted", extra={"dir": str(web_dir)})
             # The picker CONTROL surface (headless-container version): a
             # lightweight, video-free editor for the server-side wall config,
@@ -254,7 +260,9 @@ def create_app(
             if control_dir.is_dir():
                 app.mount(
                     "/control",
-                    StaticFiles(directory=str(control_dir), html=True),
+                    NoStoreStatic(
+                        StaticFiles(directory=str(control_dir), html=True), cfg.build_sha
+                    ),
                     name="web-control",
                 )
                 log.info("web_control_mounted", extra={"dir": str(control_dir)})
@@ -271,6 +279,61 @@ def create_app(
         },
     )
     return app
+
+
+# The asset content-types that must NEVER be served from a cache the operator can't
+# see. Keyed on content-type (not path) so the HLS passthrough — which carries the
+# stream router's own headers, already no-store — and every non-asset response are
+# untouched. Restores the convention the Discord-era `_NoStoreStatic` established
+# (removed with that surface in PR-018); it only ever covered `:8084`, so `/app/` and
+# `/control/` on `:8443` never had it. See ARCHITECTURE §46.
+_NO_STORE_CONTENT_TYPES = ("text/html", "text/css", "text/javascript", "application/javascript")
+
+# The header the build stamp is answerable by. `curl -I` (or devtools) on any asset
+# says which build a browser is actually holding, without needing view-source.
+BUILD_SHA_HEADER = "x-mymts-build"
+
+
+class NoStoreStatic:
+    """ASGI wrapper that stamps ``Cache-Control: no-store`` + the build SHA on the web
+    surfaces' static assets (HTML/CSS/JS).
+
+    WHY THIS EXISTS (PR-026): the mounts previously sent **no** ``Cache-Control`` at
+    all — only ``ETag``/``Last-Modified`` from Starlette's StaticFiles. With no explicit
+    freshness, a browser falls back to HEURISTIC caching (RFC 9111 §4.2.2: ~10% of the
+    document's age), and for ES modules and stylesheets it will then reuse the stored
+    copy **without revalidating** — so the ETag is never consulted and a stale panel can
+    persist indefinitely. That is exactly what happened after PR-024: the server was
+    demonstrably serving all four sliders while the operator's browser kept rendering
+    the old three-slider page.
+
+    ``no-store`` rather than ``no-cache`` because these are a handful of KB on a LAN —
+    the bandwidth is irrelevant and the failure mode it prevents (an operator staring at
+    a UI that does not match the deployed code, with no way to tell) is expensive and
+    very hard to diagnose from the server side, where everything looks correct.
+    """
+
+    def __init__(self, app: object, build_sha: str = "dev") -> None:
+        self._app = app
+        self._build_sha = build_sha
+
+    async def __call__(self, scope: dict, receive: object, send: object) -> None:
+        if scope.get("type") != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        from starlette.datastructures import MutableHeaders
+
+        async def _send(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message["headers"])
+                ct = headers.get("content-type", "")
+                if any(ct.startswith(p) for p in _NO_STORE_CONTENT_TYPES):
+                    headers["cache-control"] = "no-store"
+                    headers[BUILD_SHA_HEADER] = self._build_sha
+            await send(message)  # type: ignore[operator]
+
+        await self._app(scope, receive, _send)  # type: ignore[operator]
 
 
 def create_stream_app(stream_dir: str) -> FastAPI:

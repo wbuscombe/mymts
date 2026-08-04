@@ -84,6 +84,11 @@
       <div id="outputs" class="outputs"></div>
     </section>
 
+    <!-- Build stamp (PR-026): which build this panel is running, visible without
+         devtools. The panel's assets are served no-store, so the page can no longer
+         diverge from the helper it reports — see ARCHITECTURE §46. -->
+    <p class="footnote build-stamp">build <code id="build-sha">…</code></p>
+
     <p class="footnote">
       This is the wall's layout in a browser — but each cell is a <strong>picker</strong>,
       not a video player (no decode, runs on a phone). Changes save to the server-side

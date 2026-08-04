@@ -436,9 +436,23 @@ function wire() {
   });
 }
 
+/** Show which build this panel is running (PR-026). The panel's own assets are served
+ *  `Cache-Control: no-store`, so a browser can no longer be holding a page older than
+ *  the helper — which makes the helper's build SHA an honest answer for the page too.
+ *  Best-effort: a failed /health leaves the placeholder rather than blanking the UI. */
+async function showBuild() {
+  const el_ = el("build-sha");
+  if (!el_) return;
+  try {
+    const h = await api.health();
+    el_.textContent = `${h.build_sha ?? "?"} · v${h.version ?? "?"}`;
+  } catch { el_.textContent = "unavailable"; }
+}
+
 function main() {
   wire();
   loadAll();
+  showBuild();
   setInterval(refreshChannels, CHANNELS_POLL_MS);
   setInterval(refreshOutputsStatus, OUTPUTS_POLL_MS);
 }

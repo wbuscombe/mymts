@@ -70,3 +70,78 @@ def test_missing_web_client_dir_is_soft_noop(tmp_path: Path) -> None:
     with TestClient(create_app(_cfg(tmp_path, web_client_dir=missing), resolver=_block_all_resolver)) as c:
         assert c.get("/app/").status_code == 404
         assert c.get("/health").status_code == 200
+
+
+# --- cache headers on the web surfaces (PR-026) ---
+# The mounts previously sent NO Cache-Control at all — only ETag/Last-Modified. With
+# no explicit freshness a browser falls back to HEURISTIC caching and, for ES modules
+# and stylesheets, reuses the stored copy WITHOUT revalidating: the ETag is never
+# consulted and a stale panel persists indefinitely. That is the PR-024 symptom (the
+# server demonstrably served four sliders; the operator's browser rendered three).
+
+
+def _served_client(tmp_path: Path) -> TestClient:
+    """A helper with a realistic web tree mounted: /app + /control, HTML, CSS and an
+    ES module — the exact asset classes the staleness bug rode in on."""
+    web = tmp_path / "web"
+    (web / "js").mkdir(parents=True)
+    (web / "control").mkdir()
+    (web / "index.html").write_text("<!doctype html><title>app</title>", encoding="utf-8")
+    (web / "styles.css").write_text(":root{--u:1px}", encoding="utf-8")
+    (web / "js" / "wallConfig.mjs").write_text("export const X=1;", encoding="utf-8")
+    (web / "control" / "index.html").write_text("<!doctype html><title>control</title>", encoding="utf-8")
+    (web / "control" / "control.css").write_text(".slab{}", encoding="utf-8")
+    (web / "control" / "control.mjs").write_text("export const Y=1;", encoding="utf-8")
+    cfg = _cfg(tmp_path, web_client_dir=str(web))
+    return TestClient(create_app(cfg, resolver=_block_all_resolver))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/control/", "/control/control.css", "/control/control.mjs",
+        "/app/", "/app/styles.css", "/app/js/wallConfig.mjs",
+    ],
+)
+def test_web_assets_are_never_stored_by_a_browser(tmp_path: Path, path: str) -> None:
+    """THE class-killer: every HTML/CSS/JS asset on BOTH surfaces carries no-store, so
+    a browser can never hold a panel older than the deployed code."""
+    with _served_client(tmp_path) as c:
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-store", (
+            f"{path} served without no-store — a browser may cache it heuristically"
+        )
+
+
+@pytest.mark.parametrize("path", ["/control/", "/app/js/wallConfig.mjs"])
+def test_web_assets_carry_the_build_sha(tmp_path: Path, path: str) -> None:
+    """`curl -I` on any asset answers "which build is this?" without view-source."""
+    from mymts_helper.app import BUILD_SHA_HEADER
+
+    with _served_client(tmp_path) as c:
+        assert c.get(path).headers.get(BUILD_SHA_HEADER) == "dev", path
+
+
+def test_no_store_is_keyed_on_content_type_not_path(tmp_path: Path) -> None:
+    """The stamp keys on content-type, so a NON-asset response served from the same
+    mount is untouched — the guard must not leak onto media (the HLS passthrough keeps
+    the stream router's own headers) or anything else."""
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (web / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    cfg = _cfg(tmp_path, web_client_dir=str(web))
+    with TestClient(create_app(cfg, resolver=_block_all_resolver)) as c:
+        assert c.get("/app/").headers.get("cache-control") == "no-store"
+        png = c.get("/app/logo.png")
+        assert png.status_code == 200
+        assert png.headers.get("content-type", "").startswith("image/")
+        assert png.headers.get("cache-control") is None, "non-asset content-type stamped"
+
+
+def test_api_and_health_keep_their_own_cache_semantics(tmp_path: Path) -> None:
+    """The wrapper is mounted on the static surfaces only — the JSON API is untouched."""
+    with _served_client(tmp_path) as c:
+        assert c.get("/health").headers.get("cache-control") is None
+        assert c.get("/api/channels").headers.get("cache-control") is None

@@ -14,6 +14,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## fix(helper,web): the control panel could be served stale — no-store + build stamp (2026-08-04)
+
+PR-024 shipped four sliders to `/control/` and verified the server served all four ids.
+The operator opened the panel and saw three. **Ground truth first:** fetching `/control/`
+over the LAN returned all four ids and labels, so delivery was correct and the browser
+was holding a stale copy — a caching defect, not a deploy or build bug. See ARCHITECTURE
+**§46**.
+
+- **Root cause: the static mounts sent no `Cache-Control` at all** — only Starlette's
+  `ETag`/`Last-Modified`. With no explicit freshness a browser applies **heuristic**
+  caching (RFC 9111 §4.2.2) and, for ES modules and stylesheets, reuses the stored copy
+  **without revalidating**, so the `ETag` is never consulted. A stale panel could persist
+  indefinitely with nothing wrong server-side — which is exactly why it was invisible
+  from the helper's side.
+- **Fixed by restoring a convention the repo already had and lost.** The Discord-era
+  `_NoStoreStatic` stamped `no-store` keyed on content-type; it was removed with the
+  `:8084` surface in PR-018 and only ever covered that surface, so `/app/` and
+  `/control/` on `:8443` never had it. `NoStoreStatic` is that pattern, wrapping **both**
+  mounts — `/app/` had the identical exposure, so the class is closed rather than the
+  reported incident.
+- **Keyed on content-type, not path**, so the guard cannot leak onto anything that isn't
+  an asset: the HLS passthrough keeps the stream router's headers, images are untouched,
+  and the JSON API keeps its own semantics. Pinned by tests including a **negative** one
+  — a non-asset content-type served from the *same* mount must not be stamped.
+- **"Which build is this browser running?"** Every asset now carries `x-mymts-build`
+  (answerable by `curl -I`), and `/control/` shows build + version in its footer. With
+  `no-store` the page can no longer be older than the helper serving it, which is what
+  makes the helper's SHA an honest stamp for the page.
+- Tests: 6 new (parametrized over both surfaces × HTML/CSS/JS, the build-SHA header, the
+  content-type keying, and API/health non-interference).
+
 ## docs: renderer frame duplication measured — benign, no fix needed (2026-08-04)
 
 Investigation only — **no code changed**; `renderer/`, `helper/` and `web/` are byte-identical to
