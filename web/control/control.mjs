@@ -17,36 +17,22 @@ import {
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withCellAudio,
   withLayout, withPreset, cellCount, withCellReload, withWallReload,
-  withScaleSteps, stepValue,
+  withScaleSteps,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
   withOutputRestart,
   RENDER_RESOLUTIONS, RESOLUTION_INFO, bitrateBounds,
-  deriveRenderResolution, SCALE_STEP_MIN, SCALE_STEP_MAX,
+  deriveRenderResolution,
 } from "/app/js/wallConfig.mjs";
+// The four sizing controls are defined ONCE, shared with /app/'s WALL SETTINGS modal
+// (PR-027). Three independent implementations of the same controls is what let this
+// surface and /app/ drift apart for two PRs.
+import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter }
+  from "/app/js/scaleControls.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
 const OUTPUTS_POLL_MS = 5_000;
-// A slider commit is coalesced by this much. The sliders already write on `change`
-// (pointer/touch release, or a keyboard commit) rather than `input`, so a drag is ONE
-// PUT — but a keyboard arrow-key run, or a touch drag that emits several `change`
-// events, would otherwise be a write storm. Short enough to feel immediate against
-// the wall's 5 s config poll, long enough to swallow a held arrow key.
-const SCALE_COMMIT_DEBOUNCE_MS = 250;
 const el = (id) => document.getElementById(id);
 
-/** The four display sliders: DOM id → the config block + key it writes, and how its
- *  realised value reads. One table so the markup, the wiring, the label and the
- *  hydrate can never drift apart. */
-const SCALE_SLIDERS = [
-  { id: "feed-width", block: "feed", key: "width_scale", what: "feed width",
-    fmt: (v) => `${v}%` },
-  { id: "feed-text", block: "feed", key: "text_scale", what: "feed text",
-    fmt: (v) => `${v.toFixed(2)}×` },
-  { id: "ticker-height", block: "ticker", key: "height_scale", what: "ticker height",
-    fmt: (v) => `${v.toFixed(2)}×` },
-  { id: "ticker-text", block: "ticker", key: "text_scale", what: "ticker text",
-    fmt: (v) => `${v.toFixed(2)}×` },
-];
 
 let config = null;              // the normalized server wall config (source of truth)
 let stored = false;             // false = a server default not yet customised
@@ -166,24 +152,18 @@ function syncLayoutControls() {
   if (el("audio-hint")) {
     el("audio-hint").textContent = audioCount > 1 ? `${audioCount} cells audible — mixed` : "";
   }
-  for (const s of SCALE_SLIDERS) setSlider(s, config[s.block][s.key]);
-}
-
-/** The label for a step: the STEP is what the operator sets, the realised value is
- *  the honest hint about what it means ("7 · 44%"). */
-function scaleLabel(slider, step) {
-  return `${step} · ${slider.fmt(stepValue(slider.block, slider.key, step))}`;
+  for (const c of SCALE_CONTROLS) setSlider(c, stepOf(config, c));
 }
 
 /** Reflect a step onto its slider + label. Skips the thumb of a range the operator
  *  is CURRENTLY holding: the 60 s channel refresh re-renders this panel, and writing
  *  `value` mid-drag would snap the thumb back to the last-committed step. The label
  *  still updates, so a value that genuinely changed server-side is never hidden. */
-function setSlider(slider, step) {
-  const s = el(slider.id);
+function setSlider(control, step) {
+  const s = el(control.id);
   if (s && document.activeElement !== s) s.value = String(step);
-  const lab = el(`${slider.id}-val`);
-  if (lab) lab.textContent = scaleLabel(slider, step);
+  const lab = el(`${control.id}-val`);
+  if (lab) lab.textContent = scaleLabel(control, step);
 }
 
 // ----- the picker cells (the wall editor) -----
@@ -382,46 +362,28 @@ function wire() {
     commit(withLayout(config, Number(e.target.value), config.layout.cols), "layout"));
   el("cols").addEventListener("change", (e) =>
     commit(withLayout(config, config.layout.rows, Number(e.target.value)), "layout"));
-  // The four 1–10 display sliders. Their bounds come from the shared ladder
-  // constants, so the markup carries no copy of the range to drift.
+  // The four 1–10 display sliders, wired from the SHARED control table and the SHARED
+  // debounced committer (PR-027) — /app/'s WALL SETTINGS modal uses the identical code,
+  // so the two surfaces cannot drift apart again.
   //
-  // THRASH GUARD, two layers:
-  //   1. `input` only re-labels (no network) — dragging is free;
-  //   2. `change` (release / keyboard commit) schedules a DEBOUNCED commit, so a held
-  //      arrow key or a touch drag that emits several `change` events coalesces into
-  //      one PUT instead of a write storm. The wall then applies it as a pure style
-  //      update — no encoder respawn, no tile teardown.
-  // Pending edits are keyed PER CONTROL, so nudging two sliders inside one debounce
-  // window coalesces into a single PUT carrying BOTH — it never drops the first.
-  let scaleCommitTimer = null;
-  const pendingScales = new Map();
-  const flushScales = () => {
-    scaleCommitTimer = null;
-    if (pendingScales.size === 0) return;
-    const edits = [...pendingScales.values()];
-    pendingScales.clear();
-    commit(
-      withScaleSteps(config, edits),
-      edits.length === 1 ? edits[0].what : `${edits.length} display controls`,
-    );
-  };
-  for (const slider of SCALE_SLIDERS) {
-    const s = el(slider.id);
+  // THRASH GUARD, two layers (unchanged contract): `input` only re-labels (no network,
+  // so dragging is free); `change` queues a commit that coalesces PER CONTROL for
+  // 250 ms, so a held arrow key — or two sliders nudged in one window — becomes ONE
+  // PUT carrying both rather than a write storm or a dropped edit.
+  const committer = createScaleCommitter({
+    getConfig: () => config,
+    apply: (cfg, edits) => withScaleSteps(cfg, edits),
+    commit: (next, what) => commit(next, what),
+  });
+  for (const control of SCALE_CONTROLS) {
+    const s = el(control.id);
     if (!s) continue;
-    s.min = String(SCALE_STEP_MIN);
-    s.max = String(SCALE_STEP_MAX);
-    s.step = "1";
+    applyRangeBounds(s);
     s.addEventListener("input", () => {
-      const lab = el(`${slider.id}-val`);
-      if (lab) lab.textContent = scaleLabel(slider, Number(s.value));
+      const lab = el(`${control.id}-val`);
+      if (lab) lab.textContent = scaleLabel(control, Number(s.value));
     });
-    s.addEventListener("change", () => {
-      pendingScales.set(`${slider.block}.${slider.key}`, {
-        block: slider.block, key: slider.key, step: Number(s.value), what: slider.what,
-      });
-      if (scaleCommitTimer) clearTimeout(scaleCommitTimer);
-      scaleCommitTimer = setTimeout(flushScales, SCALE_COMMIT_DEBOUNCE_MS);
-    });
+    s.addEventListener("change", () => committer.push(control, Number(s.value)));
   }
   el("preset").addEventListener("change", (e) => {
     const p = presets.find((x) => x.id === e.target.value);

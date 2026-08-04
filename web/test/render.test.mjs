@@ -704,7 +704,11 @@ test("crawlCycle: CRAWL_DWELL_MS matches the native scroll-then-dwell (doubled t
 test("normalizeViewPrefs: defaults + clamps; tickerNews honest-default OFF", () => {
   const d = normalizeViewPrefs({});
   assert.equal(d.gridRows, 2); assert.equal(d.gridCols, 3);   // default 2×3 = 6 tiles
-  assert.equal(d.feedPct, 32); assert.equal(d.feedFont, 1);
+  // PR-027: feedPct/feedFont are RETIRED from view prefs — the wall's sizing lives in
+  // the server config on every surface now. A stored blob's copies are dropped, never
+  // migrated up, so a stale browser can't overwrite the wall's real settings.
+  assert.equal(d.feedPct, undefined);
+  assert.equal(d.feedFont, undefined);
   assert.equal(d.tickerNews, false);            // load-bearing: OFF unless explicit true
   assert.equal(d.feedRecency, "all");
   assert.equal(d.tickerScrollPct, 100);
@@ -748,7 +752,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   // The live prefs object carries denylists as Sets; serialize flattens to
   // arrays; normalize is the canonical re-read. The round-trip must be stable.
   const live = {
-    gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
+    gridRows: 3, gridCols: 1,
     feedSide: "right", captions: true,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
     tickerMotion: "flip",
@@ -761,7 +765,7 @@ test("PERSISTENCE: serialize → normalize round-trips equal (Sets ⇄ arrays)",
   // Survives a real JSON round-trip (what localStorage does).
   const reread = normalizeViewPrefs(JSON.parse(JSON.stringify(stored)));
   assert.deepEqual(reread, {
-    gridRows: 3, gridCols: 1, feedPct: 40, feedFont: 1.18,
+    gridRows: 3, gridCols: 1,
     feedSide: "right", captions: true,
     tickerNews: true, feedRecency: "six", tickerScrollPct: 160, tickerFlipPct: 80,
     tickerMotion: "flip",
@@ -1142,4 +1146,33 @@ test("view prefs: activePreset defaults to 'news' and round-trips", () => {
   assert.equal(normalizeViewPrefs({ activePreset: 42 }).activePreset, "news");   // non-string → default
   const round = serializeViewPrefs(normalizeViewPrefs({ activePreset: "space" }));
   assert.equal(round.activePreset, "space");
+});
+
+test("RETIRED (PR-027): a legacy blob's feedPct/feedFont are DROPPED, not migrated", () => {
+  // The precedence bug this closes: /app/ kept a browser-local copy of the wall's
+  // sizing, so a stale tab silently fought (and won against) the server config. The
+  // retirement must be a DROP — migrating these up would let an old browser overwrite
+  // the wall's real settings the moment someone opened it.
+  const legacy = {
+    gridRows: 2, gridCols: 2,
+    feedPct: 58, feedFont: 1.18,      // an operator's old browser-local sizing
+    tickerScrollPct: 140,             // a NON-sizing pref must still survive
+  };
+  const out = normalizeViewPrefs(legacy);
+  assert.equal(out.feedPct, undefined, "feedPct must not survive normalisation");
+  assert.equal(out.feedFont, undefined, "feedFont must not survive normalisation");
+  assert.ok(!("feedPct" in out) && !("feedFont" in out), "keys must be absent, not undefined-valued");
+  assert.equal(out.tickerScrollPct, 140, "non-sizing prefs are unaffected");
+  // And it survives the real storage round-trip without resurrecting them.
+  const stored = JSON.parse(JSON.stringify(serializeViewPrefs(out)));
+  assert.ok(!("feedPct" in stored) && !("feedFont" in stored));
+});
+
+test("the pane-geometry helpers survive as PURE geometry (the divider still needs them)", () => {
+  // clampFeedPct/feedPctFromPointer no longer describe a stored pref — the divider uses
+  // them to turn a pointer position into a percent, which it then SNAPS to a rung.
+  assert.equal(feedPctFromPointer(0, 0, 1000), FEED_PANE_MIN_PCT);
+  assert.equal(feedPctFromPointer(1000, 0, 1000), FEED_PANE_MAX_PCT);
+  assert.equal(feedPctFromPointer(400, 0, 1000), 40);
+  assert.equal(feedPctFromPointer(400, 0, 0), 32, "degenerate width → the geometry default");
 });

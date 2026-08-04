@@ -62,6 +62,52 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## fix(web): `/app/`'s settings modal joins the 1–10 model; one source of truth (2026-08-04)
+
+PR-024 gave `/control/` four 1–10 controls and PR-026 gave the TV app the same four.
+**A third surface was missed by both** — `/app/`'s own WALL SETTINGS modal, still on a
+continuous 18–58 feed-width slider, a 3-option text dropdown carrying the *native* enum
+values, and no ticker sizing at all. Native untouched; no APK, no tag. ARCHITECTURE **§48**
+(superseding §44's precedence paragraph).
+
+- **The root cause was structural.** Three surfaces implemented the same four controls
+  independently, so updating one could not fail the others — which is why `/app/` sat on
+  the old model through two PRs with a green suite throughout.
+- **One definition, consumed everywhere.** New `web/js/scaleControls.mjs` holds the
+  control table and the debounced committer; `/control/` and `/app/` both render from it,
+  and `/control/`'s local copies were deleted. A test asserts the table covers **every**
+  config scale key exactly once, so a schema addition nobody wired up fails the build.
+- **A cross-language divergence gate.** `web/test/ladderParity.test.mjs` reads the
+  helper's `store.py` **as text** (no Python needed in the web suite) and compares all four
+  ladders rung-for-rung, plus the native `WallScaleSteps.kt` literals. **Proven able to
+  fail** by deliberately breaking each of the three sides in turn and watching it go red,
+  then reverting — helper, web and native.
+- **Precedence reversed (this is the behaviour change).** The old rule — server config on
+  the rendered wall, browser-local prefs on a laptop — meant dragging `/control/` changed
+  the TV while the page in front of the operator did not move, making `/control/` look
+  broken. **The server wall config is now the sole source of truth on every surface**;
+  `applyWallViewTunables` lost its render-mode gate and is the only writer of the four
+  sizing CSS variables anywhere in the client.
+- **Retiring the local copy meant removing three writers, not one:** `applyPrefs()`, the
+  modal's own handlers, and — the easy one to miss — **the pane-divider drag**. The
+  divider now snaps to the nearest rung and writes the config, previewing *through* the
+  same single writer so the pane lands exactly where it will be saved.
+- **`feedPct`/`feedFont` are gone from the view-prefs shape.** An old `localStorage`
+  blob's copies are **dropped on normalise, deliberately not migrated up** — migrating
+  them would let a stale browser overwrite the wall's real settings on first open.
+- Tests: web **178** green (11 new for the shared module, 7 for the divergence gate, 2 for
+  the retirement). Helper, renderer, docs-hygiene, parity contracts green; native
+  round-trip green and `git diff --stat -- app/` empty.
+- **Verified in a real browser, 12/12** — four 1–10 controls present and the legacy pair
+  gone; a modal change reaching the server as a *partial* write; an external change
+  reaching `/app/` within one poll with the feed pane moving 614→230 px; a page seeded
+  with the retired `feedPct: 58` rendering the server's value instead, before and after a
+  reload; both extremes clean with the modal open; and under `?render=1` the modal closed
+  with its only entry point hidden.
+
+**Operator note:** one hard refresh is needed once, to replace the cached page from before
+PR-026's `no-store` fix. After that the retired `localStorage` values are inert.
+
 > **Version note (2026-07-08, amended 2026-07-13):** the post-0.4.0 helper/renderer/discord/
 > web-smoothness work in this section is **non-native** and remains a completed-but-unreleased
 > milestone tracked by `build_sha` — no `v0.5.0` cut for it (the semver tag drives only the native

@@ -590,7 +590,12 @@ export const PRESETS_SCHEMA_VERSION = 1;
 
 /** Default view prefs (the panel-fit levers are deliberately absent — TV-only). */
 export const DEFAULT_VIEW_PREFS = {
-  gridRows: DEFAULT_GRID_ROWS, gridCols: DEFAULT_GRID_COLS, feedPct: 32, feedFont: 1,
+  gridRows: DEFAULT_GRID_ROWS, gridCols: DEFAULT_GRID_COLS,
+  // NOTE (PR-027): feedPct/feedFont are GONE. The wall's sizing lives in the SERVER
+  // wall config on every surface now; a browser-local copy is exactly what let
+  // /app/ drift from /control/. An old stored blob's values are dropped on
+  // normalize — deliberately NOT migrated up, so a stale browser can never
+  // overwrite the wall's real settings.
   feedSide: "left",        // native Feed side parity (feed left | feed right)
   captions: false,         // wall-wide soft-caption rendering — OFF by default (native parity)
   tickerNews: false, feedRecency: "all",
@@ -653,12 +658,16 @@ export function feedSideOption(value) {
  *  size. Video pane min = 100 − FEED_PANE_MAX_PCT. Named for tunability. */
 export const FEED_PANE_MIN_PCT = 18;
 export const FEED_PANE_MAX_PCT = 58;
+/** Fallback for a non-finite input. These three are pure GEOMETRY helpers now —
+ *  the divider uses them to turn a pointer position into a percent, which it then
+ *  SNAPS to the nearest ladder rung. They no longer describe a stored pref. */
+export const FEED_PANE_DEFAULT_PCT = 32;
 
 /** Clamp a feed-pane width percent into [FEED_PANE_MIN_PCT..FEED_PANE_MAX_PCT];
  *  a non-finite value falls back to the default. Pure — unit-tested. */
 export function clampFeedPct(value, min = FEED_PANE_MIN_PCT, max = FEED_PANE_MAX_PCT) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return DEFAULT_VIEW_PREFS.feedPct;
+  if (!Number.isFinite(n)) return FEED_PANE_DEFAULT_PCT;
   return Math.min(max, Math.max(min, n));
 }
 
@@ -666,7 +675,7 @@ export function clampFeedPct(value, min = FEED_PANE_MIN_PCT, max = FEED_PANE_MAX
  *  body (its left edge [wallLeft], width [wallWidth] px), clamped so neither pane
  *  collapses. A ratio (not fixed px) so it stays sane across window sizes. Pure. */
 export function feedPctFromPointer(pointerX, wallLeft, wallWidth) {
-  if (!(Number(wallWidth) > 0)) return DEFAULT_VIEW_PREFS.feedPct;
+  if (!(Number(wallWidth) > 0)) return FEED_PANE_DEFAULT_PCT;
   const raw = ((Number(pointerX) - Number(wallLeft)) / Number(wallWidth)) * 100;
   return clampFeedPct(raw);
 }
@@ -691,8 +700,6 @@ export function normalizeViewPrefs(raw) {
   return {
     gridRows: clampGridDim(gridRows ?? DEFAULT_VIEW_PREFS.gridRows),
     gridCols: clampGridDim(gridCols ?? DEFAULT_VIEW_PREFS.gridCols),
-    feedPct: clampFeedPct(typeof p.feedPct === "number" ? p.feedPct : DEFAULT_VIEW_PREFS.feedPct),
-    feedFont: typeof p.feedFont === "number" ? p.feedFont : DEFAULT_VIEW_PREFS.feedFont,
     tickerNews: p.tickerNews === true,   // explicit opt-in only (honest default OFF)
     feedRecency: feedRecencyOption(p.feedRecency).id,   // unknown id → "all"
     feedSide: feedSideOption(p.feedSide),               // native Feed side (left | right)
@@ -717,7 +724,6 @@ export function serializeViewPrefs(prefs) {
   const p = prefs ?? {};
   return normalizeViewPrefs({
     gridRows: p.gridRows, gridCols: p.gridCols,
-    feedPct: p.feedPct, feedFont: p.feedFont,
     tickerNews: p.tickerNews, feedRecency: p.feedRecency,
     feedSide: p.feedSide,
     captions: p.captions,

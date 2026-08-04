@@ -115,10 +115,15 @@
              stay in lockstep — it is NOT a feed-width or technical limit. See
              ARCHITECTURE.md (native-vs-web). -->
         <p class="note">Up to 3 × 3 (9 tiles) — matches the TV wall's grid so both screens stay in sync.</p>
-        <label class="row"><span>Feed width</span>
-          <input type="range" id="feed-width" min="18" max="58" step="1" /></label>
-        <label class="row"><span>Feed text size</span>
-          <select id="feed-font"><option value="0.88">Small</option><option value="1" selected>Default</option><option value="1.18">Large</option></select></label>
+        <!-- The four view-tunable controls (PR-027). Built in JS from the SHARED
+             SCALE_CONTROLS table (js/scaleControls.mjs) rather than written out here,
+             so this surface can never again ship a stale range or a missing control the
+             way the old 18–58 slider and 3-option dropdown did. These write the SERVER
+             wall config — the same thing /control/ and the TV app read. -->
+        <div id="scale-controls" class="scale-controls"></div>
+        <p class="note">These are the wall's own settings — the same four controls as
+          <a href="/control/" target="_blank" rel="noopener">/control/</a> and the TV app.
+          A change here shows on every screen.</p>
         <label class="row"><span>Feed side</span>
           <select id="feed-side"><option value="left">Feed left</option><option value="right">Feed right</option></select></label>
         <label class="row"><span>Feed recency</span>

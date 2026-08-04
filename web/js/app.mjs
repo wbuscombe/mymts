@@ -20,12 +20,15 @@ import {
   feedDetailModel,
   classifyVideoFailure, videoRetryDecision,
   tickerFlipDwellMs,
-  feedPctFromPointer, clampFeedPct,
+  feedPctFromPointer,
   sectionChannels, sectionFeedSources, feedSideOption,
   presetLineup, newsLineup, PRESETS_SCHEMA_VERSION,
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
-import { normalizeConfig, scaleCssVars } from "./wallConfig.mjs";
+import { normalizeConfig, scaleCssVars, withScaleSteps, clampStep, nearestStep,
+         FEED_WIDTH_STEPS } from "./wallConfig.mjs";
+import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter }
+  from "./scaleControls.mjs";
 import { meterRequested, startFpsMeter, benchClockConfig, benchUrlFor } from "./fpsmeter.mjs";
 
 // Bench high-motion control (inert unless ?fpsmeter=1&benchclock=…): which cells
@@ -78,16 +81,11 @@ function applyPrefs() {
   const layout = gridConfig();
   document.documentElement.style.setProperty("--grid-cols", String(layout.cols));
   document.documentElement.style.setProperty("--grid-rows", String(layout.rows));
-  // PRECEDENCE (PR-024): on the RENDERED wall the server config owns the feed size —
-  // applyWallViewTunables is its only writer. Writing the browser-local prefs here too
-  // would fight it: applyPrefs runs on every layout reconcile, so a local value would
-  // overwrite the operator's /control/ setting on the very next poll (and the live-
-  // apply change-detection would then see "no change" and never put it back).
-  // On a laptop /app/ the local sliders + drag divider still own it, unchanged.
-  if (!document.body.classList.contains("render-mode")) {
-    document.documentElement.style.setProperty("--feed-pct", prefs.feedPct + "%");
-    document.documentElement.style.setProperty("--feed-font", String(prefs.feedFont));
-  }
+  // PRECEDENCE (PR-027, superseding PR-024): the SERVER WALL CONFIG is the sole writer
+  // of --feed-pct/--feed-font/--ticker-scale/--ticker-text-scale on EVERY surface —
+  // applyWallViewTunables is its only writer. applyPrefs deliberately writes NONE of
+  // them. Under PR-024 this function wrote the browser-local values here, which fought
+  // the config on every layout reconcile; the browser-local sizing prefs are retired.
   // Feed side (native Feed side): the wall is a flex row; "right" visually swaps
   // the feed pane to the right edge (CSS order) without moving it in the DOM.
   const wall = el("wall");
@@ -545,6 +543,9 @@ let cellAudio = {};
 // un-customised server default (stored=false), /app/ keeps its own standalone
 // behaviour (autofill from the news lineup) so a fresh wall is unchanged.
 let wallStored = false;
+// The last normalized server wall config — the SINGLE source of truth for the four
+// view tunables on this surface too (PR-027). `null` until the first poll answers.
+let wallConfig = null;
 let cellSubtitles = {};          // { cellIndex: true } — per-cell subtitle state (native captionsOnSlots parity)
 let lastWallEditAt = 0;          // timestamp of the last LOCAL edit (the re-hydration grace window)
 
@@ -655,9 +656,8 @@ function hydrateFromWall(config) {
   // attached and a force-reload would only tear them straight back down". A
   // transpose creates no tiles, so a concurrent reload_epoch bump must still fire.
   applyReloadSignal(config, cells.length !== before);
-  // The four view tunables — a PURE style update (no teardown). A ticker size change
-  // additionally re-renders the strip so the crawl re-measures its period.
-  if (applyWallViewTunables(config)) renderTicker();
+  // NB: the four view tunables are applied in pollWall, BEFORE this — they must reach
+  // the page even when the config is not `stored` (this function only runs when it is).
 }
 
 // The CSS vars last written by applyWallViewTunables, so a routine 5 s poll that
@@ -684,7 +684,6 @@ let lastScaleVars = null;
  *  THRASH GUARD: unchanged vars are not written at all — a poll that changed nothing
  *  performs zero style writes and zero re-layout, so the 5 s poll is free. */
 function applyWallViewTunables(config) {
-  if (!document.body.classList.contains("render-mode")) return false;
   const vars = scaleCssVars(config);
   const root = document.documentElement.style;
   let tickerChanged = false;
@@ -736,9 +735,16 @@ async function pollWall() {
   try {
     const wall = await api.wall();
     wallStored = wall.stored === true;
+    // Keep the normalized config regardless of `stored` (PR-027): the settings modal's
+    // four sizing controls read from it, and the sizing must apply even on a wall the
+    // operator hasn't customised yet (an unstored config is all-step-5, which resolves
+    // to exactly the stylesheet's own defaults — so this is a no-op there, not a jump).
+    wallConfig = normalizeConfig(wall);
+    if (applyWallViewTunables(wallConfig)) renderTicker();   // a ticker resize re-keys the crawl
+    syncScaleControls();
     if (!wallStored) return;                                   // standalone default — keep local behaviour
     if (Date.now() - lastWallEditAt < WALL_EDIT_GRACE_MS) return;   // a local edit is settling
-    hydrateFromWall(normalizeConfig(wall));
+    hydrateFromWall(wallConfig);
   } catch { /* helper unreachable — keep the last good wall */ }
 }
 
@@ -1501,6 +1507,77 @@ function rebuildLeagueToggles() {
   }
 }
 
+
+// ----- the four view-tunable controls in WALL SETTINGS (PR-027) -----
+// Built from the SHARED SCALE_CONTROLS table, so this surface renders exactly what
+// /control/ does and a fifth control appears here for free. They write the SERVER wall
+// config — the browser-local sizing prefs are retired.
+
+/** The debounced, per-control-coalescing writer. Same 250 ms contract as /control/:
+ *  `input` only re-labels (no network while dragging), `change` queues a write. */
+const scaleCommitter = createScaleCommitter({
+  getConfig: () => wallConfig ?? normalizeConfig({}),
+  apply: (cfg, edits) => withScaleSteps(cfg, edits),
+  commit: (next, what) => pushScaleConfig(next, what),
+});
+
+/** PARTIAL write: send ONLY the two scale blocks. The helper's partial-merge preserves
+ *  every omitted field, so this can never clobber the layout, cells or outputs — the
+ *  same discipline buildWallConfig() follows for the grid. */
+async function pushScaleConfig(next, what) {
+  wallConfig = next;                       // optimistic: the UI reflects it immediately
+  applyWallViewTunables(next) && renderTicker();
+  syncScaleControls();
+  lastWallEditAt = Date.now();
+  try {
+    const saved = await api.putWall({
+      schema_version: 1, feed: next.feed, ticker: next.ticker,
+    });
+    wallConfig = normalizeConfig(saved);
+    wallStored = saved.stored === true;
+    syncScaleControls();
+  } catch { /* helper blip — local state stands; the next poll reconciles */ }
+  void what;
+}
+
+/** Render the four rows once, from the shared table. */
+function buildScaleControls() {
+  const root = el("scale-controls");
+  if (!root) return;
+  root.replaceChildren();
+  for (const c of SCALE_CONTROLS) {
+    const row = node("label", "row");
+    row.appendChild(node("span", null, c.label));
+    const wrap = node("span", "range-with-val");
+    const input = document.createElement("input");
+    input.type = "range";
+    input.id = `set-${c.id}`;
+    applyRangeBounds(input);                       // 1..10 from the shared constants
+    input.setAttribute("aria-label", `${c.label}, step 1 to 10`);
+    const val = node("span", "range-val");
+    val.id = `set-${c.id}-val`;
+    input.addEventListener("input", () => { val.textContent = scaleLabel(c, Number(input.value)); });
+    input.addEventListener("change", () => scaleCommitter.push(c, Number(input.value)));
+    wrap.append(input, val);
+    row.appendChild(wrap);
+    root.appendChild(row);
+  }
+  syncScaleControls();
+}
+
+/** Reflect the current server config onto the four rows. Skips the thumb of a control
+ *  the operator is holding, so a poll landing mid-drag can't snap it back. */
+function syncScaleControls() {
+  if (!wallConfig) return;
+  for (const c of SCALE_CONTROLS) {
+    const input = el(`set-${c.id}`);
+    const step = stepOf(wallConfig, c);
+    if (input && document.activeElement !== input) input.value = String(step);
+    const val = el(`set-${c.id}-val`);
+    if (val) val.textContent = scaleLabel(c, step);
+  }
+}
+
 function closeModal(id) { el(id).classList.add("hidden"); }
 
 function wireSettings() {
@@ -1564,11 +1641,10 @@ function wireSettings() {
   onGridDim(gridRows, "gridRows");
   onGridDim(gridCols, "gridCols");
 
-  const feedWidth = el("feed-width"); feedWidth.value = String(prefs.feedPct);
-  feedWidth.addEventListener("input", () => { prefs.feedPct = clampFeedPct(Number(feedWidth.value)); applyPrefs(); savePrefs(); });
-
-  const feedFont = el("feed-font"); feedFont.value = String(prefs.feedFont);
-  feedFont.addEventListener("change", () => { prefs.feedFont = Number(feedFont.value); applyPrefs(); savePrefs(); });
+  // The four sizing controls are built from the shared table and write the SERVER
+  // config (PR-027). The old browser-local feed-width slider + 3-option font dropdown
+  // are gone, along with the prefs they wrote.
+  buildScaleControls();
 
   // Feed side (native Feed side parity — feed on the left or right). Live-applied.
   const feedSide = el("feed-side"); feedSide.value = prefs.feedSide;
@@ -1655,21 +1731,49 @@ function wireSettings() {
 }
 
 /** Draggable feed↔video divider — pointer (mouse + touch) drag resizes the split
- *  via the existing `feedPct` pref (→ `--feed-pct`); the ratio persists through
- *  savePrefs (the same localStorage prefs store, not a new key). The video grid's
+ *  by snapping to the nearest ladder rung and writing the SERVER config. The video grid's
  *  column logic (incl. the 3-column native-parity cap) is untouched — only the
  *  pane widths change. ←/→ when the divider is focused nudges it (keyboard a11y). */
 function wireDivider() {
   const divider = el("pane-divider");
   const wall = el("wall");
   if (!divider || !wall) return;
-  const setFeedPct = (pct) => {
-    prefs.feedPct = pct;
-    document.documentElement.style.setProperty("--feed-pct", pct + "%");
-    const slider = el("feed-width");
-    if (slider) slider.value = String(pct);   // keep the settings slider in sync
-  };
+  const widthControl = SCALE_CONTROLS.find((c) => c.key === "width_scale");
+
+  // PR-027: the divider was the THIRD local writer of --feed-pct (after applyPrefs and
+  // the old modal slider). It now drives the SAME server config as everything else, by
+  // snapping the dragged position to the nearest of the ten rungs. The drag stays
+  // continuous to the hand; only the committed value is discrete. A preview write to
+  // the CSS var during the drag would fight the config, so the drag previews by
+  // resolving the SNAPPED step — what you see while dragging is what gets saved.
   let dragging = false;
+  let previewStep = null;
+
+  const stepFromPointer = (clientX) => {
+    const r = wall.getBoundingClientRect();
+    // Feed on the RIGHT grows toward the right edge, so measure from that edge.
+    const x = prefs.feedSide === "right" ? (r.left + (r.right - clientX)) : clientX;
+    const pct = feedPctFromPointer(x, r.left, r.width);
+    return nearestStep(pct, FEED_WIDTH_STEPS);
+  };
+
+  const preview = (step) => {
+    const next = clampStep(step);
+    if (next === previewStep) return;                 // same rung — nothing to redraw
+    previewStep = next;
+    // Preview THROUGH the single writer: update the config optimistically and let
+    // applyWallViewTunables put it on the page. No second code path touches the CSS
+    // vars (PR-027 A5), and because the preview resolves the SNAPPED rung the pane
+    // lands exactly where it will be saved — no jump on release. No network yet; the
+    // write happens once, on pointerup.
+    if (!wallConfig || !widthControl) return;
+    wallConfig = withScaleSteps(wallConfig, [
+      { block: widthControl.block, key: widthControl.key, step: next },
+    ]);
+    applyWallViewTunables(wallConfig);
+    syncScaleControls();
+  };
+
   divider.addEventListener("pointerdown", (e) => {
     dragging = true;
     divider.classList.add("dragging");
@@ -1678,29 +1782,28 @@ function wireDivider() {
   });
   divider.addEventListener("pointermove", (e) => {
     if (!dragging) return;
-    const r = wall.getBoundingClientRect();
-    // When the feed is on the RIGHT, its width grows toward the right edge, so the
-    // pointer's distance is measured from the wall's RIGHT edge instead of the left.
-    const x = prefs.feedSide === "right" ? (r.left + (r.right - e.clientX)) : e.clientX;
-    setFeedPct(feedPctFromPointer(x, r.left, r.width));   // pure clamp in render.mjs
+    preview(stepFromPointer(e.clientX));
   });
   const endDrag = (e) => {
     if (!dragging) return;
     dragging = false;
     divider.classList.remove("dragging");
     try { divider.releasePointerCapture(e.pointerId); } catch { /* already released */ }
-    savePrefs();   // persist the chosen ratio
+    if (previewStep != null && widthControl) {
+      scaleCommitter.push(widthControl, previewStep);
+      scaleCommitter.flushNow();   // a released drag is a finished intent — write it now
+    }
+    previewStep = null;
   };
   divider.addEventListener("pointerup", endDrag);
   divider.addEventListener("pointercancel", endDrag);
   divider.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    // Move the divider in the ARROW's direction on either side: when the feed is
-    // on the right, growing it (ArrowLeft = divider left) means a LARGER feedPct,
-    // so invert the sign to mirror the (already side-aware) pointer-drag math.
-    const step = (e.key === "ArrowLeft" ? -2 : 2) * (prefs.feedSide === "right" ? -1 : 1);
-    setFeedPct(clampFeedPct(prefs.feedPct + step));
-    savePrefs();
+    if (!widthControl || !wallConfig) return;
+    // Move the divider in the ARROW's direction on either side: when the feed is on the
+    // right, growing it (ArrowLeft = divider left) means a WIDER pane, so invert.
+    const delta = (e.key === "ArrowLeft" ? -1 : 1) * (prefs.feedSide === "right" ? -1 : 1);
+    scaleCommitter.push(widthControl, stepOf(wallConfig, widthControl) + delta);
     e.preventDefault();
   });
 }

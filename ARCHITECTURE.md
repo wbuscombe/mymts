@@ -1419,6 +1419,8 @@ One thing a size change *must* also do: **re-key the ticker crawl.** The marquee
 
 **Live-apply — the grid reconcile.** `buildGrid()` (full teardown) is now reserved for the paths that genuinely mean it: first boot and applying a preset. A **layout** change goes through `reconcileGrid()`, which brings the grid to the current rows × cols in place — a count-preserving transpose touches no tile at all (the CSS grid simply reflows and every cell's render key is unchanged); a shrink tears down only the removed tiles; a grow appends only the new ones. `applyReloadSignal`'s `rebuilt` argument now means "tiles were created or destroyed" (a cell-count change) rather than "dims changed", so a concurrent `reload_epoch` bump during a transpose still fires instead of being absorbed.
 
+> **Superseded by §48 (2026-08-04).** The precedence rule stated in this paragraph — server config on the rendered wall, browser-local prefs on a laptop `/app/` — **no longer holds**. The browser-local sizing prefs are retired entirely; the server config is now the sole writer on every surface. The paragraph is kept as the record of what shipped in PR-024, and the bug it describes was real.
+
 **Precedence, made explicit.** On the **rendered wall** the server config owns the feed size and `applyWallViewTunables` is its only writer; `applyPrefs()` no longer writes `--feed-pct`/`--feed-font` there. This was a real bug found in verification: `applyPrefs()` runs on every layout reconcile, so a browser-local value overwrote the operator's `/control/` setting on the next poll — and the change-detection then saw "no change" and never put it back. On a laptop `/app/` the local sliders and drag divider still own it, unchanged. Laptop parity with the server config is **deliberately not in scope** (it needs a precedence rule between config and local prefs that this change does not attempt) — noted as a follow-up.
 
 **`reload_epoch` stays the escape hatch.** It is deliberately *not* the transport for a layout change: it is a per-tile re-attach that restarts every stream from the live edge — exactly the symptom this change removes. It remains the explicit operator "reload all tiles" action (§28, unchanged).
@@ -1503,3 +1505,24 @@ Note `Default` lands on step **4**, not 5: native's old default pane (0.28) was 
 One consequence worth recording: `CRAWL_GAP` became a `@Composable` accessor (it is a box dimension now), so it must be read in composable scope and captured before the crawl's `LaunchedEffect`, and it is keyed into that effect — otherwise a box-scale change would leave the marquee scrolling to a stale loop period. The web wall hit the same class of bug with its WAAPI keyframe (§44); the native crawl needed the same re-key.
 
 **Scope held:** the locked panel-fit levers (fit scale / vertical stretch / overscan / position) are untouched, and `WallSettingsRoundTripTest` still passes.
+
+## 48. One source of truth for wall sizing — `/app/`'s modal joins the model ([Unreleased], 2026-08-04)
+
+Supersedes the precedence paragraph of §44. PR-024 gave `/control/` four 1–10 controls; PR-026 gave the TV app the same four. **A third surface was missed by both: `/app/`'s own WALL SETTINGS modal**, which still carried a continuous 18–58 feed-width slider, a 3-option text dropdown holding the *native* enum values (0.88 / 1.00 / 1.18), and no ticker sizing at all.
+
+**The root cause was structural, not an oversight.** Three surfaces implemented the same four controls independently, so updating one could not fail the others. That is why `/app/` sat on the old model through two PRs with a green suite the whole time.
+
+**The fix is one definition, consumed everywhere.** `web/js/scaleControls.mjs` holds the control table (which DOM id addresses which config key, its label, how its value reads) and the debounced committer; `/control/` and `/app/` both render from it. Adding a fifth control is now one entry. A test asserts the table covers **every** config scale key exactly once, so a schema addition that nobody wired up fails the build.
+
+**And a cross-language divergence gate.** `web/test/ladderParity.test.mjs` reads the helper's `wall/store.py` **as text** (no Python needed in the web suite) and compares all four ladders rung-for-rung, plus the native `WallScaleSteps.kt` literals. It was proven able to fail by deliberately breaking each of the three sides in turn and watching it go red — helper, web, and native — then reverting. Native's own literals test (§47) only fails if someone runs the *Android* suite; this catches the same drift from the suite a web contributor actually runs.
+
+**The precedence decision, reversing §44.** The old rule — server config on the rendered wall, browser-local prefs on a laptop — meant an operator dragging `/control/` watched the TV change while the page in front of them did not move, making `/control/` look broken. **The server wall config is now the sole source of truth on every surface.** `applyWallViewTunables` lost its render-mode gate and is the *only* writer of the four sizing CSS variables anywhere in the client.
+
+Retiring the local copy meant removing **three** writers, not one:
+1. `applyPrefs()` — already fought the config in PR-024 and was fixed there by gating; now it writes none of them.
+2. The modal's own slider/select handlers — replaced by the shared controls.
+3. **The pane-divider drag** — the one that would have been easy to miss. It now snaps the dragged position to the nearest rung and writes the *config*; the drag previews by resolving that snapped rung **through the same single writer**, so the pane lands exactly where it will be saved and no second code path touches the variables.
+
+`feedPct`/`feedFont` are gone from the view-prefs shape entirely. An old `localStorage` blob's copies are **dropped on normalise, deliberately not migrated up** — migrating them would let a stale browser overwrite the wall's real settings the moment someone opened it. Verified in a real browser: a page seeded with `feedPct: 58, feedFont: 1.18` renders the server's step 5, and still does after a reload.
+
+**Verified in a browser, 12/12:** four 1–10 controls present and the legacy pair gone; a modal change reaching the server as a *partial* write (layout, cells and the other block untouched); an external change reaching `/app/` within one poll with the geometry actually moving (feed pane 614→230 px); the stale-`localStorage` case above; both extremes rendering clean with the modal open; and **A6** — under `?render=1` the modal is closed and its only entry point (the gear) is `display:none`, while the render page still takes its sizing from the config.
