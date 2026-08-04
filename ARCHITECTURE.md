@@ -1432,3 +1432,31 @@ One thing a size change *must* also do: **re-key the ticker crawl.** The marquee
 **Schema/merge surface.** `feed` and `ticker` join `outputs` in the per-field partial merge, so writing `feed.text_scale` alone preserves `feed.width_scale` and both ticker keys. The generalized invariant test gained a **second pass** that iterates *into* every grouped block from the stored body's own shape — a new key inside an existing block is auto-covered too, not just a new top-level key.
 
 **Verified.** Helper 601 / web 158 / renderer 41 green; native `:app:testReleaseUnitTest` green (untouched). All 14 extreme + corner combinations rendered and inspected at 1080p and 720p with no clipping/overflow/collision. Live-apply proven in a real browser: 10/10 checks — CSS followed within one poll with **zero navigations**, every stamped media element the **same node** afterwards, `currentTime` advanced rather than rewound, the crawl period re-measured, `restart_epoch`/`resolution`/`reload_epoch` unmoved (no encoder respawn), and a 2×3 → 3×2 transpose with **zero** teardown where the old path tore down all six.
+
+## 45. Renderer frame duplication — measured, benign, closed ([Unreleased], 2026-08-04)
+
+A 2026-07-30 observation — `mymts-renderer`'s ffmpeg logging *"More than 10000 frames duplicated"*, alongside ~224 % renderer CPU — was carried forward as a possible "wasted encode from a capture-framerate mismatch". It was **measured rather than assumed, and it is benign.** No code changed; this section exists so the question is not re-raised as folklore.
+
+**The premise was the wrong way round.** The renderer is *configured* to duplicate: `run.py`'s `-fps_mode cfr -r FPS` paces the output to exactly FPS "by duplicating/dropping, so the encoded motion (esp. the continuous ticker crawl) is evenly timed". Duplicate frames encode nearly for free (skip blocks). The number that would actually matter is whether the **browser** is painting below target, since no encode setting can invent frames it never drew (§31). The ~224 % CPU is also not evidence — it sits *below* the measured steady state and inside the established 232–327 % band.
+
+**Measured with the existing instrumentation** (`tools/render-bench/` + `?fpsmeter=1`; no new measurement path), warm, at 1920×1080/30:
+
+| Stage | Real wall (news) | Target |
+|---|---|---|
+| page paint, rAF | **59.0 fps** | 30 — ~2× headroom |
+| page paint, x11 unique (mpdecimate) | **29.9 fps** | 30 — at target |
+| encoder CFR out | **30.0 fps** | 30 — exact |
+| encoder unique out | **29.8 fps** | ~0.2 fps of padding |
+| per-tile presented | 29.9 / 49.7 / 59.5 fps | all ≥ 30 |
+| container CPU (no bench probes) | **260 % avg / 280 % max** | of 600 % |
+
+**The decisive datum is a bounded absence.** Zero `frames duplicated` warnings in **5 h 07 m** of continuous uptime. That is creditable only because both halves were proven: ffmpeg's stderr reaches `docker logs` (confirmed by `[x11grab @ …]` lines), and the warning fires at this build's log level with a **first threshold of 1000** — proven by forcing duplication in the same ffmpeg 5.1.9 (`-f lavfi -i testsrc2=rate=1 -r 30 -fps_mode cfr` → `More than 1000 frames duplicated`). So the absence bounds the rate: **< 1000 duplicates in 18,420 s → < 0.054 dup/s → < 0.18 % of encoded frames.**
+
+**Where "10000" came from.** The counter is **cumulative over the container's life** with escalating thresholds each logged once — not a rate. At the bounded rate, 10,000 duplicates needs **> 51 h** of uptime. The line is therefore consistent with a long-lived container behaving normally, or with a transient higher-duplication window (the §43 I/O-contention class). Both readings fit; the day's logs are gone, so this is stated as ambiguity rather than resolved by guess. Either way it is a cumulative log line, **not a standing regression**.
+
+**The high-motion control** (synthetic multi-variant 30 fps clock on two cells) held rAF at 59.0 fps and ran at the *lowest* CPU of all three runs (**215 % avg**), with a real 60 fps stream alongside presenting 57.8 fps. **Honest limit:** the locally-generated `-re` clock under-delivered (~24 fps presented at ~3 % drop) — the source-side signature the harness README documents, not a pipeline fault, but it does mean the control corroborates headroom rather than constituting a full 30 fps-per-tile stress test.
+
+**Two incidental findings, recorded so they are not rediscovered:**
+- **Per-tile `drop-%` needs its source framerate for context.** BBC News and CBS Sports HQ are **50 fps and 60 fps** sources; they present at 49.7 and 59.5 fps while showing 4.9 % and 7.1 % drop, crossing the harness's `<5 %` bar. That bar was written for tiles expected to hit 30. A tile delivering **1.7–2.0× the frames a 30 fps encode consumes** cannot cause encoder duplication — it is mildly wasted *decode*, not underproduction. (The figure is also noisy between runs: the same tile read 7.1 % and 17.0 %.) `overdrawX` stays 1.2–1.5×, so `capLevelToPlayerSize` is working.
+- **The bench's own ffmpeg probes inflate what they measure.** The same wall read 320 %/435 % CPU with probes and 260 %/280 % without — exactly the contention the harness README warns about. Quote the `BENCH_NO_PROBES=1` numbers as steady state.
+- One `[x11grab] Thread message queue blocking (current value: 129)` in 5 h 07 m — a single transient, not recurring. 129 is the deliberate memory-bounded `grab_queue_size(1920,1080)` from the §29 OOM guard; raising it would trade that guard for a marginal buffer. Left alone.

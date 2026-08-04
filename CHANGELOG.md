@@ -14,6 +14,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > crash-fix patch DID ship separately as **`v0.4.1`** (see below); it does not include the
 > unreleased helper/renderer work. `v0.5.0` is still deferred until a native *feature* lands.
 
+## docs: renderer frame duplication measured — benign, no fix needed (2026-08-04)
+
+Investigation only — **no code changed**; `renderer/`, `helper/` and `web/` are byte-identical to
+the PR-024 deploy. Recorded as ARCHITECTURE **§45** so the question is not re-raised as folklore.
+
+A 2026-07-30 observation (ffmpeg logging *"More than 10000 frames duplicated"* at ~224 % renderer
+CPU) was carried forward as a possible wasted-encode regression. Measured with the existing
+`tools/render-bench/` + `?fpsmeter=1` instrumentation, warm, on both the real wall and the
+synthetic high-motion control:
+
+- **The browser is not underproducing.** rAF **59.0 fps** against a 30 fps target (~2× headroom);
+  the X framebuffer changes at **29.9 unique fps**; the encoder emits **30.0 fps CFR** carrying
+  **29.8 unique fps** — ~0.2 fps of padding. Every tile presents at or above 30 fps.
+- **Duplication is bounded below its own first warning threshold: zero warnings in 5 h 07 m.**
+  Creditable because both halves were proven — ffmpeg's stderr reaches `docker logs`, and the
+  warning fires at this build's log level with a first threshold of **1000**, demonstrated by
+  forcing duplication in the same ffmpeg 5.1.9. So: **< 0.054 dup/s, < 0.18 % of encoded frames.**
+- **"10000" is a cumulative counter, not a rate** — escalating thresholds, each logged once. At the
+  bounded rate it needs **> 51 h** of uptime. Consistent with a long-lived container behaving
+  normally *or* a transient higher-duplication window (the §43 I/O-contention class); the day's logs
+  are gone, so the ambiguity is stated rather than resolved by guess.
+- Duplication is **deliberate**: `-fps_mode cfr -r FPS` keeps the ticker crawl evenly timed, and
+  duplicate frames encode nearly for free.
+
+Also recorded (each a thing that would otherwise be rediscovered): per-tile `drop-%` needs its
+**source framerate** for context — the 50/60 fps news tiles cross the harness's `<5 %` bar while
+still delivering 1.7–2.0× what a 30 fps encode consumes, so it is mildly wasted decode, not
+underproduction; the bench's own ffmpeg probes **inflate the CPU they measure** (320 %/435 % with
+probes vs 260 %/280 % without); and a single non-recurring `x11grab` queue-block in 5 h is the §29
+memory-bounded queue doing its job.
+
+**Verdict: benign — CFR padding, not underproduction. Item closed, no fix warranted.** The
+measurement rig (fpsmeter URL + bench-clock sidecar) was fully torn down; the renderer is back on
+`?render=1`, the stream is live, and the operator's wall config is untouched.
+
 ## chore: housekeeping sweep — version guard, hygiene scope, test aggregator (2026-08-04)
 
 Four leftovers from the PR-018 gate clearance and the PR-024 audit. No `app/` source
