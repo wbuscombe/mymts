@@ -57,6 +57,18 @@
          ladder constants at wire time (control.mjs) rather than hardcoded here, so
          there is ONE source of truth with the helper. The render RESOLUTION lives on
          the output cards; the render canvas is derived = max(enabled), read-only above. -->
+    <!-- AUTO-FIT (MYMTS-001): a MODE that sizes the feed so the video cells match the
+         videos' native aspect. Widgets (the radar) are deliberately excluded — see
+         ARCHITECTURE §49. Turning it on hands the feed-width control to the wall;
+         moving that control by hand turns it back off. -->
+    <section class="autofit-row" aria-label="Auto-fit">
+      <label class="autofit-toggle">
+        <input type="checkbox" id="autofit" />
+        <span class="autofit-label">Auto-fit feed width</span>
+      </label>
+      <span id="autofit-status" class="autofit-status"></span>
+    </section>
+
     <section class="display-row" aria-label="Display tuning">
       <label class="slab">
         <span class="slab-head">Feed width <em id="feed-width-val"></em></span>

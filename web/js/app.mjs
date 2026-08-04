@@ -26,9 +26,9 @@ import {
 } from "./render.mjs";
 import { attachStream } from "./video.mjs";
 import { normalizeConfig, scaleCssVars, withScaleSteps, clampStep, nearestStep,
-         FEED_WIDTH_STEPS } from "./wallConfig.mjs";
-import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter }
-  from "./scaleControls.mjs";
+         FEED_WIDTH_STEPS, withAutoFitWidth, withAutoFit } from "./wallConfig.mjs";
+import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter,
+         autoFitFeedWidth, AUTOFIT_GEOMETRY, autoFitStatusLine } from "./scaleControls.mjs";
 import { meterRequested, startFpsMeter, benchClockConfig, benchUrlFor } from "./fpsmeter.mjs";
 
 // Bench high-motion control (inert unless ?fpsmeter=1&benchclock=…): which cells
@@ -742,6 +742,9 @@ async function pollWall() {
     wallConfig = normalizeConfig(wall);
     if (applyWallViewTunables(wallConfig)) renderTicker();   // a ticker resize re-keys the crawl
     syncScaleControls();
+    // AUTO-FIT rides this same poll — so a grid, resolution, ticker-height or channel
+    // change re-solves with no second mechanism and no tile teardown.
+    maybeAutoFit(wallConfig);
     if (!wallStored) return;                                   // standalone default — keep local behaviour
     if (Date.now() - lastWallEditAt < WALL_EDIT_GRACE_MS) return;   // a local edit is settling
     hydrateFromWall(wallConfig);
@@ -1540,6 +1543,25 @@ async function pushScaleConfig(next, what) {
   void what;
 }
 
+/** Wire the auto-fit toggle. Unlike /control/, THIS surface can also be the one that
+ *  solves it (when it is the render page), so it shows the live result too. */
+function wireAutoFit() {
+  const box = el("set-autofit");
+  if (!box) return;
+  box.addEventListener("change", () => pushScaleConfig(
+    withAutoFit(wallConfig ?? normalizeConfig({}), box.checked), "auto-fit"));
+}
+
+/** Reflect the mode + the honest status line. */
+function syncAutoFitControl() {
+  const box = el("set-autofit");
+  if (box && document.activeElement !== box) {
+    box.checked = wallConfig?.autofit?.enabled === true;
+  }
+  const st = el("set-autofit-status");
+  if (st) st.textContent = autoFitStatusLine(wallConfig, lastAutoFitResult);
+}
+
 /** Render the four rows once, from the shared table. */
 function buildScaleControls() {
   const root = el("scale-controls");
@@ -1569,6 +1591,7 @@ function buildScaleControls() {
  *  the operator is holding, so a poll landing mid-drag can't snap it back. */
 function syncScaleControls() {
   if (!wallConfig) return;
+  syncAutoFitControl();
   for (const c of SCALE_CONTROLS) {
     const input = el(`set-${c.id}`);
     const step = stepOf(wallConfig, c);
@@ -1576,6 +1599,103 @@ function syncScaleControls() {
     const val = el(`set-${c.id}-val`);
     if (val) val.textContent = scaleLabel(c, step);
   }
+}
+
+
+// ----- AUTO-FIT (MYMTS-001) -----
+// Solve the feed width that makes each video cell come out at the videos' native
+// aspect, so nothing letterboxes.
+//
+// ONLY THE RENDER SURFACE COMPUTES IT. The answer depends on the viewport's aspect,
+// the ticker's actual height and the live videos' intrinsic sizes — and it is the
+// RENDER page's geometry that defines the TV output. A laptop /app/ has an arbitrary
+// window shape, so letting it solve would write a width that is wrong for the wall.
+// Other surfaces display the solved value; they never compute it.
+//
+// The recompute rides the EXISTING 5 s config poll (no second mechanism) and applies
+// as a pure CSS-variable write — no tile is touched, so playback never restarts.
+
+/** The last width we wrote, so an unchanged solve is not re-PUT every poll. */
+let lastAutoFitPct = null;
+/** Surfaced to the settings modal so it can tell the truth about a near-miss. */
+let lastAutoFitResult = null;
+
+/** What each cell is actually showing, for the aspect target. A <video> contributes
+ *  its intrinsic ratio; a radar <img> is reported as a widget so the shared solver can
+ *  EXCLUDE it (MYMTS-001 policy: three videos outrank one nearly-square widget). */
+function currentMedia() {
+  return cells.map((c) => {
+    const v = c.el?.querySelector("video");
+    if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+      return { kind: "video", aspect: v.videoWidth / v.videoHeight };
+    }
+    const img = c.el?.querySelector("img.tile-radar");
+    if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return { kind: "img", aspect: img.naturalWidth / img.naturalHeight };
+    }
+    return { kind: "none", aspect: null };
+  });
+}
+
+/** Measure the terms the solver needs. The ticker height is READ, not computed from
+ *  its step: PR-024 made it a `min-height`, so content can exceed the configured
+ *  floor and the two genuinely differ. */
+function measureWallGeometry() {
+  const wall = el("wall");
+  const bar = document.querySelector(".ticker-bar");
+  if (!wall || !bar) return null;
+  const ux = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--ux")) || 1;
+  return {
+    wallW: window.innerWidth,
+    wallH: window.innerHeight,
+    tickerH: bar.getBoundingClientRect().height,
+    // .feed-pane { min-width: calc(220 * var(--u)) } — the floor scales with the canvas.
+    minPx: 220 * ux,
+    // Every geometry term is calc(N * var(--u)) EXCEPT the tile's hard 1px border.
+    geom: {
+      DIVIDER: AUTOFIT_GEOMETRY.DIVIDER * ux,
+      GRID_PAD: AUTOFIT_GEOMETRY.GRID_PAD * ux,
+      GAP: AUTOFIT_GEOMETRY.GAP * ux,
+      TILE_BORDER: AUTOFIT_GEOMETRY.TILE_BORDER,
+    },
+  };
+}
+
+/** Recompute and, if it moved, persist. Called from the config poll, so it re-solves
+ *  automatically on a grid change, a resolution change, a ticker-height change, or a
+ *  channel swap — every input is re-measured each time. */
+function maybeAutoFit(config) {
+  if (!document.body.classList.contains("render-mode")) return;   // render surface only
+  if (!config?.autofit?.enabled) { lastAutoFitResult = null; return; }
+  const g = measureWallGeometry();
+  if (!g) return;
+  const layout = gridConfig();
+  const r = autoFitFeedWidth({
+    wallW: g.wallW, wallH: g.wallH, tickerH: g.tickerH,
+    rows: layout.rows, cols: layout.cols,
+    media: currentMedia(), minPx: g.minPx, geom: g.geom,
+  });
+  lastAutoFitResult = r;
+  if (!r.ok) return;                       // e.g. a grid of only widgets — nothing to fit
+  // Only write on a real move. Without this the poll would PUT every 5 s forever.
+  if (lastAutoFitPct !== null && Math.abs(r.appliedPct - lastAutoFitPct) < 0.05) return;
+  lastAutoFitPct = r.appliedPct;
+  pushAutoFitWidth(r.appliedPct);
+}
+
+/** PARTIAL write: only `autofit.feed_width_pct`. The helper's per-key merge preserves
+ *  `enabled`, the four steps, the layout and the cells. */
+async function pushAutoFitWidth(pct) {
+  const next = withAutoFitWidth(wallConfig ?? normalizeConfig({}), pct);
+  wallConfig = next;
+  if (applyWallViewTunables(next)) renderTicker();
+  syncScaleControls();
+  lastWallEditAt = Date.now();
+  try {
+    const saved = await api.putWall({ schema_version: 1, autofit: { feed_width_pct: pct } });
+    wallConfig = normalizeConfig(saved);
+  } catch { /* helper blip — the next poll re-solves and retries */ }
 }
 
 function closeModal(id) { el(id).classList.add("hidden"); }
@@ -1645,6 +1765,7 @@ function wireSettings() {
   // config (PR-027). The old browser-local feed-width slider + 3-option font dropdown
   // are gone, along with the prefs they wrote.
   buildScaleControls();
+  wireAutoFit();
 
   // Feed side (native Feed side parity — feed on the left or right). Live-applied.
   const feedSide = el("feed-side"); feedSide.value = prefs.feedSide;

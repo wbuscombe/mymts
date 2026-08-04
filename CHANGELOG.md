@@ -62,6 +62,56 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## feat(web,helper): auto-fit feed width (2026-08-04)
+
+A mode that sizes the feed panel so the **video** cells come out at the videos' native
+aspect — no letterboxing. Before it, the operator's 2×2 was spending **~23 % of every
+video cell on black** (measured: 58.19 px top and bottom). Web only; native is a tracked
+follow-up. ARCHITECTURE **§49**. First cut under the per-effort numbering scheme:
+**MYMTS-001**.
+
+- **The solver lives in the shared module** (PR-027's), not per-surface — the same
+  reason the control table does. Its geometry terms were **measured on the live render
+  surface**, and the model reproduces the real wall to **0.01 px**. Two terms are easy to
+  get wrong and are now pinned by tests: the **5 px pane divider** is a real flex item,
+  and **there is no caption strip** — the label and live dot are `position: absolute`, so
+  the only per-cell chrome is the tile's **1 px border, which applies to width as well as
+  height**. `T` is the ticker's *measured* height, not its configured floor (PR-024 made
+  it a `min-height`).
+- **The wall is height-constrained.** Only 3 of 9 grids can truly fit: 2×1 → 52.41 %,
+  3×1 → 68.18 %, 3×2 → 37.05 %. The operator's **2×2 wants 5.50 %**, ~114 px below the
+  CSS `min-width` floor — unreachable. 3×1's 68.18 % **exceeds the ladder's own maximum**
+  (64 %). Hence auto stores an **exact percentage** in a sibling `autofit` block rather
+  than a rung; `feed.width_scale` and the manual control are untouched.
+- **Widgets are excluded, deliberately.** The radar is 600 × 550 (≈1.09:1) and alone
+  wants a 41.35 % feed against the videos' 5.50 % — no single width satisfies both, so
+  three videos outrank one widget and it is allowed to box. A grid of only widgets is
+  told there is nothing to fit rather than handed a number.
+- **Only the render surface solves and writes**, because its geometry is what defines the
+  TV output; a laptop window would persist a width wrong for the wall. Recompute rides
+  the **existing 5 s poll** (no second mechanism), so grid/resolution/ticker/channel
+  changes all re-solve. Applying is a pure CSS-variable write — **no tile is touched, so
+  playback never restarts** — and a write only happens when the answer actually moves.
+- **Honest when it cannot fit.** Clamps and says so: *"closest possible — this grid wants
+  a narrower feed than the layout allows, ~16px bars remain (a taller ticker would close
+  some of it)."* Auto never touches the ticker itself — silently resizing a control the
+  operator did not ask about is worse than a near-miss.
+- **Both web surfaces get it** — `/control/` and `/app/`'s gear modal — since PR-027's
+  lesson was that a surface left behind creates exactly this confusion.
+- Moving the feed-width control by hand **exits the mode**; the solved value is kept
+  (not cleared) so re-enabling is instant and the number stays auditable.
+- **Measured end to end on a real wall**, not asserted: 2×2 **58.0 px → 16.1 px** bars
+  (a 72 % reduction, clamped to the floor at 11.458 %); 3×2 all-video solved to 37.17 %
+  **unclamped** with bars collapsing to 0.34–1.22 px. An honest limit worth recording:
+  *zero on every tile is only possible when the sources share an aspect* — the real 3×2's
+  sources spanned 1.76667–1.77778, so the mean split the difference.
+- Tests: web **199** green (21 new), helper **625** green (7 new). Native round-trip
+  green and `git diff --stat -- app/` empty.
+
+**Known parity gap:** native has no auto-fit. v0.5.0 is built but not yet installed on the
+TV and its on-device check has never run; stacking a second native change on an unverified
+one invites a confusing debug session. Recorded rather than left to drift.
+
 ## fix(web): `/app/`'s settings modal joins the 1–10 model; one source of truth (2026-08-04)
 
 PR-024 gave `/control/` four 1–10 controls and PR-026 gave the TV app the same four.

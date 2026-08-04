@@ -10,6 +10,7 @@ wall. Shape (JSON, ``wall.local.json`` in the data dir — seedless, gitignored)
       "reload_epoch": 0,                      # whole-wall force-reload counter
       "feed":   {"width_scale": 5, "text_scale": 5},    # 1..10 steps, 5 == default
       "ticker": {"height_scale": 5, "text_scale": 5},   # height and text are INDEPENDENT
+      "autofit": {"enabled": false, "feed_width_pct": null},   # a MODE + its solved width
       "outputs": {                            # the unified multi-output fan-out
         "hls":     {"enabled": true,  "resolution": "1080p", "bitrate_kbps": 8000,
                     "audio": true, "restart_epoch": 0}
@@ -149,6 +150,28 @@ SCALE_BLOCKS: dict[str, dict[str, tuple[float, ...]]] = {
     "ticker": {"height_scale": TICKER_HEIGHT_STEPS, "text_scale": TICKER_TEXT_STEPS},
 }
 
+# ---- auto-fit (MYMTS-001) ----
+# A MODE, not a rung. When enabled, the wall solves the feed width that makes each
+# video cell come out at the videos' native aspect (no letterboxing) and stores the
+# EXACT percentage here — the 1..10 ladder cannot express the answers (a 2x1 wants
+# 52.41 %, a 3x1 wants 68.18 %, which is beyond the ladder's own 64 % maximum).
+#
+# It is a SIBLING block, not extra keys inside `feed`, precisely because `feed`'s
+# validator iterates SCALE_BLOCKS and would drop anything that isn't a 1..10 step.
+# Keeping the step model pure is what lets the manual control stay untouched.
+#
+# `feed_width_pct` is DERIVED, written by the render surface (the only one whose
+# geometry defines the TV output). Null until it has been solved at least once, and
+# the client falls back to the ladder step so a wall with no renderer still renders.
+AUTOFIT_MIN_PCT = 1.0
+AUTOFIT_MAX_PCT = 95.0
+
+
+def default_autofit() -> dict[str, Any]:
+    """Auto-fit off, nothing solved yet. Built fresh each call (never shared)."""
+    return {"enabled": False, "feed_width_pct": None}
+
+
 # ---- retired (PR-024): the pre-1..10 continuous keys ----
 # Kept ONLY as migration inputs — they are never emitted. A stored file (or a stale
 # /control/ tab) carrying them maps onto the nearest step; an explicitly-present new
@@ -236,6 +259,7 @@ def default_wall_config(valid_slugs: list[str]) -> dict[str, Any]:
         "reload_epoch": 0,
         "feed": default_scale_block("feed"),
         "ticker": default_scale_block("ticker"),
+        "autofit": default_autofit(),
         "outputs": default_outputs(),
         "cells": cells,
     }
@@ -274,6 +298,23 @@ def _nearest_step(value: Any, ladder: tuple[float, ...]) -> int | None:
         return None
     idx = min(range(len(ladder)), key=lambda i: abs(ladder[i] - float(value)))
     return idx + 1
+
+
+def _validate_autofit(raw_block: Any) -> dict[str, Any]:
+    """Validate the auto-fit block: a bool + an optional exact percentage.
+
+    ``feed_width_pct`` is clamped rather than rejected (it is a solved value, and a
+    boundary result should land sane rather than 422 the whole wall), and a
+    non-numeric or absent value degrades to ``None`` — meaning "not solved yet", which
+    the client answers by falling back to the ladder step. Additive to schema v1.
+    """
+    src = raw_block if isinstance(raw_block, dict) else {}
+    pct = src.get("feed_width_pct")
+    if isinstance(pct, bool) or not isinstance(pct, int | float):
+        pct = None
+    else:
+        pct = float(min(AUTOFIT_MAX_PCT, max(AUTOFIT_MIN_PCT, pct)))
+    return {"enabled": _coerce_bool(src.get("enabled"), False), "feed_width_pct": pct}
 
 
 def _validate_scale_block(
@@ -480,6 +521,7 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
     legacy_scales = _legacy_scale_inputs(raw)
     feed = _validate_scale_block(raw.get("feed"), "feed", legacy_scales)
     ticker = _validate_scale_block(raw.get("ticker"), "ticker", legacy_scales)
+    autofit = _validate_autofit(raw.get("autofit"))
 
     return {
         "schema_version": WALL_SCHEMA_VERSION,
@@ -488,6 +530,7 @@ def validate_wall_config(raw: Any, valid_slugs: set[str]) -> dict[str, Any]:
         "reload_epoch": reload_epoch,
         "feed": feed,
         "ticker": ticker,
+        "autofit": autofit,
         "outputs": outputs,
         "cells": cells,
     }
@@ -577,7 +620,7 @@ def merge_wall_config(stored: dict[str, Any], incoming: Any) -> dict[str, Any]:
             merged["cells"] = _merge_cells(stored.get("cells") or [], value)
         elif key == "outputs" and isinstance(value, dict):
             merged["outputs"] = _merge_outputs(stored.get("outputs"), value)
-        elif key in SCALE_BLOCKS and isinstance(value, dict):
+        elif (key in SCALE_BLOCKS or key == "autofit") and isinstance(value, dict):
             merged[key] = _merge_flat_block(stored.get(key), value)
         else:
             merged[key] = copy.deepcopy(value)

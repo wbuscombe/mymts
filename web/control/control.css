@@ -181,3 +181,15 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    diagnostic furniture, not content. */
 .build-stamp { color: var(--muted); opacity: 0.7; margin-top: 4px; }
 .build-stamp code { font-family: ui-monospace, Menlo, monospace; }
+
+/* Auto-fit row (MYMTS-001) — sits directly above the four 1-10 sliders it governs. */
+.autofit-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+}
+.autofit-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.autofit-toggle input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.autofit-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.autofit-status { font-size: 12px; color: var(--muted); }
+.autofit-status.is-on { color: var(--accent); }

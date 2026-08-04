@@ -164,6 +164,7 @@ export function normalizeConfig(raw, validSlugs = null) {
     reload_epoch: reloadInt(cfg.reload_epoch),
     feed: normalizeScaleBlock(cfg.feed, "feed", legacy),
     ticker: normalizeScaleBlock(cfg.ticker, "ticker", legacy),
+    autofit: normalizeAutoFit(cfg.autofit),
     outputs,
     cells,
   };
@@ -255,14 +256,40 @@ export function legacyScaleInputs(cfg) {
   };
 }
 
+// ---- auto-fit (MYMTS-001) — mirrors the helper's AUTOFIT_MIN/MAX_PCT ----
+export const AUTOFIT_MIN_PCT = 1.0;
+export const AUTOFIT_MAX_PCT = 95.0;
+
+/** Clamp a solved width, or `null` for "not solved yet". Pure. */
+export function clampAutoFitPct(pct) {
+  const n = typeof pct === "number" ? pct
+    : (typeof pct === "string" && pct.trim() !== "" ? Number(pct) : NaN);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(AUTOFIT_MAX_PCT, Math.max(AUTOFIT_MIN_PCT, n));
+}
+
+/** Normalise the auto-fit block (lenient mirror of the server validator). Pure. */
+export function normalizeAutoFit(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return { enabled: src.enabled === true, feed_width_pct: clampAutoFitPct(src.feed_width_pct) };
+}
+
 /** THE render contract: a config → the exact CSS custom properties the wall needs.
  *  Pure (no DOM), so the per-step mapping is unit-tested against the real code path
  *  the render page uses — see applyWallViewTunables in app.mjs. */
 export function scaleCssVars(config) {
   const feed = normalizeScaleBlock(config?.feed, "feed", legacyScaleInputs(config));
   const ticker = normalizeScaleBlock(config?.ticker, "ticker", legacyScaleInputs(config));
+  const af = normalizeAutoFit(config?.autofit);
+  // AUTO-FIT (MYMTS-001) overrides the feed WIDTH only, and only once it has actually
+  // been solved. `enabled` with a null width means "on, but nothing has computed it
+  // yet" (no renderer has run) — fall back to the operator's rung rather than
+  // rendering something arbitrary. The other three controls are never touched by auto.
+  const autoWidth = af.enabled && af.feed_width_pct !== null;
   return {
-    "--feed-pct": `${stepValue("feed", "width_scale", feed.width_scale)}%`,
+    "--feed-pct": autoWidth
+      ? `${af.feed_width_pct}%`
+      : `${stepValue("feed", "width_scale", feed.width_scale)}%`,
     "--feed-font": String(stepValue("feed", "text_scale", feed.text_scale)),
     "--ticker-scale": String(stepValue("ticker", "height_scale", ticker.height_scale)),
     "--ticker-text-scale": String(stepValue("ticker", "text_scale", ticker.text_scale)),
@@ -274,7 +301,30 @@ export function scaleCssVars(config) {
 export function withScaleStep(config, block, key, step) {
   const cfg = normalizeConfig(config);
   if (!SCALE_BLOCKS[block]?.[key]) return cfg;
-  return { ...cfg, [block]: { ...cfg[block], [key]: clampStep(step) } };
+  const next = { ...cfg, [block]: { ...cfg[block], [key]: clampStep(step) } };
+  // MOVING THE FEED-WIDTH CONTROL EXITS AUTO-FIT (MYMTS-001 decision 3). Auto is a
+  // mode; a manual move is the operator taking the wheel back, and leaving auto armed
+  // would have it silently overwrite them on the next recompute. The solved width is
+  // KEPT (not cleared) so re-enabling is instant and the value stays auditable — the
+  // `enabled` flag alone decides whether it is applied.
+  if (block === "feed" && key === "width_scale" && next.autofit.enabled) {
+    next.autofit = { ...next.autofit, enabled: false };
+  }
+  return next;
+}
+
+/** Turn the auto-fit MODE on or off. Does not clear a previously solved width. Pure. */
+export function withAutoFit(config, enabled) {
+  const cfg = normalizeConfig(config);
+  return { ...cfg, autofit: { ...cfg.autofit, enabled: enabled === true } };
+}
+
+/** Record the SOLVED feed width (an exact percentage, clamped). Written by the render
+ *  surface — the only one whose geometry defines the TV output. `null` clears it back
+ *  to unsolved. Pure. */
+export function withAutoFitWidth(config, pct) {
+  const cfg = normalizeConfig(config);
+  return { ...cfg, autofit: { ...cfg.autofit, feed_width_pct: clampAutoFitPct(pct) } };
 }
 
 /** Apply SEVERAL control edits at once — the pure core of /control/'s debounced
@@ -393,6 +443,9 @@ export function withPreset(config, preset, validSlugs) {
     // unchanged (cfg is already normalized, so these are the live steps, not defaults).
     feed: { ...cfg.feed },
     ticker: { ...cfg.ticker },
+    // Auto-fit is orthogonal to a CHANNEL preset — but a preset can change the grid,
+    // which changes the answer, so the mode rides through and the wall re-solves.
+    autofit: { ...cfg.autofit },
     outputs: normalizeOutputs(cfg.outputs),
     cells,
   };

@@ -30,7 +30,7 @@ VALID = ["bbc-news", "cnn", "cbs-sports-hq", "bloomberg-tv", "fox-weather"]
 
 EXPECTED_KEYS = {
     "schema_version", "layout", "preset", "reload_epoch",
-    "feed", "ticker", "outputs", "cells",
+    "feed", "ticker", "autofit", "outputs", "cells",
 }
 
 # Every (block, key) view-tunable step, derived from the store's own table so a fifth
@@ -735,6 +735,7 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
         # given a non-default value here or the invariant silently stops covering it.
         "feed": {"width_scale": 2, "text_scale": 8},
         "ticker": {"height_scale": 9, "text_scale": 3},
+        "autofit": {"enabled": True, "feed_width_pct": 41.25},
         "outputs": {
             "hls": {"enabled": True, "resolution": "1440p", "bitrate_kbps": 9000, "audio": True},
         },
@@ -764,7 +765,7 @@ def test_partial_write_preserves_EVERY_omitted_field(tmp_path: Path):
     # analogue of the top-level invariant, and the defence PR-024 names explicitly
     # ("setting feed.text_scale alone must not clobber feed.width_scale").
     def _nested_probes(body):
-        for block in ("feed", "ticker"):
+        for block in ("feed", "ticker", "autofit"):
             for key in body[block]:
                 yield f"{block}.{key}", {block: {key: body[block][key]}}
         for name, fields in body["outputs"].items():
@@ -899,3 +900,84 @@ def test_put_rejects_unknown_channel_with_422(tmp_path: Path):
     r = _client(tmp_path).put("/api/wall", json=payload)
     assert r.status_code == 422
     assert "not a known/enabled channel" in r.json()["detail"]
+
+
+# --- auto-fit mode (MYMTS-001) ---
+# A MODE plus its SOLVED width. It is a sibling block, not extra keys inside `feed`,
+# because `feed`'s validator iterates SCALE_BLOCKS and would drop a non-step key.
+
+
+def test_autofit_defaults_to_off_and_unsolved():
+    out = store.validate_wall_config(_good_config(), set(VALID))
+    assert out["autofit"] == {"enabled": False, "feed_width_pct": None}
+
+
+def test_autofit_is_additive_so_an_old_config_is_unaffected():
+    """A stored config written before this change has no `autofit` key at all; it must
+    load as off, not error, and must not disturb the four steps."""
+    out = store.validate_wall_config(
+        _good_config(feed={"width_scale": 9}, ticker={"height_scale": 2}), set(VALID)
+    )
+    assert out["autofit"]["enabled"] is False
+    assert out["feed"]["width_scale"] == 9 and out["ticker"]["height_scale"] == 2
+
+
+@pytest.mark.parametrize(
+    "given,expected",
+    [(52.41, 52.41), (0.0, store.AUTOFIT_MIN_PCT), (999, store.AUTOFIT_MAX_PCT),
+     (-10, store.AUTOFIT_MIN_PCT)],
+)
+def test_autofit_width_is_clamped_not_rejected(given, expected):
+    """A solved value should land sane at a boundary rather than 422 the whole wall —
+    the same discipline the continuous knobs had before the ladder replaced them."""
+    out = store.validate_wall_config(
+        _good_config(autofit={"enabled": True, "feed_width_pct": given}), set(VALID)
+    )
+    assert out["autofit"]["feed_width_pct"] == expected
+
+
+@pytest.mark.parametrize("bad", ["wide", True, [1], {"pct": 5}, None])
+def test_autofit_width_degrades_to_unsolved_on_junk(bad):
+    """`None` means 'not solved yet', which the client answers by falling back to the
+    ladder step — so a wall with no renderer still renders."""
+    out = store.validate_wall_config(
+        _good_config(autofit={"enabled": True, "feed_width_pct": bad}), set(VALID)
+    )
+    assert out["autofit"]["feed_width_pct"] is None
+    assert out["autofit"]["enabled"] is True
+
+
+def test_enabling_autofit_does_not_clobber_the_solved_width_or_the_steps():
+    """PARTIAL-MERGE: toggling the mode from /control/ sends only `enabled`."""
+    stored = store.validate_wall_config(
+        _good_config(feed={"width_scale": 2, "text_scale": 8},
+                     autofit={"enabled": True, "feed_width_pct": 37.05}),
+        set(VALID),
+    )
+    merged = store.validate_wall_config(
+        store.merge_wall_config(stored, {"autofit": {"enabled": False}}), set(VALID)
+    )
+    assert merged["autofit"] == {"enabled": False, "feed_width_pct": 37.05}
+    assert merged["feed"] == {"width_scale": 2, "text_scale": 8}
+
+
+def test_writing_the_solved_width_does_not_clobber_the_mode_flag():
+    """...and the render surface writing the solved width sends only that."""
+    stored = store.validate_wall_config(
+        _good_config(autofit={"enabled": True, "feed_width_pct": 12.0}), set(VALID)
+    )
+    merged = store.validate_wall_config(
+        store.merge_wall_config(stored, {"autofit": {"feed_width_pct": 52.41}}), set(VALID)
+    )
+    assert merged["autofit"] == {"enabled": True, "feed_width_pct": 52.41}
+
+
+def test_autofit_and_the_manual_ladder_coexist_untouched():
+    """The manual 1..10 model is deliberately NOT changed by this feature — auto stores
+    an exact percentage alongside, so exiting auto returns to the operator's rung."""
+    out = store.validate_wall_config(
+        _good_config(feed={"width_scale": 4}, autofit={"enabled": True, "feed_width_pct": 5.5}),
+        set(VALID),
+    )
+    assert out["feed"]["width_scale"] == 4          # the rung survives auto being on
+    assert out["autofit"]["feed_width_pct"] == 5.5

@@ -1526,3 +1526,58 @@ Retiring the local copy meant removing **three** writers, not one:
 `feedPct`/`feedFont` are gone from the view-prefs shape entirely. An old `localStorage` blob's copies are **dropped on normalise, deliberately not migrated up** — migrating them would let a stale browser overwrite the wall's real settings the moment someone opened it. Verified in a real browser: a page seeded with `feedPct: 58, feedFont: 1.18` renders the server's step 5, and still does after a reload.
 
 **Verified in a browser, 12/12:** four 1–10 controls present and the legacy pair gone; a modal change reaching the server as a *partial* write (layout, cells and the other block untouched); an external change reaching `/app/` within one poll with the geometry actually moving (feed pane 614→230 px); the stale-`localStorage` case above; both extremes rendering clean with the modal open; and **A6** — under `?render=1` the modal is closed and its only entry point (the gear) is `display:none`, while the render page still takes its sizing from the config.
+
+## 49. Auto-fit feed width — the wall's own geometry, solved ([Unreleased], 2026-08-04)
+
+A mode that sizes the feed panel so the **video** cells come out at the videos' native aspect, leaving no letterboxing. Before it, the operator's 2×2 was spending **~23 % of every video cell on black** (measured: 58.19 px top and bottom). Web only this pass — native parity is a tracked follow-up (see the end).
+
+### The geometry model, and the terms that are easy to get wrong
+
+Derived by measuring the live render surface at 1920 × 1080; the model reproduces the real wall to **0.01 px**. Recorded here so it never has to be re-derived:
+
+```
+grid_h  = (H - T) - 2*GRID_PAD          T = the ticker's ACTUALLY OCCUPIED height
+cell_h  = (grid_h - (R-1)*GAP) / R
+video_h = cell_h - 2*TILE_BORDER
+video_w = A * video_h                   A = mean native aspect of the VIDEO cells
+cell_w  = video_w + 2*TILE_BORDER
+grid_w  = C*cell_w + (C-1)*GAP
+F       = W - DIVIDER - (grid_w + 2*GRID_PAD)
+```
+
+| term | value | source |
+|---|---|---|
+| `DIVIDER` | **5** | `.pane-divider { flex: 0 0 calc(5 * var(--u)) }` — a real flex item between feed and grid, and the term most likely to be forgotten |
+| `GRID_PAD` | **8, each side** | `.grid-pane { padding: var(--gap) }` → 16 px per axis |
+| `GAP` | **8** | `.video-grid { gap: var(--gap) }` — column and row gaps are equal |
+| `TILE_BORDER` | **1, each side** | `.tile { border: 1px }` — and it applies to **width as well as height** |
+
+**There is no caption strip.** The channel label and live dot are `position: absolute` and consume **zero** layout; the only per-cell chrome is that 1 px border. `T` must be **read from the DOM**, not computed from the ticker's step: PR-024 made it a `min-height`, so content can exceed the configured floor.
+
+Every term is `calc(N * var(--u))` and so scales with the canvas — **except** `TILE_BORDER`, a hard `1px`. At 1080p `--ux` is 1 and they coincide; at 4K the border does not double, a sub-0.1 % non-linearity that is noted rather than modelled.
+
+### The wall is height-constrained
+
+Only **3 of 9 grids** can reach a true fit at all: **2×1 → 52.41 %**, **3×1 → 68.18 %**, **3×2 → 37.05 %**. Tall-and-narrow fits; wide never does, because each extra column multiplies the width demand against a fixed height budget. The operator's **2×2 wants 5.50 %**, which is ~114 px below `.feed-pane`'s CSS `min-width` floor — **unreachable**. And 3×1's 68.18 % **exceeds the 1–10 ladder's own maximum** (step 10 = 64 %). Those two facts together are why auto stores an **exact percentage** rather than a rung, in a sibling `autofit` block — the ladder cannot express the answers, and keeping `feed.width_scale` pure is what lets the manual control stay exactly as it was.
+
+### Policy: widgets are excluded
+
+The weather-radar pseudo-channel is **600 × 550 (≈1.09:1)**, nearly square. Solved on its own it wants a **41.35 %** feed where the videos want 5.50 % — so **no single width satisfies both**. Auto-fit therefore targets the **mean aspect of the video cells only** and lets widgets box. Three videos outrank one widget. A grid with *no* video cells has nothing to fit and is told so rather than handed a meaningless number.
+
+A related honest limit: **"zero bars on every tile" is only achievable when the sources share an aspect.** Measured on a real 3×2, the sources were 1.77778 / 1.76667 / 1.77778, so the mean split the difference — 0.34 px on the 16:9 pair and 1.22 px the *other* way on the odd one. Uniform-aspect sources reach exactly zero.
+
+### Where it computes, and why only there
+
+**Only the render surface (`?render=1`) solves and writes.** The answer depends on the viewport's aspect, the ticker's measured height and the live videos' intrinsic sizes — and it is the render page's geometry that defines the TV output. A laptop `/app/` has an arbitrary window shape, so letting it solve would persist a width that is wrong for the wall. Other surfaces display the solved value and toggle the mode; they never compute it. If no renderer has ever run, `feed_width_pct` stays `null` and the client **falls back to the operator's rung**, so a wall without a renderer still renders.
+
+Recompute rides the **existing 5 s config poll** — no second mechanism — so a grid change, resolution change, ticker-height change or channel swap all re-solve because every input is re-measured each time. Applying is a pure CSS-variable write: **no tile is touched, so playback never restarts.** A write only happens when the answer actually moves (>0.05 pp), or the poll would PUT every five seconds forever.
+
+### Honesty when it cannot fit
+
+Clamped to the floor, and **said so**: the surfaces show `on — feed at 11.46 % · closest possible — this grid wants a narrower feed than the layout allows, ~16px bars remain (a taller ticker would close some of it)`. Measured end to end on a 2×2: **58.0 px → 16.1 px**, a 72 % reduction, with the config honestly recording `11.458 %`. Auto-fit deliberately **never touches the ticker** — a taller ticker would close the last few pixels, but silently resizing a control the operator did not ask about is worse than a near-miss, so it is offered as a suggestion instead.
+
+**Exiting:** moving the feed-width control by hand clears the mode (a manual move is the operator taking the wheel back, and leaving auto armed would have it overwrite them on the next recompute). The solved value is **kept, not cleared**, so re-enabling is instant and the number stays auditable — `enabled` alone decides whether it is applied.
+
+### Known parity gap
+
+**Native does not have auto-fit.** v0.5.0 (PR-026) is built but not yet installed on the TV and its on-device extreme-value check has never run; stacking a second native change on an unverified one invites a confusing debug session. Native gets this once v0.5.0 is confirmed on the box. Recorded here rather than left to drift — a missed surface is exactly what PR-027 had to clean up.

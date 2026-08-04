@@ -17,7 +17,7 @@ import {
 import {
   normalizeConfig, withCellChannel, withCellSubtitles, withCellAudio,
   withLayout, withPreset, cellCount, withCellReload, withWallReload,
-  withScaleSteps,
+  withScaleSteps, withAutoFit,
   withOutputEnabled, withOutputResolution, withOutputBitrate, withOutputAudio,
   withOutputRestart,
   RENDER_RESOLUTIONS, RESOLUTION_INFO, bitrateBounds,
@@ -26,7 +26,8 @@ import {
 // The four sizing controls are defined ONCE, shared with /app/'s WALL SETTINGS modal
 // (PR-027). Three independent implementations of the same controls is what let this
 // surface and /app/ drift apart for two PRs.
-import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter }
+import { SCALE_CONTROLS, scaleLabel, stepOf, applyRangeBounds, createScaleCommitter,
+         autoFitStatusLine }
   from "/app/js/scaleControls.mjs";
 
 const CHANNELS_POLL_MS = 60_000;
@@ -153,6 +154,25 @@ function syncLayoutControls() {
     el("audio-hint").textContent = audioCount > 1 ? `${audioCount} cells audible — mixed` : "";
   }
   for (const c of SCALE_CONTROLS) setSlider(c, stepOf(config, c));
+  syncAutoFit();
+}
+
+/** Reflect the auto-fit mode. /control/ cannot MEASURE the wall (it has no wall DOM),
+ *  so it only toggles the mode and reports the width the render surface solved. */
+function syncAutoFit() {
+  const box = el("autofit");
+  if (box && document.activeElement !== box) box.checked = config.autofit.enabled === true;
+  const st = el("autofit-status");
+  if (st) {
+    st.textContent = autoFitStatusLine(config, null);
+    st.classList.toggle("is-on", config.autofit.enabled === true);
+  }
+  // While auto owns the width, the manual width slider is still live — moving it is
+  // how you exit the mode — but say so rather than leaving it looking inert.
+  const w = el("feed-width");
+  if (w) w.title = config.autofit.enabled
+    ? "Auto-fit is on — moving this returns to manual control"
+    : "";
 }
 
 /** Reflect a step onto its slider + label. Skips the thumb of a range the operator
@@ -385,6 +405,9 @@ function wire() {
     });
     s.addEventListener("change", () => committer.push(control, Number(s.value)));
   }
+  const af = el("autofit");
+  if (af) af.addEventListener("change", () => commit(withAutoFit(config, af.checked), "auto-fit"));
+
   el("preset").addEventListener("change", (e) => {
     const p = presets.find((x) => x.id === e.target.value);
     if (!p) return;

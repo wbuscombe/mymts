@@ -120,6 +120,11 @@
              so this surface can never again ship a stale range or a missing control the
              way the old 18–58 slider and 3-option dropdown did. These write the SERVER
              wall config — the same thing /control/ and the TV app read. -->
+        <!-- AUTO-FIT (MYMTS-001) — the same control /control/ carries. PR-027's whole
+             lesson was that a surface left behind creates exactly this confusion. -->
+        <label class="row"><span>Auto-fit feed width</span>
+          <input type="checkbox" id="set-autofit" /></label>
+        <p class="note" id="set-autofit-status"></p>
         <div id="scale-controls" class="scale-controls"></div>
         <p class="note">These are the wall's own settings — the same four controls as
           <a href="/control/" target="_blank" rel="noopener">/control/</a> and the TV app.
