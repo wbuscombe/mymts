@@ -84,8 +84,8 @@ to sign with `signtool`; otherwise unsigned (SmartScreen caveat).
 This started as a proof-of-concept to de-risk the approach. Validated:
 
 - **It works.** Cold start ≈ 9 s to a healthy server (first run includes DB
-  seeding + the heavy frozen import); the wall serves at `/app/`, the ~37 seed
-  channels load, the DB lands in the user-data dir, clean shutdown.
+  seeding + the heavy frozen import); the wall serves at `/app/`, the seed
+  channels load (56 at the time of writing), the DB lands in the user-data dir, clean shutdown.
 - **Bundle size ≈ 53 MB** (`onedir`). yt-dlp (~12 MB of extractors) is the
   dominant contributor, then the Python runtime + `libcrypto`/`pydantic_core`.
 - **yt-dlp survives freezing.** The YouTube channels resolve from inside the
@@ -102,5 +102,5 @@ This started as a proof-of-concept to de-risk the approach. Validated:
 - **Channel geo:** the default lineup was sourced from a US vantage; some streams
   may not resolve outside that region. The lineup is the helper's seed.
 - **yt-dlp staleness:** a frozen yt-dlp can't self-update, so YouTube channels
-  rot as YouTube changes extraction until a newer build ships. The ~30
+  rot as YouTube changes extraction until a newer build ships. The 23
   direct-HLS channels are unaffected. (A self-update path addresses this.)
