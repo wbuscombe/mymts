@@ -72,10 +72,28 @@
     "source_url": "https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_5000.m3u8"
   },
   {
+    "slug": "al-jazeera-en",
+    "label": "Al Jazeera English",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@aljazeeraenglish/live"
+  },
+  {
     "slug": "sky-news",
     "label": "Sky News",
     "kind": "youtube",
     "source_url": "https://www.youtube.com/@SkyNews/live"
+  },
+  {
+    "slug": "cgtn-en",
+    "label": "CGTN English",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@CGTN/live"
+  },
+  {
+    "slug": "trt-world",
+    "label": "TRT World",
+    "kind": "youtube",
+    "source_url": "https://www.youtube.com/@TRTWorld/live"
   },
   {
     "slug": "fox-weather",
@@ -124,6 +142,12 @@
     "label": "Scripps News",
     "kind": "hls",
     "source_url": "https://aegis-cloudfront-1.tubi.video/7e1c26b7-7975-4240-9a4f-480eaa8f3ea4/playlist.m3u8"
+  },
+  {
+    "slug": "cbs-news-247",
+    "label": "CBS News 24/7",
+    "kind": "hls",
+    "source_url": "https://cbsn-us.cbsnstream.cbsnews.com/out/v1/55a8648e8f134e82a470f83d562deeca/master.m3u8"
   },
   {
     "slug": "abc-news-au",
