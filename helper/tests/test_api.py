@@ -7,6 +7,7 @@ require a coordinated change in the TV's request code and a bump in
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -214,9 +215,113 @@ def test_api_channels_expanded_lineup(phantom_client: TestClient) -> None:
     # cnn IS kept (already seeded). cnn-international + c-span (the branded cspan1
     # akamai) were PRUNED 2026-06-24 — no clean free source (DNS-dead / 403); the
     # free C-SPAN path is the us-senate-* gov resolvers, not the branded linear.
-    for slug in ("cbs-news", "arirang", "c-span-2", "fox-news", "msnbc",
-                 "cnn-international", "c-span"):
+    # NOTE: the bare `cbs-news` slug was dropped from this omission list in the
+    # 2026-08 fresh-source pass — national CBS News IS now carried, as `cbs-news-247`
+    # on its first-party token-free origin (see the fresh-sources test below). The
+    # Chicago market feed remains honestly-omitted (all variants 404).
+    for slug in ("arirang", "c-span-2", "fox-news", "msnbc",
+                 "cnn-international", "c-span", "cbs-news-chicago"):
         assert slug not in by_slug, f"omitted channel {slug} should NOT be seeded"
+
+
+def test_api_channels_2026_08_fresh_sources(phantom_client: TestClient) -> None:
+    """MYMTS-003 fresh-source pass — the four channels validated 2026-08-18 are
+    seeded, carry the right `kind`, and group into the EXISTING taxonomy.
+
+    NON-VACUOUS BY CONSTRUCTION: each assertion names a slug that does not exist
+    anywhere else in the suite, so this test fails if any of the four is dropped
+    from seed.json, mis-typed, or loses its category mapping.
+
+    al-jazeera-en / cgtn-en / trt-world were pruned 2026-06-22 when their old
+    DIRECT-HLS origins went dead (~1000 consecutive dns/SSL failures). That was
+    superseded-endpoint evidence, so each is re-sourced to its official YouTube
+    `/live` HANDLE (never a rotating video id) and rides the is_live-gated
+    resolver -> honest-offline. cbs-news-247 is the national CBS News free linear
+    feed on its first-party token-free direct-HLS origin.
+    """
+    body = phantom_client.get("/api/channels").json()
+    by_slug = {c["slug"]: c for c in body["channels"]}
+
+    expected = {
+        "cbs-news-247":  ("US News",     "hls"),
+        "al-jazeera-en": ("Global News", "youtube"),
+        "cgtn-en":       ("Global News", "youtube"),
+        "trt-world":     ("Global News", "youtube"),
+    }
+    for slug, (cat, kind) in expected.items():
+        assert slug in by_slug, f"fresh source {slug} missing from the lineup"
+        assert by_slug[slug]["category"] == cat, (
+            f"{slug} should be {cat}, got {by_slug[slug]['category']}")
+        assert by_slug[slug]["kind"] == kind, (
+            f"{slug} should be kind={kind}, got {by_slug[slug]['kind']}")
+
+    # The three re-sourced feeds must ride the HANDLE, never a pinned video id —
+    # a pinned id strands the channel the moment the broadcaster restarts the
+    # stream. Guarded here because it is a sourcing RULE, not an accident.
+    from importlib.resources import files
+    seed = json.loads(files("mymts_helper.channels").joinpath("seed.json").read_text())
+    by_seed = {c["slug"]: c["source_url"] for c in seed}
+    for slug in ("al-jazeera-en", "cgtn-en", "trt-world"):
+        url = by_seed[slug]
+        assert url.startswith("https://www.youtube.com/@"), f"{slug} must use an @handle: {url}"
+        assert url.endswith("/live"), f"{slug} must use the /live handle path: {url}"
+        assert "watch?v=" not in url, f"{slug} must NOT pin a rotating video id: {url}"
+
+
+def test_every_seeded_channel_has_an_explicit_category(phantom_client: TestClient) -> None:
+    """STRUCTURAL GUARD (2026-08): every seeded slug must be EXPLICITLY mapped in
+    channels/category.py — the GENERAL fallback exists so an unmapped channel is
+    never *hidden*, but silently landing there is a taxonomy bug, not a design.
+
+    This is the non-vacuous half of the picker-parity contract: scripts/
+    check_channel_parity.py proves the three surfaces agree on the section LIST,
+    and this proves every channel actually lands in one of those sections. Adding
+    a channel to seed.json without categorising it now fails the suite.
+    """
+    from importlib.resources import files
+
+    from mymts_helper.channels.category import _BY_SLUG
+
+    seed = json.loads(files("mymts_helper.channels").joinpath("seed.json").read_text())
+    seeded = {c["slug"] for c in seed}
+
+    # The ONE documented exception: a channel that genuinely belongs to no section.
+    ALLOWED_GENERAL = {"redbull-tv"}
+
+    unmapped = seeded - set(_BY_SLUG) - ALLOWED_GENERAL
+    assert not unmapped, (
+        "seeded channels with no explicit category mapping (they would silently "
+        f"fall into General): {sorted(unmapped)} — add them to channels/category.py "
+        "_BY_SLUG, or to this test's ALLOWED_GENERAL with a reason."
+    )
+    # And the mapping must not accumulate entries for channels we no longer ship.
+    stale = set(_BY_SLUG) - seeded
+    assert not stale, f"category map has entries for unseeded slugs: {sorted(stale)}"
+
+
+def test_lineup_size_and_kind_breakdown_are_what_the_docs_claim(
+    phantom_client: TestClient,
+) -> None:
+    """Anchor for the counts quoted in README / ARCHITECTURE / ONBOARDING.
+
+    A doc that says "56 channels (23 direct-HLS + 31 YouTube-resolved + 2 free-gov
+    cspan)" is a claim a reader will check. Pin it here so the docs and the seed
+    cannot drift apart silently — if you change the lineup, this fails and points
+    at the exact sentences to update.
+    """
+    from collections import Counter
+    from importlib.resources import files
+
+    seed = json.loads(files("mymts_helper.channels").joinpath("seed.json").read_text())
+    kinds = Counter(c["kind"] for c in seed)
+    assert len(seed) == 56, f"lineup size changed to {len(seed)} — update the docs (README, ARCHITECTURE, ONBOARDING, docs/onboarding/ONBOARD-01-SETUP.md)"
+    assert kinds == {"hls": 23, "youtube": 31, "cspan": 2}, f"kind breakdown changed: {dict(kinds)} — update the docs"
+
+    # The served endpoint lists every seeded channel (plus the widget rows, which
+    # are appended unconditionally by the unified registry and are NOT in seed.json).
+    body = phantom_client.get("/api/channels").json()
+    served = {c["slug"] for c in body["channels"]}
+    assert {c["slug"] for c in seed} <= served, "a seeded channel is missing from /api/channels"
 
 
 # ---- SQLite cross-thread regression (feed-sources expansion) ----
