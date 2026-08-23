@@ -70,6 +70,14 @@ and **no APK release is warranted** — the TV picks the new channels up from `/
 with no rebuild. Second cut under the per-effort numbering scheme: **MYMTS-003**.
 ARCHITECTURE §25 (dated note) + `docs/findings/24`.
 
+### Native follow-up fix
+
+- **The ticker no longer consumes the wall's full height.** The page, crawl viewport, and
+  crawl-content rows now wrap their content instead of resolving `fillMaxHeight()` against
+  the wall Column's unbounded height. The configured ticker height remains a minimum floor,
+  while the feed and all four video panels retain their layout space. This app-only repair
+  is commit `5fc6e9c`; it does not change channel data, helper behaviour, or wall settings.
+
 - **Al Jazeera English, CGTN English and TRT World are back.** The 2026-06-22 quality pass
   (`c3b5866`, released in v0.2.1) pruned all three because their old **direct-HLS** origins
   were persistently dead — ~1000 consecutive dns/SSL failures, hosts gone. Recovering that
