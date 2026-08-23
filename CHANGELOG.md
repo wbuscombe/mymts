@@ -62,6 +62,89 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## feat(channels): fresh-source pass — international news restored + CBS News 24/7 (2026-08-18)
+
+Lineup **52 → 56**. Server-authoritative: every addition lands in an **existing** section,
+so `CATEGORY_ORDER` is byte-identical on all three surfaces, `app/` has an **empty diff**,
+and **no APK release is warranted** — the TV picks the new channels up from `/api/channels`
+with no rebuild. Second cut under the per-effort numbering scheme: **MYMTS-003**.
+ARCHITECTURE §25 (dated note) + `docs/findings/24`.
+
+### Native follow-up fix
+
+- **The ticker no longer consumes the wall's full height.** The page, crawl viewport, and
+  crawl-content rows now wrap their content instead of resolving `fillMaxHeight()` against
+  the wall Column's unbounded height. The configured ticker height remains a minimum floor,
+  while the feed and all four video panels retain their layout space. This app-only repair
+  is commit `5fc6e9c`; it does not change channel data, helper behaviour, or wall settings.
+
+- **Al Jazeera English, CGTN English and TRT World are back.** The 2026-06-22 quality pass
+  (`c3b5866`, released in v0.2.1) pruned all three because their old **direct-HLS** origins
+  were persistently dead — ~1000 consecutive dns/SSL failures, hosts gone. Recovering that
+  rationale was a hard gate on this work, and the answer is unambiguous: it was
+  **superseded-endpoint evidence, not a sourcing judgment**. Nothing on record objected to
+  the broadcasters. Each is therefore re-sourced to its **official YouTube `/live` handle**
+  (`kind='youtube'`), resolved at runtime by the same `is_live`-gated yt-dlp resolver as
+  every other YouTube channel, so a dark feed honest-offlines instead of showing a dead URL.
+  The seed pins the **@handle** and never a video id — a pinned id strands the tile the
+  moment the broadcaster restarts the stream (now a test, not a convention).
+- **CBS News 24/7 added** to US News on its **first-party, token-free direct-HLS** origin.
+  Its official YouTube handle also validated clean, but the direct `.m3u8` is the registry's
+  preferred shape: no resolver dependency, no ~6 h manifest expiry, no yt-dlp extraction rot.
+- **Validation was credential-free and end-to-end.** Every candidate went through the
+  project's own code — the in-process resolver, then the SSRF-safe fetcher — **master →
+  variant → one real fetched segment**, twice, several minutes apart. No auth, no cookies,
+  no injected token, no `Referer`, no DRM workaround. No chain contained `#EXT-X-KEY`, a
+  plain-`http://` sub-resource, or a per-play signature. Ladders, segment sizes and
+  containers are recorded in finding 24.
+
+### Honest-nos and re-confirmations from the same pass
+
+- **CBS News Chicago — honest-no.** Its first-party master serves **200** with a full
+  six-rung ladder, and **all six variants return 404**. That is the master-OK / variant-FAIL
+  shape the prober's deepened validation exists to reject; identical on both probes. No
+  workaround was attempted — the only other Chicago path is Pluto's per-play-JWT stitcher,
+  already refused in finding 23. **BACKLOG.**
+- **NASA TV — the `DENY` is confirmed correct, and it stays.** Re-probed the same way:
+  master 200, **all three variants 404**. It is honest-offline by design, still selectable
+  in the picker, and recorded as a re-source candidate. Not pruned — that would be a
+  separate decision from this pass.
+- **NASA and EarthCam stay labelled as the broadcaster handles they are.** `@earthcam/live`
+  was titled *"EarthCam Live: Wrigley Field"* at probe time. Converting it into a dedicated
+  Wrigley tile would be a claim the source can't sustain — a handle streams whatever the
+  broadcaster puts on it — and it is **not** the same thing as the dedicated Wrigleyville
+  cams, which remain honest-no on `Referer`+rotating-token grounds (finding 23). Recorded as
+  an explicit judgment rather than an assumption.
+
+### Test coverage — a near-vacuous area made non-vacuous
+
+An audit found that adding a channel was **almost entirely unguarded**: only four
+assertions touched a new entry, and the change would have gone green even if half the new
+channels never reached the database.
+
+- New: `test_api_channels_2026_08_fresh_sources` (each slug, its `category` **and** `kind`,
+  plus the no-pinned-video-id rule), `test_every_seeded_channel_has_an_explicit_category`
+  (no silent fall into `General`; no map entries for unshipped slugs), and
+  `test_lineup_size_and_kind_breakdown_are_what_the_docs_claim` (pins 56 / 23-31-2 and names
+  the docs to update).
+- **Latent gap closed:** `seed_from_file` / `override.seed_lineup` deliberately *skip* an
+  entry whose validator rejects it, so one bad row can't stop the helper booting — right at
+  runtime, but it meant a typo'd URL vanished **silently** and the channel simply never
+  appeared. `test_shipped_channel_seed_is_wellformed_and_unique` +
+  `test_shipped_channel_seed_seeds_every_channel` assert `stored == len(seed.json)`, the
+  guard the feed seed has had all along and the channel seed never did.
+- Every new assertion was **mutation-tested** (drop a channel, pin a video id, seed an
+  uncategorised channel, break a URL) and each produces a red suite naming the problem.
+
+### Docs currency
+
+Corrected every present-tense lineup count, including drift that predated this pass:
+`ARCHITECTURE.md` (the canonical statement, plus a stale "53"), `ONBOARDING.md`,
+`docs/onboarding/ONBOARD-01-SETUP.md`, `.phantom.yml` (3 sites), `phantom.py`'s docstring,
+and `tools/desktop/README.md` (a stale "~37 seed channels" / "~30 direct-HLS"). Dated
+CHANGELOG and findings entries were left intact as history.
+
+
 ## feat(web,helper): auto-fit feed width (2026-08-04)
 
 A mode that sizes the feed panel so the **video** cells come out at the videos' native

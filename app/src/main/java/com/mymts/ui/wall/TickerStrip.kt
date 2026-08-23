@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -326,7 +327,10 @@ private fun CrawlTicker(
     // boundary). This was the visible "jumps back on every refresh" bug.
     var copyWidthPx by remember { mutableIntStateOf(0) }
     val offset = remember { Animatable(0f) }
-    BoxWithConstraints(modifier = modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
+    // HEIGHT MUST WRAP, NOT FILL — see the note on PagedTicker's page area. Only
+    // `maxWidth` is read below (the crawl viewport), so dropping the height fill is
+    // inert for the crawl maths and stops the ticker consuming the whole wall Column.
+    BoxWithConstraints(modifier = modifier.fillMaxWidth().wrapContentHeight().clipToBounds()) {
         val viewportPx = with(LocalDensity.current) { maxWidth.roundToPx() }
         val overflow = copyWidthPx > 0 && copyWidthPx >= viewportPx
         Row(
@@ -338,7 +342,10 @@ private fun CrawlTicker(
             // Animatable's float value INSIDE the graphicsLayer block updates the
             // layer in the draw phase (sub-pixel, no recomposition, no rounding).
             modifier = Modifier
-                .fillMaxHeight()
+                // wrap, not fill: `verticalAlignment = CenterVertically` below already
+                // centres the cards, and the bar's own `heightIn(min = tu(40))` floor
+                // still sets the minimum bar height.
+                .wrapContentHeight()
                 .wrapContentWidth(align = Alignment.Start, unbounded = true)
                 .graphicsLayer { translationX = -offset.value },
             verticalAlignment = Alignment.CenterVertically,
@@ -392,7 +399,11 @@ private fun CrawlTicker(
 @Composable
 private fun CrawlContent(pages: List<TickerPaging.Page>, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxHeight(),
+        // wrap, not fill — last link in the crawl chain. `fillMaxHeight()` here
+        // resolved against the bar's unbounded incoming maxHeight (the whole wall
+        // Column), which is what expanded the ticker over the feed+grid Row.
+        // CenterVertically below still centres the cards in the bar.
+        modifier = modifier.wrapContentHeight(),
         verticalAlignment = Alignment.CenterVertically,
         // Same gap as the inter-copy spacing, so the seam reads as just another
         // card gap and the loop period (copy width + CRAWL_GAP) stays consistent.
@@ -453,7 +464,15 @@ private fun PageRow(
     // the TRUE left edge; the STALE flag (when present) overlays the RIGHT edge —
     // both pinned, on top of the scroll, so a stale pill can never shove the curtain
     // inboard (the marker must stay pinned at the panel's left edge regardless).
-    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight().clipToBounds()) {
+    // HEIGHT MUST WRAP, NOT FILL. This Box is the page area inside TickerStrip's bar,
+    // and that bar is a Column child whose only height rule is `heightIn(min = tu(40))` —
+    // a FLOOR with no cap. `fillMaxHeight()` here resolved against the bar's incoming
+    // maxHeight, which in the wall Column is the ENTIRE wall height: the ticker then
+    // consumed the whole Column and the feed+grid Row below it was laid out at zero
+    // height (no tile surfaces, no OFFLINE badges, nothing drawn). Wrapping keeps the
+    // documented behaviour — the bar is `max(floor, text height)` and CenterStart
+    // centres the cards in a taller bar — while leaving the rest of the wall its space.
+    Box(modifier = Modifier.fillMaxWidth().wrapContentHeight().clipToBounds()) {
         // The configured reveal velocity (dp/sec, scaled by the scroll slider).
         val velocityDp = (BASE_SCROLL_VELOCITY * (scrollPct.coerceAtLeast(1) / 100f)).value
         val density = LocalDensity.current.density

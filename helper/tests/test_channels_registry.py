@@ -332,3 +332,79 @@ def test_seed_idempotent(tmp_path: Path) -> None:
     registry.seed_from_file(conn, seed)
     registry.seed_from_file(conn, seed)
     assert len(registry.list_channels(conn)) == 1
+
+
+# ---- the SHIPPED channel seed (parity with the feeds-seeder guards) ----
+
+
+def _load_shipped_channel_seed() -> list[dict]:
+    import json
+    from importlib.resources import files
+
+    raw = files("mymts_helper.channels").joinpath("seed.json").read_text(encoding="utf-8")
+    return json.loads(raw)
+
+
+def test_shipped_channel_seed_is_wellformed_and_unique() -> None:
+    """Guard the packaged CHANNEL seed the way test_feeds_seeder guards the feed
+    seed. Every entry must have a valid slug, a non-empty label, a known `kind`,
+    and an https source_url that PASSES ITS KIND'S VALIDATOR — slugs, labels and
+    URLs all unique.
+
+    Why this matters: `seed_from_file` (and `override.seed_lineup`) deliberately
+    SKIP an entry whose validator rejects it (`log.warning("seed_skip_invalid")`)
+    so one bad row can't stop the helper booting. That is right at runtime, but it
+    means a typo'd URL in a lineup edit vanishes SILENTLY — the channel just never
+    appears. This test turns that silent drop into a loud failure at commit time.
+    """
+    entries = _load_shipped_channel_seed()
+    assert isinstance(entries, list) and entries, "seed.json must be a non-empty list"
+
+    validators = {
+        "hls": registry.validate_hls_url,
+        "youtube": registry.validate_youtube_url,
+        "cspan": registry.validate_cspan_url,
+    }
+
+    for e in entries:
+        slug = e["slug"]
+        registry.validate_slug(slug)                       # raises on a bad slug
+        assert e["label"].strip(), f"empty label for {slug}"
+        assert e["kind"] in validators, f"{slug} has unknown kind {e['kind']!r}"
+        assert e["source_url"].startswith("https://"), f"non-https source for {slug}"
+        # The decisive check: the URL survives the validator its kind is stored with.
+        validators[e["kind"]](e["source_url"])
+
+    slugs = [e["slug"] for e in entries]
+    labels = [e["label"] for e in entries]
+    urls = [e["source_url"] for e in entries]
+    assert len(slugs) == len(set(slugs)), "duplicate slug in channels seed.json"
+    assert len(labels) == len(set(labels)), "duplicate label in channels seed.json"
+    assert len(urls) == len(set(urls)), "duplicate source_url in channels seed.json"
+
+
+def test_shipped_channel_seed_seeds_every_channel(tmp_path: Path) -> None:
+    """No silent drops: the shipped seed must upsert EVERY entry.
+
+    `seed_from_file` returns the number it actually stored, and skips (with only a
+    log warning) any entry a validator rejects. Asserting stored == file-length is
+    the guard that a newly added channel really reaches the database rather than
+    being quietly discarded at boot — the failure mode that would otherwise show up
+    only as a channel mysteriously missing from the picker on the deployed wall.
+    """
+    from importlib.resources import files
+
+    p = tmp_path / "x.db"
+    db.migrate(p)
+    conn = db.connect(p)
+
+    seed_path = Path(str(files("mymts_helper.channels").joinpath("seed.json")))
+    expected = len(_load_shipped_channel_seed())
+    seeded = registry.seed_from_file(conn, seed_path)
+    assert seeded == expected, f"seeded {seeded} but seed.json has {expected} entries"
+    assert len(registry.list_channels(conn)) == expected
+
+    # The 2026-08 fresh sources specifically must survive the round-trip.
+    stored = {c.slug: c for c in registry.list_channels(conn)}
+    for slug in ("cbs-news-247", "al-jazeera-en", "cgtn-en", "trt-world"):
+        assert slug in stored, f"fresh source {slug} was silently dropped at seed time"

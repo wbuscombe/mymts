@@ -136,6 +136,23 @@ _BY_SLUG: dict[str, str] = {
     "ndtv": GLOBAL_NEWS,
     "i24news-en": GLOBAL_NEWS,
     "cbs-golazo": SPORTS,
+    # --- 2026-08 fresh-source pass (MYMTS-003). The 2026-06-22 quality cleanup
+    #     pruned al-jazeera-en / cgtn-en / trt-world because their old DIRECT-HLS
+    #     origins were persistently dead (~1000 consecutive dns/SSL failures; hosts
+    #     gone). That was SUPERSEDED-ENDPOINT evidence, not a judgment on the
+    #     broadcasters — so each is RE-SOURCED here to its official YouTube `/live`
+    #     handle (kind='youtube'), resolved at runtime by the same yt-dlp resolver +
+    #     is_live gate as every other YouTube channel, so a dark feed honest-offlines.
+    #     Handles (never a rotating video ID) so a restream/ID change can't strand us.
+    #     CBS News 24/7 joins as the national CBS free linear feed on its FIRST-PARTY
+    #     token-free direct-HLS origin (kind='hls'). All four validated master ->
+    #     variant -> one real segment over two probes several minutes apart, no auth,
+    #     no cookies, no Referer, no DRM (`#EXT-X-KEY` absent), no per-play signing,
+    #     from the helper's normal residential egress. See docs/findings/24. ---
+    "cbs-news-247": US_NEWS,
+    "al-jazeera-en": GLOBAL_NEWS,
+    "cgtn-en": GLOBAL_NEWS,
+    "trt-world": GLOBAL_NEWS,
     # --- 2026-06 ambient / space / nature / camera lives (restoring the original
     #     wall vision). All free official YouTube lives, is_live-gated -> honest-
     #     offline (verified live before seeding). NASA's NTV1 linear stays HLS;
@@ -162,6 +179,13 @@ _BY_SLUG: dict[str, str] = {
     #   • Arirang → could NOT confirm a live HLS from the NAS vantage (every
     #     candidate handle 404'd or reported not-live); omitted to ship no dead
     #     channel — revisit when a stable live handle is confirmed.
+    #   • CBS News Chicago (the first-party `cbsn-chi.cbsnstream.cbsnews.com`
+    #     master, probed 2026-08-18) → HONEST_NO. The master manifest still serves
+    #     200 with a full six-rung ladder, but EVERY advertised variant returns
+    #     `<h1>error 404</h1>` — the master-OK / variant-FAIL shape the prober's
+    #     deepened validation exists to reject. Re-probed several minutes apart:
+    #     same on both. The only other Chicago path is the Pluto rotating-JWT
+    #     ad-stitcher, already refused in docs/findings/23. BACKLOG.
     #   • Paywall / cable-auth: CNN, Fox News, MSNBC, CBS Sports Network.
     #   • Web-embed only (no HLS): C-SPAN 2 & 3.
     #   • cnn-international (PRUNED 2026-06-24) → its Wurl/Rakuten FAST host is
