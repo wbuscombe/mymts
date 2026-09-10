@@ -17,6 +17,14 @@ from .parser import ParsedItem
 
 log = logging.getLogger("mymts_helper.feeds.store")
 
+# A feed may advertise a published date slightly ahead of our fetch — publisher
+# clock skew, or an embargo timestamp — and that is ordinary. A date FAR ahead
+# is not: it sorts first on every surface (this module's own ORDER BY
+# COALESCE(published_at, fetched_at) DESC, the web client's sort key, the native
+# wall's effective-timestamp fallback) and renders as "now" until the wall clock
+# catches up to it. One hour absorbs real skew without absorbing a defect.
+FUTURE_PUBLISH_TOLERANCE_SECONDS = 3600
+
 
 def _utcnow_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -146,10 +154,56 @@ def record_fetch_failure(conn: sqlite3.Connection, source_id: int, reason: str) 
     )
 
 
+def _parse_iso(s: str) -> datetime | None:
+    """Parse an ISO-8601 UTC timestamp, or None if it isn't one."""
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _plausible_published(
+    published_at: str | None, fetched_at: str, *, source_id: int, guid: str
+) -> str | None:
+    """Clamp an implausibly-future `published_at` to the fetch time.
+
+    Returned unchanged when the value is absent, unparseable, in the past, or no
+    more than FUTURE_PUBLISH_TOLERANCE_SECONDS ahead of the fetch. Otherwise
+    `fetched_at` is returned and the rejected value is logged verbatim.
+
+    The item is never skipped — a story stored with a clamped timestamp is a
+    smaller failure than a story silently missing from the wall. The real
+    publication time is not recoverable here and is never invented: clamping to
+    the fetch time asserts only "it existed by then", which is true.
+    """
+    if not published_at:
+        return published_at
+    published = _parse_iso(published_at)
+    fetched = _parse_iso(fetched_at)
+    if published is None or fetched is None:
+        # Unparseable on either side: leave it exactly as it arrived rather than
+        # guess. Existing behaviour, deliberately unchanged.
+        return published_at
+    ahead = (published - fetched).total_seconds()
+    if ahead > FUTURE_PUBLISH_TOLERANCE_SECONDS:
+        log.warning(
+            "feed item published_at is %.0fs ahead of fetch; clamping to fetched_at "
+            "(source_id=%s guid=%s rejected_published_at=%s)",
+            ahead, source_id, guid, published_at,
+        )
+        return fetched_at
+    return published_at
+
+
 def insert_items(
     conn: sqlite3.Connection, source_id: int, items: Iterable[ParsedItem]
 ) -> int:
-    """Bulk insert with per-(source,guid) dedup. Returns the count newly inserted."""
+    """Bulk insert with per-(source,guid) dedup. Returns the count newly inserted.
+
+    An implausibly-future `published_at` is clamped to the fetch time first (see
+    `_plausible_published`); every item is stored either way.
+    """
     sql = (
         "INSERT INTO feed_items(source_id, guid, title, summary, link, published_at, fetched_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?) "
@@ -158,6 +212,9 @@ def insert_items(
     now = _utcnow_iso()
     inserted = 0
     for item in items:
+        published_at = _plausible_published(
+            item.published_at, now, source_id=source_id, guid=item.guid
+        )
         cur = conn.execute(
             sql,
             (
@@ -166,7 +223,7 @@ def insert_items(
                 item.title,
                 item.summary or None,
                 item.link or None,
-                item.published_at,
+                published_at,
                 now,
             ),
         )

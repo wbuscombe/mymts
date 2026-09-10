@@ -62,6 +62,52 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## fix(feeds): future-date plausibility gate on ingest (2026-09-10)
+
+Helper-only. **`app/` has an empty diff, so no APK release is warranted and no version
+tag is cut — `[Unreleased]` holds.** Per-effort numbering: **MYMTS-012**.
+
+### Fixed
+
+- **A feed item can no longer claim to be published in the future.** Ingest
+  (`feeds/store.insert_items`) now compares each item's `published_at` against the
+  `fetched_at` it is about to be stamped with, and clamps anything more than
+  `FUTURE_PUBLISH_TOLERANCE_SECONDS` (1 hour) ahead down to the fetch time. The confirmed
+  case was a CBS item **fetched `2026-09-06T05:05:13Z` carrying `published_at`
+  `2026-09-14T02:00:00Z` — eight days ahead of its own fetch**. Because all three surfaces
+  prefer published over fetched (the helper's `ORDER BY COALESCE(published_at,
+  fetched_at) DESC`, the web client's sort key, the native wall's effective-timestamp
+  fallback), such a row sorts to the top of the wall and renders as "now" until the wall
+  clock catches up to it.
+- **The item is always stored.** The gate never skips, drops, or discards — a story with a
+  clamped timestamp is a smaller failure than a story silently missing from the wall. One
+  `WARNING` records the source id, the guid, and the **rejected value verbatim**, so the
+  original claim survives in the log even though it no longer reaches the database.
+- **Nothing is invented.** The real publication time is not recoverable from an item that
+  already carries a wrong one, so the clamp asserts only "it existed by the time we fetched
+  it", which is true. One hour of tolerance absorbs ordinary publisher clock skew and
+  embargo timestamps without absorbing a defect; the clamp fires on *strictly greater than*
+  the tolerance, so a value sitting exactly on the boundary is kept.
+
+### Added
+
+- `helper/tests/test_feeds_store_future_publish.py` — 6 cases, offline, proven red before
+  the gate existed: the exact defect values clamped **and** warned; inside-tolerance skew
+  kept; the tolerance boundary itself kept (behaviour named in the test); a past date
+  untouched; and a mixed batch proving an absent or unparseable `published_at` keeps its
+  existing behaviour while a far-future sibling in the same batch is still caught.
+
+### Not done here
+
+- **The already-stored bad row is untouched.** `feed_items` id `11635149` on the running
+  helper still holds `published_at 2026-09-14T02:00:00.000Z`. That row lives in the
+  helper's SQLite database inside its NAS Docker volume and is unreachable from this
+  checkout; correcting it needs LAN transport, runtime credential use, and container
+  access, none of which were in scope. **Reserved for MYMTS-013**, pending its own operator
+  approval. This gate stops the next one, not the one already there.
+- Retention, the `ON CONFLICT(source_id, guid)` clause, the serve-time ordering, the
+  read/display paths, and the schema are all deliberately unchanged.
+
 ## feat(channels): fresh-source pass — international news restored + CBS News 24/7 (2026-08-18)
 
 Lineup **52 → 56**. Server-authoritative: every addition lands in an **existing** section,
