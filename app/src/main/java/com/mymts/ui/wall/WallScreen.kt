@@ -215,19 +215,21 @@ fun WallScreen(
     val effectiveTileCount = wallSettings.gridCells   // rows × cols
     // The default (un-overridden) lineup for the active preset. "news" — the
     // default and the value on a fresh install — uses the EXISTING forWall
-    // selector unchanged (preferred → fallback → top-up), so the wall is
-    // byte-identical to before presets existed (no regression). Any other
-    // preset builds strictly from its served slugs, topping up with other
-    // playable channels only when its fill is "topup" (curated stays curated).
+    // order (preferred → fallback → top-up) over EVERY channel, live or not
+    // (policy A): a configured channel that's down keeps its slot as an
+    // OFFLINE tile instead of vanishing. Any other preset builds strictly
+    // from its served slugs, topping up with other playable channels only
+    // when its fill is "topup" (curated stays curated).
     val activePresetObj = remember(presets, activePreset) {
         presets.firstOrNull { it.id == activePreset }
     }
     val defaultOrder = remember(playable, allChannels, effectiveTileCount, activePreset, activePresetObj) {
         val preset = activePresetObj
         when {
-            // Default / not-yet-served: today's wall, unchanged (no regression).
+            // Default / not-yet-served: forWall's order over the FULL channel set,
+            // so dead channels hold their slots as OFFLINE tiles (policy A).
             activePreset == LineupStore.DEFAULT_PRESET || preset == null ->
-                LineupSelector.forWall(maxCount = effectiveTileCount).invoke(playable)
+                LineupSelector.defaultWallLineup(allChannels, effectiveTileCount)
             // Exact preset = the operator's explicit set, rendered honestly: a
             // listed channel that's offline keeps its slot as an OFFLINE tile
             // (resolved against allChannels, no DENY) — see exactLineup.

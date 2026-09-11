@@ -62,6 +62,55 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## fix(app): a dead channel keeps its default-wall slot as an OFFLINE tile (2026-09-11)
+
+Native-only and repository-only — nothing deployed. **No version tag is cut, deliberately:**
+a native change would normally mint one, but the version belongs with the release,
+deployment is out of scope here, and no health-gated known-good exists yet to promote.
+`[Unreleased]` holds. Per-effort numbering: **MYMTS-014** (policy A).
+
+### Fixed
+
+- **A configured channel that goes down no longer vanishes from the default wall.** The
+  default ("news") lineup was built from the *playable* channels only, so a dead channel
+  dropped out, every later channel shifted up a slot, and — when that left fewer channels
+  than tiles — the cycler repeated a live channel into the gap. It is now built by
+  `LineupSelector.defaultWallLineup` from the helper's **full** channel set, in the same
+  preferred → fallback → rest order. Each channel keeps the slot it would hold if everything
+  were live; a dead one renders as the existing honest C2 OFFLINE tile
+  (`TileSlotResolver.Slot.Offline`, labelled with its name); live channels never move; and no
+  live channel is repeated to cover a dead one. With every channel down the wall shows
+  labelled OFFLINE tiles instead of blank ones.
+- **Filtering-only.** Slot indexing, the resolver, the tile renderer, the liveness rule
+  (`Channel.isPlayable`), `DENY` (`nasa-tv` still never takes a default slot, live or dead)
+  and the radar exclusion are all unchanged. With every channel live the wall is identical
+  to before at every grid size.
+
+### Added
+
+- `app/src/test/java/com/mymts/wall/DefaultWallHonestOfflineTest.kt` — 6 cases, offline,
+  proven red before the change (the class could not compile: the seam did not exist yet). A
+  dead channel keeps its original index; that slot is `Slot.Offline`; live channels hold
+  their all-live indices; no live channel is repeated into a dead channel's slot; all-dead
+  gives OFFLINE tiles at every grid size, none blank; all-live matches the pre-change wiring
+  at every grid size. Each case also runs the pre-change wiring as a control, so every
+  fixture is shown to discriminate. Slot assignment and type only — drawn appearance still
+  has no harness.
+
+### Verified
+
+Native suite **416 tests, 0 failures** (410 pre-existing + 6 new), offline.
+
+### Not done here
+
+- **The web client is deliberately unchanged** — its existing-assignment path already
+  renders an offline channel honestly. Its `newsLineup` autofill still filters to playable,
+  so the `web/js/render.mjs` comment that the news lineup matches the TV now overstates
+  parity for a fresh autofill; ARCHITECTURE's `LineupSelector.forWall` walkthrough and the
+  helper `presets.py` docstring still describe the default wall as "remaining playable".
+  Docs-only follow-up.
+- The non-news **top-up** preset branch and the **exact** preset branch are untouched.
+
 ## fix(feeds): future-date plausibility gate on ingest (2026-09-10)
 
 Helper-only. **`app/` has an empty diff, so no APK release is warranted and no version

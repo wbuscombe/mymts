@@ -13,10 +13,12 @@ import com.mymts.data.helper.Channel
  * can't be filled are left to the tile cycler / OFFLINE rendering
  * (C2 — never fake a tile).
  *
- * The selector is **pure** — it operates on whatever channels the
- * helper currently reports playable. Slugs that no longer resolve
- * vanish naturally on the next channels poll; slugs that come back
- * online re-enter the lineup. No state, no persistence.
+ * The selector is **pure** — it operates on whatever channels it is
+ * handed. A top-up preset hands it the playable subset, so a slug that
+ * stops resolving drops out on the next channels poll. The default wall
+ * hands it the FULL set ([defaultWallLineup], policy A), so a channel
+ * that goes down keeps its slot as an OFFLINE tile instead. No state,
+ * no persistence.
  */
 class LineupSelector(
     private val preferredSlugs: List<String>,
@@ -127,6 +129,23 @@ class LineupSelector(
                 maxCount = maxCount,
                 denySlugs = DENY,
             )
+
+        /**
+         * The default ("news") wall's lineup — **policy A, honest-offline**
+         * (MYMTS-014). [forWall]'s preferred → fallback → rest walk, run over
+         * the helper's FULL channel set ([allChannels], live OR offline)
+         * rather than only the playable subset, capped at [maxCount].
+         *
+         * Every channel therefore keeps the position it would hold if all were
+         * live: a configured channel that's down stays in its ORIGINAL slot and
+         * `TileSlotResolver` renders it as an honest C2 OFFLINE tile
+         * (`TileSlotResolver.Slot.Offline`), instead of vanishing while later
+         * channels shift up and the cycler repeats a live one into the gap.
+         * Live channels never move when another dies. [DENY] and the radar
+         * exclusion apply exactly as before.
+         */
+        fun defaultWallLineup(allChannels: List<Channel>, maxCount: Int): List<Channel> =
+            forWall(maxCount).invoke(allChannels)
 
         /**
          * Lineup for an **exact** wall preset: the preset's [slugs] in order,
