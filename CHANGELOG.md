@@ -62,6 +62,34 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-12
+
+**Honest offline on the TV wall, and feed dates you can trust.** A minor bump rather than a
+patch, because the default wall now behaves visibly differently for anyone watching it.
+`versionCode 600`. `versionName` is stamped from the release tag when the APK is built, so
+it reads `0.6.0` once that tag is cut.
+
+### Fixed
+
+- **A channel that goes down keeps its place on the TV's default wall.** Until now a dead
+  channel dropped out of the lineup altogether: every channel after it shifted up a slot,
+  and when that left fewer channels than there were tiles, the wall repeated a live channel
+  into the gap, so the same programme appeared twice. Each channel now holds the slot it
+  would hold if everything were live, a channel that is down shows as a labelled Offline
+  tile naming it, and no live channel is ever duplicated to cover for one. With every
+  channel down the wall shows labelled Offline tiles instead of blank ones. With every
+  channel live it looks exactly as it did before, at every grid size.
+- **A feed item stamped with an absurd future date can no longer pin itself to the top of
+  the feed.** Some sources publish items dated months or years ahead; because the feed is
+  ordered newest first, one of those would sit above genuinely recent stories and stay
+  there indefinitely. An implausibly-future publish date is now brought back to a sensible
+  value as the item is taken in, so the feed reflects real recency.
+
+### Verified
+
+Both changes shipped with their own offline regression suites, detailed in the per-commit
+sections below. The full gate suite was re-run offline for this release cut.
+
 ## fix(app): a dead channel keeps its default-wall slot as an OFFLINE tile (2026-09-11)
 
 Native-only and repository-only — nothing deployed. **No version tag is cut, deliberately:**

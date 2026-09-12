@@ -191,7 +191,7 @@ android {
         // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.4.1 -> 401.
         // (Was pinned at the stale `1`.) Bump in lockstep with the released tag so
         // versionCode rises with versionName (which tracks the git tag below).
-        versionCode = 500
+        versionCode = 600
         versionName = getVersionFromGit()
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
