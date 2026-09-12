@@ -7,8 +7,13 @@ flows with NO client rebuild (the server-authoritative pattern, mirroring catego
 uses its EXISTING default lineup (the curated news set — native ``LineupSelector``,
 web ``WEB_DEFAULT_LINEUP``), so the wall is IDENTICAL to today until the user
 switches. Non-default presets are ``"exact"`` — only their listed slugs fill the
-grid (curated, no top-up); ``news`` is ``"topup"`` (preferred + remaining playable,
-today's behavior). ``grid`` is the suggested rows×cols applied on selection.
+grid (curated, no top-up); ``news`` is ``"topup"`` (preferred, then the rest).
+``grid`` is the suggested rows×cols applied on selection.
+
+Since MYMTS-014 the native default wall builds that lineup from the FULL channel
+set, not the playable subset: a configured channel that is down keeps its original
+default-wall slot and renders the existing Offline tile, and live channels do not
+shift up or repeat into that slot.
 
 Presets reference slugs ONLY. An honest-offline channel inside a preset (e.g. NASA
 TV in Space) is fine — a preset is a SELECTION, not a liveness claim; the channel

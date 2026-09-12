@@ -105,10 +105,11 @@ Native suite **416 tests, 0 failures** (410 pre-existing + 6 new), offline.
 
 - **The web client is deliberately unchanged** — its existing-assignment path already
   renders an offline channel honestly. Its `newsLineup` autofill still filters to playable,
-  so the `web/js/render.mjs` comment that the news lineup matches the TV now overstates
-  parity for a fresh autofill; ARCHITECTURE's `LineupSelector.forWall` walkthrough and the
-  helper `presets.py` docstring still describe the default wall as "remaining playable".
-  Docs-only follow-up.
+  so a fresh web autofill still diverges from the TV. The docs-only follow-up has since
+  corrected the code comments under MYMTS-018: `web/js/render.mjs`, the helper `presets.py`
+  docstring and the native `Channel.kt` `Preset` KDoc now state the divergence instead of
+  claiming parity. ARCHITECTURE's `LineupSelector.forWall` walkthrough still describes the
+  default wall as "remaining playable" and remains outstanding.
 - The non-news **top-up** preset branch and the **exact** preset branch are untouched.
 
 ## fix(feeds): future-date plausibility gate on ingest (2026-09-10)

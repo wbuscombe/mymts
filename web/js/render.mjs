@@ -627,10 +627,17 @@ export function presetLineup(preset, channelList, isPlayable) {
   return [...chosen, ...rest];
 }
 
-/** The default news wall's slug order — mirrors native LineupSelector.forWall:
- *  PREFERRED, then FALLBACK, then any other PLAYABLE channel; deny-listed slugs
- *  never take a default slot. Pure, and shared by BOTH the fresh-wall autofill and
- *  the News-preset apply so the two paths can never diverge (and both match the TV). */
+/** The default news wall's slug order: PREFERRED, then FALLBACK, then any other
+ *  PLAYABLE channel; deny-listed slugs never take a default slot. Pure, and shared
+ *  by BOTH the fresh-wall autofill and the News-preset apply so those two WEB paths
+ *  can never diverge.
+ *
+ *  This no longer mirrors the TV. Since MYMTS-014 the native default wall builds its
+ *  lineup from the FULL channel set (LineupSelector.defaultWallLineup), so a
+ *  configured channel that is down keeps its original default-wall slot and renders
+ *  the existing Offline tile, and live channels do not shift up or repeat into that
+ *  slot. This web autofill still filters to playable, so a dead channel still drops
+ *  out here and later channels shift up. The divergence is recorded, not fixed. */
 export function newsLineup(channelList, isPlayable) {
   const bySlug = new Map((channelList || []).map((c) => [c.slug, c]));
   const out = [];

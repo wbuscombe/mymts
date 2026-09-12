@@ -1,0 +1,46 @@
+# gitleaks allowlist for myMTS.
+#
+# MECHANISM: per-finding fingerprints, "commit:path:rule:line". This is the
+# narrowest scoping gitleaks v8.18.4 supports, and it is valid here because the
+# commits named below are immutable history that is not being rewritten. Each
+# entry suppresses exactly ONE match, in ONE commit, at ONE line, under ONE
+# rule. No bare path exclusion and no rule-wide disable is used anywhere in this
+# file, so a new match, a moved match, or a different rule firing in these same
+# files is still reported.
+#
+# ADJUDICATION: every entry below was reviewed under MYMTS-017 and classified a
+# FALSE POSITIVE. No matched value is reproduced in this file, by policy.
+#
+# FORMAT NOTE (gitleaks v8.18.4): this file has no comment syntax; the parser
+# reads every line verbatim into the ignore set. The "#" lines here are
+# therefore inert, because no fingerprint can ever equal a comment string.
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: browser-localStorage preference-key constant in web/js/app.mjs,
+# revision 1 of 3. A client-side UI preference key, not a credential.
+ec840877e016cb34a9b29fbd3f2c2530210eef31:web/js/app.mjs:generic-api-key:24
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: browser-localStorage preference-key constant in web/js/app.mjs,
+# revision 2 of 3. A client-side UI preference key, not a credential.
+eb1a8d94f4cf9c955484f72719620c0205842107:web/js/app.mjs:generic-api-key:26
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: browser-localStorage preference-key constant in web/js/app.mjs,
+# revision 3 of 3. A client-side UI preference key, not a credential.
+3729eda92a63434e5a3f2da65d678d36424b9c9e:web/js/app.mjs:generic-api-key:39
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: synthetic test fixture inside the redaction unit test in
+# helper/tests/test_log_redaction.py. It exists to prove the redacter masks it.
+e9d0d5f56d9bc5614ac3a63677524905879d7999:helper/tests/test_log_redaction.py:stripe-access-token:25
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: PROFESSIONALIZATION-AUDIT.md quoting the app.mjs preference-key
+# constant above while documenting it. Documentation of a false positive.
+588439d74b762ca18e10fb1a3a84fa71a70a18b4:PROFESSIONALIZATION-AUDIT.md:generic-api-key:22
+
+# MYMTS-017: FALSE POSITIVE.
+# Classification: PROFESSIONALIZATION-AUDIT.md quoting the test fixture above
+# while documenting it. Documentation of a false positive.
+588439d74b762ca18e10fb1a3a84fa71a70a18b4:PROFESSIONALIZATION-AUDIT.md:stripe-access-token:23

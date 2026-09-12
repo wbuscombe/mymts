@@ -82,8 +82,13 @@ data class ChannelsSnapshot(
  * A server-authoritative wall preset (`/api/presets`) — a switchable channel-set
  * the user applies to the grid. The helper defines them; the picker renders
  * whatever is served (a new preset needs no app rebuild). [fill] is `"topup"` (the
- * News default — preferred + remaining playable, today's behavior) or `"exact"`
- * (only [slugs], curated). [gridRows]/[gridCols] are the suggested grid (nullable).
+ * News default: preferred, then the rest) or `"exact"` (only [slugs], curated).
+ * [gridRows]/[gridCols] are the suggested grid (nullable).
+ *
+ * Since MYMTS-014 the default wall builds its lineup from the FULL channel set
+ * ([com.mymts.ui.wall.LineupSelector.defaultWallLineup]), not the playable subset:
+ * a configured channel that is down keeps its original default-wall slot and renders
+ * the existing Offline tile, and live channels do not shift up or repeat into it.
  */
 data class Preset(
     val id: String,
