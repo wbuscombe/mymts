@@ -1,10 +1,18 @@
 # Multi-OS desktop release — build the MyMTS desktop app on macOS / Windows /
-# Linux with PyInstaller and, on a version tag, publish a GitHub Release with the
-# three artifacts. This is ADDITIVE to ci.yml (tests + docs-hygiene stay intact).
+# Linux with PyInstaller and, on a version tag, create a DRAFT GitHub Release with
+# the three artifacts. This is ADDITIVE to ci.yml (tests + docs-hygiene stay intact).
 #
-# Triggers: a `v*` tag (publishes a Release) or manual dispatch (builds only).
-# Signing/notarization is GATED on secrets — absent => unsigned artifacts (the
-# build still succeeds). No secrets are printed.
+# Triggers: a `v*` tag (creates a draft Release) or manual dispatch (builds only).
+#
+# Release decisions (deliberate, not gaps):
+#   - Desktop artifacts ship UNSIGNED. No signing or notarization runs here.
+#   - The Android APK is signed locally and attached manually. The keystore is
+#     deliberately kept off CI, so this workflow builds no APK.
+#   - The release is created as a DRAFT and published only after the signed APK
+#     is attached and verified.
+# Manual APK path: build and sign the release APK locally, confirm it with
+# `apksigner verify`, attach it with `gh release upload <tag> mymts-<version>.apk`,
+# check the draft's assets and body, then publish the draft.
 name: release
 
 on:
@@ -73,52 +81,6 @@ jobs:
           [ -n "$ok" ] || { echo "SMOKE FAILED: the bundle did not serve /health"; exit 1; }
           echo "smoke OK: the bundled app serves /health headless"
 
-      # --- signing, gated on secrets (unsigned fallback if unset) ---
-      - name: Import macOS signing cert into a keychain (gated)
-        if: runner.os == 'macOS'
-        env:
-          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-        run: |
-          # Gated: skip when no cert secret is configured (the build stays unsigned).
-          # (secrets.* can't be used in a step `if:`, so the check lives here.)
-          if [ -z "$MACOS_CERT_P12" ]; then
-            echo "no MACOS_CERT_P12 secret — skipping keychain import (unsigned build)"
-            exit 0
-          fi
-          # Materialise the base64 .p12 secret into a temp keychain so codesign
-          # can find the Developer ID identity. No secret is printed.
-          KC="$RUNNER_TEMP/mymts-signing.keychain-db"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
-          security set-keychain-settings -lut 21600 "$KC"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
-          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" \
-            -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          rm -f "$RUNNER_TEMP/cert.p12"
-
-      - name: Sign + notarize (macOS, gated)
-        if: runner.os == 'macOS'
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: bash tools/desktop/sign-macos.sh tools/desktop/dist/MyMTS.app
-        # With no MACOS_CERT_P12 secret the keychain step is skipped and
-        # sign-macos.sh leaves the adhoc build (exit 0) — an honest unsigned build.
-
-      - name: Sign (Windows, gated)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: pwsh tools/desktop/sign-windows.ps1 -Exe tools/desktop/dist/MyMTS/MyMTS.exe
-
       # --- package per OS ---
       - name: Package (macOS .app -> zip)
         if: runner.os == 'macOS'
@@ -139,115 +101,58 @@ jobs:
           path: tools/desktop/${{ matrix.artifact }}
           if-no-files-found: error
 
-  # --- native Android APK (sideload), built on the same `v*` tag ---
-  android:
-    name: build (android apk)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Mirror ci.yml's Android toolchain (ci.yml is NOT modified).
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      # Build + sign the release APK. Signing is GATED on the Android keystore
-      # secrets — mirroring the macOS-notarization gating above:
-      #   present -> sign, then verify + attach the SIGNED APK;
-      #   absent  -> build for VALIDATION ONLY, attach NOTHING (an unsigned APK
-      #              won't install, so shipping one is worse than nothing).
-      # The gradle signingConfig reads MYMTS_RELEASE_* from the environment when
-      # app/keystore.properties is absent (CI) and from that file when present
-      # (the operator's local flow — untouched). No secret is ever printed; the
-      # keystore lives only in the ephemeral runner temp and is removed after use.
-      - name: Build + sign release APK (gated on keystore secrets)
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "no ANDROID_KEYSTORE_BASE64 secret — building release APK for VALIDATION ONLY."
-            echo "(unsigned APKs don't install, so none is attached; local-sign + attach per the docs.)"
-            ./gradlew :app:assembleRelease --no-daemon
-            echo "ANDROID_SIGNED=0" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          # Materialise the keystore into the EPHEMERAL runner temp — never
-          # committed, never echoed; the runner is destroyed after the job.
-          KS="$RUNNER_TEMP/mymts-release.keystore"
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KS"
-          # Gradle reads these from env (keystore.properties is absent in CI).
-          export MYMTS_RELEASE_STORE_FILE="$KS"
-          export MYMTS_RELEASE_STORE_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
-          export MYMTS_RELEASE_KEY_ALIAS="$ANDROID_KEY_ALIAS"
-          export MYMTS_RELEASE_KEY_PASSWORD="$ANDROID_KEY_PASSWORD"
-          ./gradlew :app:assembleRelease --no-daemon
-          rm -f "$KS"
-          echo "ANDROID_SIGNED=1" >> "$GITHUB_ENV"
-
-      - name: Verify signature + stage the signed APK
-        if: env.ANDROID_SIGNED == '1'
-        run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
-          APKSIGNER="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -name apksigner | sort -V | tail -n1)"
-          # Confirms the APK is properly signed (prints "Verifies"; no secret).
-          "$APKSIGNER" verify --verbose "$APK" | head -n 5
-          VER="${GITHUB_REF_NAME#v}"
-          case "$GITHUB_REF" in refs/tags/*) : ;; *) VER="dev-${GITHUB_SHA::7}" ;; esac
-          cp "$APK" "mymts-${VER}.apk"
-          echo "staged signed APK: mymts-${VER}.apk"
-
-      - name: Upload signed APK (only when signing was active)
-        if: env.ANDROID_SIGNED == '1'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mymts-android-apk
-          path: mymts-*.apk
-          if-no-files-found: error
-
   release:
-    name: publish GitHub Release
-    needs: [build, android]
+    name: create draft GitHub Release
+    needs: [build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # create the release + upload assets
+      contents: write   # create the draft release + upload assets
     steps:
+      # Checked out only so the release body can be read from CHANGELOG.md.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - name: List artifacts
         run: ls -la artifacts
+      # The body is the CHANGELOG section for this tag's version plus the fixed
+      # notes below. A tag with no matching (or an empty) section fails the job
+      # here, so no release is ever created with an empty or placeholder body.
+      - name: Build release body from CHANGELOG
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          BODY="$RUNNER_TEMP/release-body.md"
+          awk -v ver="$VER" '
+            index($0, "## [" ver "]") == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$BODY"
+          if ! grep -q '[^[:space:]]' "$BODY"; then
+            echo "::error::CHANGELOG.md has no non-empty '## [$VER]' section for tag $GITHUB_REF_NAME; refusing to create a release."
+            exit 1
+          fi
+          cat >> "$BODY" <<'EOF'
+
+          ---
+
+          **The desktop builds are unsigned.**
+          - macOS: Gatekeeper blocks the first launch. Right-click the app, choose Open, then confirm Open. This is needed once.
+          - Windows: SmartScreen shows an unknown-publisher warning. Choose More info, then Run anyway. This is needed once.
+          - Linux: not affected.
+
+          **Android TV APK.** The APK is signed and attached manually after it has been verified. While this release is a draft, the APK is expected to be absent until that step is complete.
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
-          # Unsigned builds until a cert is configured -> mark as a pre-release.
-          prerelease: true
-          body: |
-            MyMTS desktop — run the web wall with no clone, no Docker, no Python.
-
-            Download for your OS, then open it (it runs as a menu-bar / tray app and
-            opens the wall in your browser at http://127.0.0.1:8091/app/).
-
-            These builds are currently **unsigned** (no code-signing cert configured):
-            - macOS: right-click the app -> Open -> Open (once).
-            - Windows: More info -> Run anyway (once).
-            Signing/notarization activates automatically once a cert is provided.
-
-            **Android TV app (`mymts-*.apk`)** — attached only when the Android keystore
-            secrets are configured (an unsigned APK won't install). It's a *stock,
-            runtime-configurable* build: on first launch it asks for your helper's LAN
-            address (no rebuild needed). Sideloading needs "unknown sources" enabled;
-            this is not a Play Store distribution. If no APK is attached, the maintainer
-            signs one locally and adds it (see DOWNLOAD-AND-RUN.md).
+          body_path: ${{ runner.temp }}/release-body.md
+          # Created as a draft: not publicly visible until the signed APK is
+          # attached and verified and the draft is published by hand.
+          draft: true
+          # Deliberate setting, not a default: releases are full releases. The
+          # unsigned desktop builds are stated in the body instead.
+          prerelease: false
