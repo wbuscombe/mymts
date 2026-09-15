@@ -1,0 +1,25 @@
+{
+  "digest": "ab6648a3a1381facfd099794d55d13d75d3d05169c90df38b0ecd48641e82077",
+  "files": [
+    "14ca760b95b18ffe1570a2fe79bdccb93e031def2d3f122a502e2a64fa31f841  README.md",
+    "b17dd353a30ef9f8e1fd44225236fdd0cb5be57eea5b6a00f80a84d06058cd22  control/control.css",
+    "add7c3e9c17bb0bf73efcfbc7de7b8ed94e4a3dcf3cd02d4750d8970b01d498a  control/control.mjs",
+    "7aca99aaa109d856e1d501f32275b7cb36330cbc180dd719f451063a34e808e4  control/index.html",
+    "aa7c2c44c34f64383b167700085fdaf2918a9f273b05a6ff81d9e7f294cd31a3  index.html",
+    "2ba6519b2ef96034a6b0bc79d88f302cc875847c1137603f4471b644a1360941  js/api.mjs",
+    "f19baec4ae8321b3d54e1d6b1b13451f32181c9e5bffe9f2189ea00b96575fc2  js/app.mjs",
+    "8172ab5e78e11041b045ef695dd6902ef29e3ae064c866e012b036645b063497  js/fpsmeter.mjs",
+    "165dbbfb64b289fbf20e98d244a09a95c0f86160452116b2683da517fff003be  js/render.mjs",
+    "6bb4a0702ac9b439e56a31f657732a05e44f1b24761877033c2e02af61342e1f  js/scaleControls.mjs",
+    "25afdaed29488852d52f43d83cfb60b214be597327ed1b58ed85570694a9525c  js/video.mjs",
+    "9fa186d6de6ebf87928517fcba2026634f76d22995b9d488ce7e4b510e199b02  js/wallConfig.mjs",
+    "f9de30ec7a8475bfa11811e5c62af97dd8c8b287980d8fca9f84682e6b393c66  styles.css",
+    "b502706317fa6ea42a1f394125a521d8eaf8a66ab54878990daa15e2d1742b46  test/autofit.test.mjs",
+    "3aa150284c0e5142f066ba7ae12a1c9894bc546b06ae394c7c23f2ef5fdcd9de  test/fpsmeter.test.mjs",
+    "7923e7e8637968a380ee403c58cec5be65e50ea2302aa566ec1cd15f5f1d1ca7  test/ladderParity.test.mjs",
+    "60f1fcd209dc8b880ff51a52b829e7281f5e4a03cbaafa799eb53870f25c153c  test/render.test.mjs",
+    "8b9fdb9f6c4c3e7ade7cbff7cfa620af37bab6aa785cf41ec1ca0ccdc8adfb76  test/scaleControls.test.mjs",
+    "a8981233d3283b2eb91a4e319880d1d84d02707dd78ccd99ef78ac7918881a83  test/wallConfig.test.mjs",
+    "484054e8cd03d3f6d1781fb7f402bdc318d8a4c527f933a95c624e27cc9a9470  vendor/hls.min.js"
+  ]
+}

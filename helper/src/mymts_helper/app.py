@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from . import db, phantom
 from .channels.api import get_router as channels_router
@@ -27,6 +28,7 @@ from .channels.override import seed_lineup
 from .channels.presets import get_router as presets_router
 from .channels.prober import ChannelProber
 from .config import Config
+from .deep_health import DEEP_HEALTH_PATH, DeepHealth
 from .feeds.api import get_router as feed_router
 from .feeds.poller import FeedPoller
 from .feeds.seeder import seed_from_file as seed_feeds_from_file
@@ -190,6 +192,21 @@ def create_app(
             last_poll_at=poller.last_poll_at,
             last_probe_at=prober.last_probe_at,
         )
+
+    # Deep health (MYMTS-025) on its OWN path: every subsystem asserted from real
+    # state, 503 naming what failed. /health above is a consumer contract and stays
+    # exactly as it was.
+    deep_health = DeepHealth(
+        db_path=db_path,
+        web_dir=cfg.web_client_dir,
+        stream_dir=cfg.stream_dir,
+        feed_poll_interval_seconds=cfg.feed_poll_interval_seconds,
+    )
+
+    @app.get(DEEP_HEALTH_PATH)
+    def health_deep() -> JSONResponse:
+        body = deep_health.evaluate()
+        return JSONResponse(body, status_code=200 if body["healthy"] else 503)
 
     app.include_router(feed_router(db_path))
     app.include_router(channels_router(db_path))

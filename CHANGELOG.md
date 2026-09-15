@@ -62,6 +62,42 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+### Added
+
+- **`/health/deep`: a helper health signal that can actually fail.** `/health` keeps its
+  exact shape, status codes and meaning; its `ok` and `ready` are constants and consumers
+  depend on it. The new route evaluates five subsystems from real state and answers `503`
+  naming each one that failed: the database answers a read-only query; the newest successful
+  feed fetch is within three poll intervals (never less than 15 minutes); at least one
+  channel is live; the renderer's HLS playlist exists, its newest segment is at most 20 s old
+  and its media sequence keeps advancing; and the served web tree is byte-identical to the
+  tree the running helper build was made for. That last check compares against
+  `web_manifest.json`, shipped inside the helper package and regenerated whenever `web/`
+  changes (a test fails until it is). Nothing in the route reads `BUILD_SHA`: the build
+  identity it reports is a digest of the running package's own files.
+- **Consistent database backup and non-destructive restore** (`helper/deploy/db_backup.py`).
+  A backup uses SQLite's online backup API, one snapshot that stays consistent under a
+  concurrent writer, is integrity-checked, and carries a sha256 sidecar. A restore checks the
+  checksum, the header and `integrity_check` first and refuses anything that fails. It writes
+  to a new file, or to a target named explicitly whose prior contents are first kept as a
+  verified `.pre-restore-<utc>` copy. It never deletes anything and never overwrites
+  implicitly.
+- **A rollback covering every component a helper deploy changes**
+  (`helper/deploy/rollback.py`). Before it changes anything, `deploy-helper.sh` now captures
+  the helper and renderer images (held under a `predeploy-<id>` tag), the renderer's
+  container state, `_web`, `_src`, `_renderer`, `compose.yml`, `.env` and a database backup,
+  then prints the one restore command. A restore verifies all evidence before touching
+  anything, refuses an incomplete capture, sets every replaced tree and file aside instead of
+  deleting it, recreates both services, and reports per component whether the result
+  matches the capture. The existing image-tag auto-rollback is unchanged.
+
+### Verified
+
+Every new test was written first and seen failing before its code existed: 14 for
+`/health/deep`, 14 for backup and restore, 7 for the rollback. CI runs them by name and fails
+the step if any is skipped. `/health/deep` was also driven over real HTTP with the renderer
+stream deliberately broken, and answered `503` naming only `stream`. Nothing was deployed.
+
 ## [0.6.1] - 2026-09-14
 
 **The Android TV APK attached to a release is now a true unconfigured build.** A patch

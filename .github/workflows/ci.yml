@@ -42,6 +42,19 @@ jobs:
         working-directory: helper
         run: uv run pytest -q
 
+      # MYMTS-025: named verbosely so the log proves each test ran, and failing the
+      # step if any of them is skipped, deselected or xfailed.
+      - name: Deep health + DB backup/restore + rollback tests (verbose, no skips)
+        working-directory: helper
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/mymts-025-tests.log"
+          uv run pytest -v -o addopts="" tests/test_deep_health.py tests/test_db_backup.py tests/test_helper_rollback.py | tee "$log"
+          if grep -Eq '[0-9]+ (skipped|deselected|xfailed|xpassed)' "$log"; then
+            echo "::error::a MYMTS-025 test did not execute"; exit 1
+          fi
+          grep -E '^=+ [0-9]+ passed' "$log"
+
       - name: Cross-component schema_version consistency (ARCH-1)
         run: python3 scripts/check_schema_consistency.py
 

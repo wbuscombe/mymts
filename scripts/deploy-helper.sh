@@ -91,6 +91,19 @@ echo "==> deploying helper"
 echo "    host=$HOST  remote-path=$REMOTE_PATH"
 echo "    build_sha=$BUILD_SHA  build_version=$BUILD_VERSION"
 
+# Pre-deploy rollback capture (MYMTS-025), BEFORE anything below changes: holds the
+# running helper and renderer images, archives _web, _src, _renderer, compose.yml and
+# .env, and takes a consistent online backup of the database, under a configurable
+# evidence path on the helper host. A running system that cannot be captured
+# completely aborts the deploy here. The full restore command is printed at the end.
+ROLLBACK_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+ROLLBACK_DIR="${MYMTS_ROLLBACK_EVIDENCE_DIR:-$REMOTE_PATH/_rollback}/$ROLLBACK_ID"
+ROLLBACK_RESTORE="ssh $HOST \"python3 '$ROLLBACK_DIR/tools/rollback.py' restore --deploy-dir '$REMOTE_PATH' --evidence-dir '$ROLLBACK_DIR'\""
+echo "==> capturing the pre-deploy rollback set (every component this deploy changes)"
+ssh "$HOST" "mkdir -p '$ROLLBACK_DIR/tools' && chmod 700 '$ROLLBACK_DIR'"
+rsync -a helper/deploy/rollback.py helper/deploy/db_backup.py "$HOST:$ROLLBACK_DIR/tools/"
+ssh "$HOST" "python3 '$ROLLBACK_DIR/tools/rollback.py' capture --deploy-dir '$REMOTE_PATH' --evidence-dir '$ROLLBACK_DIR'"
+
 echo "==> ensuring remote layout"
 ssh "$HOST" "mkdir -p '$REMOTE_PATH/_src'"
 # Note: container state lives in the named volume `mymts-helper-data`
@@ -189,6 +202,7 @@ exit 1
 EOF
 then
     echo "==> done"
+    echo "    full rollback of every component, if needed: $ROLLBACK_RESTORE"
 else
     echo "==> DEPLOY VERIFY FAILED — attempting rollback to the prior (rollback) image (DEPLOY-3)" >&2
     # Auto-revert: restore the rollback image under the deploy tag, restore its
@@ -207,5 +221,6 @@ else
         echo "   ssh $HOST 'docker tag mymts-helper:rollback mymts-helper:$BUILD_VERSION && cd $REMOTE_PATH && docker compose -f compose.yml --env-file .env up -d'" >&2
         echo "   (or: git checkout a known-good helper sha and re-run scripts/deploy-helper.sh)" >&2
     fi
+    echo "   full rollback of every component captured before this deploy: $ROLLBACK_RESTORE" >&2
     exit 1
 fi
