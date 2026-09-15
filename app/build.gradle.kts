@@ -64,8 +64,8 @@ val helperBaseUrlRaw: String? = run {
     val local = Properties()
     val localFile = rootProject.file("local.properties")
     if (localFile.exists()) localFile.inputStream().use { local.load(it) }
-    (project.findProperty("MYMTS_HELPER_BASE_URL") as? String)
-        ?: local.getProperty("MYMTS_HELPER_BASE_URL")
+    ((project.findProperty("MYMTS_HELPER_BASE_URL") as? String)
+        ?: local.getProperty("MYMTS_HELPER_BASE_URL"))?.takeIf { it.isNotBlank() }
 }
 // True iff a real helper URL was supplied at build time (the operator's build, a
 // `-P` override, or local.properties). When false, HELPER_BASE_URL is only the
@@ -191,7 +191,7 @@ android {
         // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.4.1 -> 401.
         // (Was pinned at the stale `1`.) Bump in lockstep with the released tag so
         // versionCode rises with versionName (which tracks the git tag below).
-        versionCode = 600
+        versionCode = 601
         versionName = getVersionFromGit()
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")

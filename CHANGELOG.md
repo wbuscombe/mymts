@@ -62,6 +62,28 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-14
+
+**The Android TV APK attached to a release is now a true unconfigured build.** A patch
+release that carries every change in 0.6.0 below, plus one correction to how the release APK
+is built. `versionCode 601`. `versionName` is stamped from the release tag when the APK is
+built, so it reads `0.6.1` once that tag is cut.
+
+### Fixed
+
+- **A release APK no longer records a helper address as set when none was given.** The APK
+  published with a release is built without any helper address, so nothing about the build
+  machine's own network ends up inside it. Until now that build still recorded its empty
+  helper address as if one had been supplied. A blank address given at build time is now
+  treated exactly like no address at all: the app records that no helper is configured,
+  carries only the built-in localhost placeholder, and first-run setup asks for the address
+  of your own helper. Builds that supply a real helper address behave exactly as before.
+
+### Verified
+
+The build was checked with a blank address, with no address, and with a sample address,
+before and after the change. The full gate suite was re-run offline for this release cut.
+
 ## [0.6.0] — 2026-09-12
 
 **Honest offline on the TV wall, and feed dates you can trust.** A minor bump rather than a
