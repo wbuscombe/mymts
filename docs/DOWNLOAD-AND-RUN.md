@@ -81,10 +81,9 @@ address baked in: on first run a **stock APK asks for your helper's LAN address*
 (reachability-tested before it saves), and you can change it any time under
 **Settings → "Helper URL"**.
 
-**Getting the APK.** When the maintainer has configured signing, `mymts-<version>.apk`
-is attached to the [GitHub Release](https://github.com/wbuscombe/mymts/releases) next
-to the desktop builds (CI signs it on the tag); otherwise the maintainer signs one
-locally and attaches it — either way the published APK is signed. **Install reality:**
+**Getting the APK.** The maintainer signs `mymts-<version>.apk` locally and attaches
+it to the [GitHub Release](https://github.com/wbuscombe/mymts/releases) next to the
+desktop builds; CI does not build or sign it. The published APK is signed. **Install reality:**
 it's a **sideload**, not a Play Store app — on your Android TV enable *Install unknown
 apps* for your file manager / `adb install mymts-<version>.apk`, and Play Protect may
 warn on first install (expected for any sideloaded app). The APK is runtime-configurable,

@@ -11,8 +11,10 @@
 #   - read-only rootfs with tmpfs for /tmp,
 #   - all capabilities dropped, no-new-privileges,
 #   - CPU + memory caps,
-#   - internal Docker network — never published to a host port; the TV
-#     reaches the helper through the NAS network, not the public internet,
+#   - own bridge network (not internal: the poller needs outbound HTTP);
+#     only 8443 (HTTPS API) and 8082 (plain-HTTP HLS stream) are published
+#     to host ports, LAN-only; the TV reaches the helper through the NAS
+#     network, not the public internet,
 #   - secrets injected at runtime via .env (never baked into the image).
 #
 # Unrelated services/containers sharing the helper's host are NEVER

@@ -1,7 +1,8 @@
 # MyMTS helper — minimal NAS-side service.
 #
 # Hardening posture (Trust Bar A2 / A4 / A7 / Op Bar B1):
-#   - Pinned base image by tag (digest pin lands in Stage 6 hardening).
+#   - Pinned base image by tag and digest (the digest is the source of truth;
+#     see the ARG PYTHON_IMAGE note below).
 #   - Non-root user.
 #   - tini as PID 1 so kernel signals reach uvicorn cleanly.
 #   - No build tools in the runtime layer.

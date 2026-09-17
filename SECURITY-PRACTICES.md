@@ -40,11 +40,9 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
 ### App (TV side)
 - No credentials shipped in the APK.
 - Requests only the OS permissions it actually needs.
-- Release signing is implemented — a v1+v2+v3 `signingConfig` sourced from a **gitignored** `app/keystore.properties` (modeled on `app/keystore.properties.example`) **or, when that file is absent, from `MYMTS_RELEASE_*` environment variables** (CI), an `IS_RELEASE_SIGNED` BuildConfig flag, and a deploy guard that refuses to push a debug-signed APK. `versionCode` is version-derived and the helper URL is runtime-configurable, so a stock APK needs no rebuild.
-- **Publishing the signed APK on a release — two paths (the operator picks).** `release.yml` builds the Android APK on every `v*` tag and signs it **gated on keystore secrets**, mirroring the macOS-notarization gating (present → sign + attach; absent → build for validation only, attach **nothing** — an unsigned APK won't install, so shipping one is worse than nothing).
-  - **(a) CI-sign.** Add four repo secrets under **GitHub → Settings → Secrets and variables → Actions**: `ANDROID_KEYSTORE_BASE64` (the keystore base64-encoded: `base64 -i release.keystore | pbcopy`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. CI decodes the keystore into the ephemeral runner temp, signs, `apksigner verify`s, and attaches `mymts-<version>.apk`. **Tradeoff:** the keystore then lives in GitHub's encrypted secret store.
-  - **(b) Local-sign + manual-attach (recommended for a small/personal distribution).** Build `./gradlew :app:assembleRelease` with the local `app/keystore.properties`, then attach the resulting APK to the GitHub Release by hand. The keystore never leaves the operator's machine.
-- **Secret hygiene (hard):** the keystore + passwords live ONLY as GitHub Actions secrets (or the gitignored local file) — never committed to the repo, never written to a tracked file, never echoed to a log. CI references them by env-var name and decodes the keystore only into the runner's ephemeral temp, removed after use.
+- Release signing is implemented — a v1+v2+v3 `signingConfig` sourced from a **gitignored** `app/keystore.properties` (modeled on `app/keystore.properties.example`) **or, when that file is absent, from `MYMTS_RELEASE_*` environment variables** (no CI job supplies them), an `IS_RELEASE_SIGNED` BuildConfig flag, and a deploy guard that refuses to push a debug-signed APK. `versionCode` is version-derived and the helper URL is runtime-configurable, so a stock APK needs no rebuild.
+- **Publishing the signed APK on a release: local sign, manual attach.** `release.yml` builds no Android APK and runs no signing step; the keystore is deliberately kept off CI. Build `./gradlew :app:assembleRelease` with the local `app/keystore.properties`, confirm it with `apksigner verify`, attach it to the draft release by hand, then publish the draft. The keystore never leaves the operator's machine.
+- **Secret hygiene (hard):** the keystore and passwords live ONLY in the gitignored local file or the operator's local environment: never committed to the repo, never written to a tracked file, never echoed to a log. No GitHub Actions secret holds them.
 
 ### Desktop executable (packaged app — `tools/desktop/`)
 - **Localhost-only bind.** The packaged app serves the helper on `127.0.0.1` (a
@@ -65,9 +63,12 @@ The full rationale lives in `docs/foundation/02-TRUST-BAR.md`. This file restate
   URL, no native binary. Every failure falls back to the bundled yt-dlp. Trust
   root: PyPI + TLS. (The helper's own upstream egress is unchanged + still
   SSRF-guarded.)
-- **Signing posture.** Builds are signed + notarized when credentials are present
-  (gated) and honestly unsigned otherwise, with a documented right-click→Open
-  first-run path; unsigned releases are marked pre-release.
+- **Signing posture.** Released desktop builds ship unsigned: `release.yml` runs no
+  signing or notarization, and the release body carries the one-time
+  right-click→Open and Run-anyway notes. Releases are created as drafts with
+  `prerelease: false`, and the unsigned status is stated in the body.
+  (`tools/desktop/build.sh` can still sign a local macOS build when an identity
+  is present.)
 
 ### Validation
 - Everything the helper accepts from outside is validated by structured parsing, not loose regex.

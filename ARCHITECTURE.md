@@ -500,7 +500,7 @@ app/
 
 1. **Built** — produced by `:app:assembleRelease`. Signed with the operator's release key if `keystore.properties` exists; otherwise debug-signed. The deploy script refuses to install a debug-signed APK as a release.
 2. **Archived** — copied into `$MYMTS_ARCHIVE_DIR/archive/mymts-<v>+<sha>-<utc>.apk`. Older versions are kept; manual rollback to any of them is one command.
-3. **Installed** — `adb install -r` on the target. Not yet known-good.
+3. **Installed** — pushed, byte-verified, then installed with `pm install -r` via `adb_install_verified` (`scripts/lib-adb.sh`), never a streamed `adb install`. Not yet known-good.
 4. **Known-good** — pointer at `$MYMTS_ARCHIVE_DIR/known-good` (single filename, atomic write) names the APK currently in production. Only updated after the health gate passes.
 
 ### Promotion is gated, not automatic
@@ -515,7 +515,7 @@ After install + launch, the deploy script captures `MYMTS_SOAK` telemetry for a 
 | `FAIL_NOT_READY` | not enough tiles came up | rollback |
 | `FAIL_TIMEOUT` | window elapsed with insufficient evidence | rollback |
 
-The "rollback" path is the same code path as `--manual-rollback`: read the `known-good` pointer (which never names the failed APK — promotion happens only on success), `adb install -r -d` the file, restart. Because older APKs are retained, manual recovery to *any* prior version is one command if the auto-restored known-good itself is bad.
+The "rollback" path is the same code path as `--manual-rollback`: read the `known-good` pointer (which never names the failed APK — promotion happens only on success), reinstall the file through the same byte-verified push and `pm install -r -d`, restart. Because older APKs are retained, manual recovery to *any* prior version is one command if the auto-restored known-good itself is bad.
 
 ### Honesty discipline preserved at the update layer
 
