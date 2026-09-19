@@ -91,6 +91,20 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   deleting it, recreates both services, and reports per component whether the result
   matches the capture. The existing image-tag auto-rollback is unchanged.
 
+### Fixed
+
+- **An APK built without a helper address can now reach the helper over HTTPS.** The
+  helper's HTTPS listener presents its own self-signed certificate. That certificate already
+  shipped inside the app, but only a build made with a helper address trusted it, and only
+  for that one address. The APK attached to a release trusted public certificate authorities
+  alone and refuses plain HTTP to anything but the device itself, so first-run setup could
+  reach the helper neither way. That build now trusts the bundled helper certificate
+  alongside the public authorities, so entering the helper's `https://` address (the one its
+  certificate names) in first-run setup works. Nothing else is loosened: plain HTTP is still
+  allowed only to the device itself and the emulator, and a build made with a helper address
+  keeps its existing pin to that address, unchanged. A helper serving a different
+  certificate still needs a build that bundles it. `versionCode` is now 602.
+
 ### Verified
 
 Every new test was written first and seen failing before its code existed: 14 for

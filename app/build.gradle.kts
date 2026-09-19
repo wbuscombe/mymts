@@ -127,7 +127,12 @@ val signingSource = loadSigningSource()
 //   - https helper host  -> domain-config pinning @raw/helper_cert for that
 //     host, cleartext refused (the operator's real release posture).
 //   - http/localhost     -> cleartext allowed only to loopback + the emulator
-//     alias (10.0.2.2), no pinning (the demo/local default).
+//     alias (10.0.2.2), no pinning (the demo/local default). base-config also
+//     trusts the bundled @raw/helper_cert alongside system CAs, so a STOCK APK
+//     (no helper host known at build time) can validate the helper's self-signed
+//     HTTPS listener at whatever address first-run setup is given. The https
+//     branch doesn't get it: its pinned host already anchors that cert, and every
+//     other host keeps system CAs only.
 // The generated file lands in a generated res dir wired into sourceSets; the
 // static committed copy was removed. See PHASE 1b of the professionalization.
 val nscResDir = layout.buildDirectory.dir("generated/res/nsc")
@@ -156,6 +161,8 @@ val generateNetworkSecurityConfig by tasks.registering {
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>"""
+        val baseAnchors = if (isHttps) "" else """
+            <certificates src="@raw/helper_cert" />"""
         val xmlDir = outDir.get().dir("xml").asFile
         xmlDir.mkdirs()
         xmlDir.resolve("network_security_config.xml").writeText(
@@ -165,7 +172,7 @@ val generateNetworkSecurityConfig by tasks.registering {
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
-            <certificates src="system" />
+            <certificates src="system" />$baseAnchors
         </trust-anchors>
     </base-config>$domainBlock
 </network-security-config>
@@ -191,7 +198,7 @@ android {
         // Monotonic, version-derived: MAJOR*10000 + MINOR*100 + PATCH. 0.4.1 -> 401.
         // (Was pinned at the stale `1`.) Bump in lockstep with the released tag so
         // versionCode rises with versionName (which tracks the git tag below).
-        versionCode = 601
+        versionCode = 602
         versionName = getVersionFromGit()
 
         buildConfigField("String", "BUILD_SHA", "\"${getGitSha()}\"")
