@@ -3,6 +3,7 @@ package com.mymts.player
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -53,7 +54,7 @@ class StreamPlayer(
     staleThresholdMs: Long = 15_000L,
     maxRecoveryAttempts: Int = 3,
     backoffMs: List<Long> = listOf(2_000L, 8_000L, 30_000L),
-    private val tickIntervalMs: Long = 2_000L,
+    private val tickIntervalMs: Long = TICK_INTERVAL_MS,
 ) {
     /** Re-exported so callers (SoakHarness, future grid UI) work in one type. */
     enum class State {
@@ -85,6 +86,9 @@ class StreamPlayer(
      * the latest url, not the stale construction-time one.
      */
     @Volatile private var currentUrl: String = spec.url
+
+    /** The live-edge watchdog's correction history (see [decideLiveEdgeCorrection]). */
+    private var liveEdgeHistory = LiveEdgeHistory()
 
     private val tracker = LivenessTracker(
         staleThresholdMs = staleThresholdMs,
@@ -170,9 +174,21 @@ class StreamPlayer(
             // Live-edge watchdog (Part B): if this tile has drifted too far behind
             // live (a backlog accumulated), JUMP to the live edge — drop the stale
             // backlog instead of playing through it. Real-time over catch-up.
+            // Bounded (MYMTS-034): a seek flushes the buffer and can land, or
+            // rebuffer, past the threshold again, so decideLiveEdgeCorrection applies
+            // hysteresis, a cooldown and a consecutive cap rather than re-seeking
+            // every tick.
             player?.let { p ->
-                if (shouldSeekToLive(p.currentLiveOffset, MAX_LIVE_DRIFT_MS)) {
-                    Log.i(TAG, "[${spec.label}] live drift ${p.currentLiveOffset}ms > ${MAX_LIVE_DRIFT_MS}ms — seek to live")
+                val offsetMs = p.currentLiveOffset
+                val decision = decideLiveEdgeCorrection(offsetMs, SystemClock.elapsedRealtime(), liveEdgeHistory)
+                liveEdgeHistory = decision.history
+                if (decision.seekToLive) {
+                    val n = decision.history.consecutiveCorrections
+                    Log.i(
+                        TAG,
+                        "[${spec.label}] live drift ${offsetMs}ms > ${LIVE_EDGE_TRIGGER_MS}ms — seek to live " +
+                            "($n/$LIVE_EDGE_MAX_CONSECUTIVE_CORRECTIONS before holding until recovered or the stream changes)",
+                    )
                     p.seekToDefaultPosition()
                 }
             }
@@ -202,6 +218,8 @@ class StreamPlayer(
     }
 
     private fun createPlayer() {
+        // A new player is a new stream: the live-edge watchdog re-arms.
+        liveEdgeHistory = LiveEdgeHistory()
         val renderersFactory = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
@@ -349,6 +367,7 @@ class StreamPlayer(
     fun updateUrl(newUrl: String) {
         if (newUrl == currentUrl) return
         currentUrl = newUrl
+        liveEdgeHistory = LiveEdgeHistory() // a new source: the live-edge watchdog re-arms
         Log.i(TAG, "[${spec.label}] resolved url rotated — swapping media source in place")
         val exo = player ?: return // not yet created; createPlayer() will use currentUrl
         exo.setMediaSource(buildHlsSource(newUrl))
@@ -448,12 +467,17 @@ class StreamPlayer(
     companion object {
         private const val TAG = "MyMTS.StreamPlayer"
 
+        /** The liveness + live-edge watchdog tick cadence (see the class doc). */
+        const val TICK_INTERVAL_MS = 2_000L
+
         // --- Live-edge + buffer tuning (Part B). The operator feel-tests + tunes
         //     these; they prioritize CURRENCY/real-time, not the hardware ceiling
         //     (a too-busy grid still needs fewer concurrent tiles — out of scope). ---
         /** Lag behind the live edge ExoPlayer aims to hold (small = current). */
         const val TARGET_LIVE_OFFSET_MS = 4_000L
-        /** Drift past which the watchdog JUMPS to live (drops the backlog). ~2× target. */
+        /** The drift line, ~2× target. The watchdog JUMPS to live (drops the backlog)
+         *  only past [LIVE_EDGE_TRIGGER_MS] (this + the target), and counts a tile back
+         *  at or under this line as recovered. */
         const val MAX_LIVE_DRIFT_MS = 8_000L
         /** Imperceptible micro-correction window only — gross drift is the seek, not this. */
         const val MIN_PLAYBACK_SPEED = 0.97f
@@ -470,7 +494,8 @@ class StreamPlayer(
  * Pure: should the live-edge watchdog seek to live? True only when the measured
  * offset behind live exceeds [maxDriftMs]. A non-live / unknown window reports a
  * negative offset (`C.TIME_UNSET`), which is below any positive threshold → false.
- * Pure (no Media3) so it's unit-testable. See [StreamPlayer.MAX_LIVE_DRIFT_MS].
+ * Pure (no Media3) so it's unit-testable. The watchdog applies it at
+ * [LIVE_EDGE_TRIGGER_MS] inside [decideLiveEdgeCorrection].
  */
 internal fun shouldSeekToLive(currentLiveOffsetMs: Long, maxDriftMs: Long): Boolean =
     currentLiveOffsetMs > maxDriftMs

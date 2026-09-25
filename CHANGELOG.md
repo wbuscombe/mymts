@@ -104,6 +104,17 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   allowed only to the device itself and the emulator, and a build made with a helper address
   keeps its existing pin to that address, unchanged. A helper serving a different
   certificate still needs a build that bundles it. `versionCode` is now 602.
+- **Live video on the TV no longer keeps jumping back to the live edge.** When a tile fell
+  more than 8 s behind live, the app jumped it to the live edge, and it checked again every
+  2 s with nothing to stop it. Each jump empties the buffer, and a jump can land, or pause
+  while refilling, still more than 8 s behind. The next check then jumped again, over and
+  over, so the tile could stutter and replay the same few seconds. Now a tile has to be
+  more than 12 s behind before it jumps, gets 15 s to settle after each jump, and makes at most
+  three jumps in a row that don't bring it back within 8 s of live. After that it plays on
+  at whatever delay it has, as the web wall and VLC already do. It starts correcting again
+  once it has caught back up to within 8 s, or when its stream restarts or changes. Stream
+  choice, quality and buffering are unchanged. Whether this removes all of the stutter seen
+  on the TV can only be confirmed on the device. `versionCode` is now 603.
 
 ### Verified
 
