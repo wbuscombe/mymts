@@ -90,6 +90,13 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   anything, refuses an incomplete capture, sets every replaced tree and file aside instead of
   deleting it, recreates both services, and reports per component whether the result
   matches the capture. The existing image-tag auto-rollback is unchanged.
+- **A sourcing decision record for three local stations: WCIA, WEEK and WAND**
+  (`docs/findings/25-local-station-sourcing-wcia-week-wand.md`). Documentation only, drawn from
+  the read-only research runs MYMTS-035 and MYMTS-036. Nothing is admitted, and no registry,
+  configuration or resolver changes. All three stations' web players are refused. On YouTube,
+  WCIA's official channel is classified admissible via the existing resolver, scheduled, but
+  it was offline at probe time, so its live resolution is unverified. WEEK's official channel
+  shows no live evidence, and no official WAND channel was established.
 
 ### Fixed
 
