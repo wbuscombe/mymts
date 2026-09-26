@@ -62,6 +62,13 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-26
+
+**The release APK can now reach your helper over HTTPS, and live TV tiles stop chasing the
+live edge.** A patch release that carries every change in 0.6.1 below, plus the fixes and
+additions here. `versionCode 603`. `versionName` is stamped from the release tag when the APK
+is built, so it reads `0.6.2` once that tag is cut.
+
 ### Added
 
 - **`/health/deep`: a helper health signal that can actually fail.** `/health` keeps its
@@ -92,7 +99,7 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   matches the capture. The existing image-tag auto-rollback is unchanged.
 - **A sourcing decision record for three local stations: WCIA, WEEK and WAND**
   (`docs/findings/25-local-station-sourcing-wcia-week-wand.md`). Documentation only, drawn from
-  the read-only research runs MYMTS-035 and MYMTS-036. Nothing is admitted, and no registry,
+  two read-only research passes. No station is added to the lineup, and no registry,
   configuration or resolver changes. All three stations' web players are refused. On YouTube,
   WCIA's official channel is classified admissible via the existing resolver, scheduled, but
   it was offline at probe time, so its live resolution is unverified. WEEK's official channel
@@ -110,7 +117,7 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   certificate names) in first-run setup works. Nothing else is loosened: plain HTTP is still
   allowed only to the device itself and the emulator, and a build made with a helper address
   keeps its existing pin to that address, unchanged. A helper serving a different
-  certificate still needs a build that bundles it. `versionCode` is now 602.
+  certificate still needs a build that bundles it.
 - **Live video on the TV no longer keeps jumping back to the live edge.** When a tile fell
   more than 8 s behind live, the app jumped it to the live edge, and it checked again every
   2 s with nothing to stop it. Each jump empties the buffer, and a jump can land, or pause
@@ -121,14 +128,15 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   at whatever delay it has, as the web wall and VLC already do. It starts correcting again
   once it has caught back up to within 8 s, or when its stream restarts or changes. Stream
   choice, quality and buffering are unchanged. Whether this removes all of the stutter seen
-  on the TV can only be confirmed on the device. `versionCode` is now 603.
+  on the TV can only be confirmed on the device.
 
 ### Verified
 
 Every new test was written first and seen failing before its code existed: 14 for
 `/health/deep`, 14 for backup and restore, 7 for the rollback. CI runs them by name and fails
 the step if any is skipped. `/health/deep` was also driven over real HTTP with the renderer
-stream deliberately broken, and answered `503` naming only `stream`. Nothing was deployed.
+stream deliberately broken, and answered `503` naming only `stream`. The full gate suite was
+re-run offline for this release cut.
 
 ## [0.6.1] - 2026-09-14
 
