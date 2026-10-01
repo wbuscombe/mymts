@@ -62,6 +62,27 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+### Added
+
+- **"Refresh all feeds" leads the TV's side menu, the one the LEFT key opens.** The new
+  first row reconnects every video tile and reloads each radar tile once, straight away,
+  then closes the menu. The video reconnect is the one WALL SETTINGS' "Refresh all video"
+  runs: a fresh player and manifest, with the tile's recovery state cleared, so it is
+  never a recovery strike. Each radar tile reloads through its own five-minute reload,
+  which then counts from this one, and never has two loads in flight however often the
+  row is used. Every opening of the menu, first or repeated, puts focus on the new row.
+  The row shows no message of its own (video tiles show CONNECTING while they reconnect),
+  has no cooldown and writes no setting. Everything else keeps its place and its action:
+  "Resync all feeds" is still the last row, "Refresh all video" still reloads video only
+  and leaves WALL SETTINGS open, and a sub-overlay opened from the menu (slot controls,
+  settings, a picker) still returns focus to Slot 1. One rare landing changed: when MENU
+  opens the menu beneath a tile's controls opened from the grid, closing those controls
+  now lands on the new row instead of Slot 1. Offline and empty tiles, the news pane and
+  the ticker are untouched, and the web client's menu has no such row yet. 27 new JVM
+  tests pin the row order and label, the focus rule, each refresh row's actions, the
+  radar reload schedule and BACK's close decision; the on-screen result still needs the
+  checks on the TV that ARCHITECTURE §50 lists. `versionCode 604`.
+
 ## [0.6.2] - 2026-09-26
 
 **The release APK can now reach your helper over HTTPS, and live TV tiles stop chasing the

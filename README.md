@@ -126,7 +126,8 @@ up on the real wall (see the device gallery below).</sub>
 
 ### ⚙️ Settings — and they're TV↔web peers
 The gear opens a **native-style side menu** (a CHANNELS list + WALL actions) mirroring the TV
-app; Settings and the per-slot controls (Channel · Audio · Reconnect) hang off it. A **wall
+app; Settings and the per-slot controls (Channel · Audio · Reconnect) hang off it. The TV's
+menu, not yet the web's, also leads with a **Refresh all feeds** row. A **wall
 preset** selector (News Wall · Nature · Space · Chill / Mixed · Ocean · Eagles) — server-authoritative, so the helper
 defines the sets and a new one needs no client rebuild; `news` is the default and identical to today —
 switches the whole grid at once. Grid size

@@ -384,7 +384,7 @@ The grid is configured as **independent rows × columns**, each **1–3** (so 2�
 
 The wall's focus is driven by a **single root focusable Box** + the pure `WallFocusModel` (the `focus` state is the cursor; the model handles all D-pad via `onPreviewKeyEvent`). When a menu/overlay opens, its focusable rows take Compose focus; on dismiss, focus must return **deterministically** to the wall — Compose-for-TV's implicit return is unreliable on this hardware (focus lands nowhere, or escapes to a focusable video `PlayerView` = the "main panel hijack"). Three guards make it deterministic:
 1. **Video surfaces are non-focusable** (`StreamSurface`: `isFocusable=false` + `FOCUS_BLOCK_DESCENDANTS`) — focus can never escape to a tile.
-2. The **side menu re-homes** its first row whenever a sub-overlay dismisses (a focus request keyed on the sub-overlay's presence, not a one-shot).
+2. The **side menu claims focus** at every opening, on its first row, **Refresh all feeds** (keyed on the menu's opening count, so a reopen during the close animation counts too), and **re-homes** the first slot row whenever a sub-overlay dismisses back to it (keyed on the sub-overlay's presence, not a one-shot). The opening rule is new in §50 and is not yet verified on the device.
 3. The **wall root re-homes** on full menu close via a frame-yielded `requestFocus` (`LaunchedEffect` + `withFrameNanos` + `runCatching`, replacing a racy `DisposableEffect`) — yield first so the dismissed overlay releases focus, then claim it.
 
 Verified on-box across repeated open/close cycles (the focused node returns to the full-screen root). The same per-row explicit `BringIntoViewRequester` keeps a focused menu/picker row scrolled into the visible area on this overscan-clipped panel.
@@ -1594,3 +1594,27 @@ Clamped to the floor, and **said so**: the surfaces show `on — feed at 11.46 %
 ### Known parity gap
 
 **Native does not have auto-fit.** v0.5.0 (PR-026) is built but not yet installed on the TV and its on-device extreme-value check has never run; stacking a second native change on an unverified one invites a confusing debug session. Native gets this once v0.5.0 is confirmed on the box. Recorded here rather than left to drift — a missed surface is exactly what PR-027 had to clean up.
+
+## 50. Side menu — "Refresh all feeds" leads the menu LEFT opens ([Unreleased], 2026-09-30)
+
+The TV's side menu (`MenuOverlay`) gains a first row, **Refresh all feeds**, above the CHANNELS list. The menu still opens the same way: LEFT off the feed or the ticker when the feed sits on the left, RIGHT when it sits on the right, or MENU. Its rows now read **Refresh all feeds · Slot 1…N · Preset · Settings · Resync all feeds**.
+
+- **What it runs.** First, the full reconnect of every video tile. That is the reconnect WALL SETTINGS' **Refresh all video** runs: a fresh player and manifest, with the liveness tracker reset to CONNECTING and zero recovery attempts, so it is never a recovery strike. Then one immediate reload of each radar tile. Then the menu closes.
+- **How a radar tile reloads.** Each tile reloads through its own timed reload (`RadarReloads` in `WallTile.kt`). The request advances the tile's single image-request key and restarts its 5-minute timer, so the next timed reload counts from it and the interval is unchanged. A tile never has two fetches in flight: a reload replaces the pending image request, because Coil executes one painter's requests latest-only. Requests made before a tile answers collapse into one reload.
+- **What it leaves alone.** Offline and empty tiles have nothing to reload. The news pane and the ticker are untouched. The row shows no message of its own (video tiles show CONNECTING while they reconnect), has no cooldown and writes no setting.
+- **Focus.** Every opening, first or repeated, lands on Refresh all feeds. The panel keys that claim on `MenuState.openings`, so a reopen during the close animation, while the panel is still composed, counts too. A sub-overlay opened from the menu (slot controls, settings, a picker) still returns focus to Slot 1 when it closes. When the menu closes, the wall root still re-homes (*Focus restoration on overlay dismiss*, above).
+- **The one landing that changed.** SELECT on a grid tile opens its controls with the menu closed; MENU then opens the menu beneath them. When those controls close, focus now lands on Refresh all feeds, because that is the menu's first landing after it opened. Before, it landed on Slot 1.
+- **Unchanged.** **Resync all feeds** keeps its action: jump every tile to live, reconnect only the dead ones, show the 1.5 s flash, close the menu. **Refresh all video** keeps its own: video tiles only, and WALL SETTINGS stays open. BACK closes the menu and MENU toggles it. Every other key while it is open is Compose focus traversal over one column of rows, as before.
+- **Known parity gap.** The web client's side menu has no Refresh all feeds row. Its own Resync all feeds already runs a full reconnect of every video tile, unlike the TV's. The web client is unchanged by this section.
+- **Tests.** The rows, focus and activation decisions are plain Kotlin (`ui/menu/SideMenu.kt`), pinned by `SideMenuTest`, including BACK's close decision. `RadarReloadTest` pins the radar schedule in virtual time. `RefreshAllFeedsWallTest` runs one activation through the real `StreamPlayerManager`. That a radar tile never has two fetches in flight rests on Coil's latest-only request handling, which no JVM test exercises.
+- **On-device checks.** JVM tests cannot reach the Compose bindings, so these need the TV:
+  - The menu reads Refresh all feeds · Slot 1…N · Preset · Settings · Resync all feeds, each existing row with its usual label and detail.
+  - Open the menu with LEFT, with MENU, and again during its close animation: focus is on Refresh all feeds each time.
+  - Close slot controls, Settings or the preset picker back to the menu: focus is on Slot 1. Then the rare path above: focus is on Refresh all feeds.
+  - BACK on the Refresh row closes the menu and refreshes nothing. MENU closes it too.
+  - UP on the Refresh row, DOWN on Resync all feeds, and LEFT or RIGHT on any row behave as before.
+  - One activation: the menu closes and the D-pad drives the wall again; video tiles show CONNECTING and then settle; each radar tile shows its loading state and then a fresh frame, and one `RADAR_REFRESH` line lands in the crash log per radar tile.
+  - Several activations in quick succession: each radar tile shows one load at a time and ends on one fresh frame, and its next timed reload comes about five minutes after the last activation.
+  - Resync all feeds still flashes "Resyncing…" and closes the menu. Refresh all video still reloads video only and leaves WALL SETTINGS open.
+  - Closing the menu from a sub-overlay (assigning a channel, applying a preset) still returns the D-pad to the wall.
+  - With a radar tile assigned, watch the crash log and memory around an activation: it starts every video tile's re-initialisation and a radar image decode together.
