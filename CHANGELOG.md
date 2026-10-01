@@ -62,6 +62,13 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-30
+
+**"Refresh all feeds" now leads the TV's side menu.** A minor release that carries every
+change in 0.6.2 below, plus the addition here. Only the Android TV app changes; the helper,
+web client and renderer are as they were in 0.6.2. `versionCode 604`. `versionName` is
+stamped from the release tag when the APK is built, so it reads `0.7.0` once that tag is cut.
+
 ### Added
 
 - **"Refresh all feeds" leads the TV's side menu, the one the LEFT key opens.** The new
@@ -81,7 +88,7 @@ resolution, clamping, D-pad nudge semantics, and the enum→step migration incl.
   the ticker are untouched, and the web client's menu has no such row yet. 27 new JVM
   tests pin the row order and label, the focus rule, each refresh row's actions, the
   radar reload schedule and BACK's close decision; the on-screen result still needs the
-  checks on the TV that ARCHITECTURE §50 lists. `versionCode 604`.
+  checks on the TV that ARCHITECTURE §50 lists.
 
 ## [0.6.2] - 2026-09-26
 
