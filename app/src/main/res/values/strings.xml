@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MyMTS</string>
+    <!-- The side menu's first row: the full reconnect of every video tile plus one
+         reload of each radar tile, then the menu closes. -->
+    <string name="menu_refresh_all_feeds">Refresh all feeds</string>
+    <string name="menu_refresh_all_feeds_detail">reconnect all video · reload radar</string>
 </resources>

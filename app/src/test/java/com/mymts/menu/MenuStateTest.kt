@@ -39,6 +39,23 @@ class MenuStateTest {
         assertTrue(s.isOpen)
     }
 
+    @Test fun `openings counts each opening but not a redundant open`() {
+        // The side menu keys its opening focus on this count.
+        val s = MenuState()
+        assertEquals(0, s.openings)
+        s.open()
+        assertEquals(1, s.openings)
+        s.open()
+        assertEquals("a redundant open is not a new opening", 1, s.openings)
+        s.close()
+        assertEquals("closing does not count", 1, s.openings)
+        s.toggle()
+        assertEquals("toggle opening the menu counts", 2, s.openings)
+        s.toggle()
+        s.open()
+        assertEquals(3, s.openings)
+    }
+
     @Test fun `close resets isOpen AND clears pendingSelection`() {
         val s = MenuState()
         s.open()

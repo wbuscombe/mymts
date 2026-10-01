@@ -2,6 +2,7 @@ package com.mymts.ui.menu
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,7 +28,17 @@ class MenuState {
     var pendingSelection: PendingSelection? by mutableStateOf(null)
         private set
 
+    /**
+     * How many times the menu has opened. The side menu keys its opening focus on
+     * this (see [SideMenuFocus]), so every opening lands on "Refresh all feeds" —
+     * a reopen during the close animation, while the panel is still composed,
+     * included. A redundant [open] while already open does not count.
+     */
+    var openings: Int by mutableIntStateOf(0)
+        private set
+
     fun open() {
+        if (!isOpen) openings++
         isOpen = true
     }
 

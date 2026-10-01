@@ -68,6 +68,10 @@ import com.mymts.ui.menu.NewsSourceToggle
 import com.mymts.ui.menu.PresetPickerOverlay
 import com.mymts.ui.menu.SettingsOverlay
 import com.mymts.ui.menu.SourceFilterOverlay
+import com.mymts.ui.menu.WallRefreshActions
+import com.mymts.ui.menu.refreshAllFeeds
+import com.mymts.ui.menu.refreshAllVideo
+import com.mymts.ui.menu.resyncAllFeeds
 import com.mymts.ui.wall.feed.FeedGenres
 import com.mymts.ui.wall.feed.FeedListBuilder
 import com.mymts.ui.menu.SlotControlsOverlay
@@ -339,6 +343,11 @@ fun WallScreen(
         reconnectNonce++
     }
 
+    // Radar reload signal ("Refresh all feeds"): each bump reloads every radar tile
+    // once, through the tile's own timed reload (see RadarImage). Only that row bumps
+    // it — "Refresh all video" and a tile's Reconnect leave radar tiles alone.
+    var radarReloadRequests by remember { mutableIntStateOf(0) }
+
     // Quick RESYNC signal (Part D) — jump to the live edge (drop the backlog), or
     // reconnect a tile that's actually dead. Lighter than a full reconnect, reusing
     // the live-edge primitive. slot -1 = all tiles; >=0 = that one. A brief,
@@ -359,6 +368,19 @@ fun WallScreen(
         resyncFlash = true
         delay(1500)
         resyncFlash = false
+    }
+
+    // The all-tile refresh rows ("Refresh all feeds", "Resync all feeds", WALL
+    // SETTINGS "Refresh all video") act through these bindings to the signals
+    // above; what each row runs is plain Kotlin in ui/menu/SideMenu.kt. None of
+    // them writes a setting.
+    val refreshActions = object : WallRefreshActions {
+        override fun reconnectAllVideo() = requestReconnect(-1)
+        override fun reloadAllRadar() {
+            radarReloadRequests++
+        }
+        override fun resyncAll() = requestResync(-1)
+        override fun closeMenu() = menu.close()
     }
 
     // Dispatch a NavIntent through the pure focus model and apply its
@@ -577,6 +599,7 @@ fun WallScreen(
                     reconnectSlot = reconnectSlot,
                     resyncNonce = resyncNonce,
                     resyncSlot = resyncSlot,
+                    radarReloadRequests = radarReloadRequests,
                     modifier = Modifier.fillMaxSize(),
                     helperUnreachable = state.snapshot == null && !state.lastFetchOk,
                     audibleSlot = audibleSlot,
@@ -608,7 +631,8 @@ fun WallScreen(
             onSettingsSelected = { menu.openSettings() },
             onPresetSelected = { menu.openPresetPicker() },
             activePresetName = activePresetName,
-            onResyncAll = { requestResync(-1); menu.close() },
+            onResyncAll = { refreshActions.resyncAllFeeds() },
+            onRefreshAllFeeds = { refreshActions.refreshAllFeeds() },
             modifier = Modifier.fillMaxSize(),
             feedSide = wallSettings.feedSide,
         )
@@ -700,7 +724,7 @@ fun WallScreen(
                 onNudgeTickerScroll = { delta -> lineupStore.nudgeTickerScroll(delta) },
                 onNudgeTickerFlip = { delta -> lineupStore.nudgeTickerFlip(delta) },
                 onCycleTickerMotion = { lineupStore.cycleTickerMotion() },
-                onRefreshAllVideo = { requestReconnect(-1) },
+                onRefreshAllVideo = { refreshActions.refreshAllVideo() },
                 onToggleCalibration = { lineupStore.toggleCalibration() },
                 onOpenHelperUrl = { menu.dismissSelection(); onOpenHelperUrl() },
                 onCancel = { menu.dismissSelection() },

@@ -84,6 +84,7 @@ fun VideoGrid(
     reconnectSlot: Int = -1,
     resyncNonce: Int = 0,
     resyncSlot: Int = -1,
+    radarReloadRequests: Int = 0,
     modifier: Modifier = Modifier,
     helperUnreachable: Boolean = false,
     audibleSlot: Int = -1,
@@ -213,6 +214,9 @@ fun VideoGrid(
                 columns = cols,
                 bound = bound,
                 focusedCellIndex = focusedCellIndex,
+                // "Refresh all feeds": radar tiles reload once per bump (video
+                // tiles ignore it; they reconnect through reconnectNonce above).
+                radarReloadRequests = radarReloadRequests,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -224,6 +228,7 @@ private fun AutofitGrid(
     columns: Int,
     bound: List<BoundTile>,
     focusedCellIndex: Int?,
+    radarReloadRequests: Int,
     modifier: Modifier = Modifier,
 ) {
     val rows = gridRowsFor(bound.size, columns)
@@ -271,6 +276,7 @@ private fun AutofitGrid(
                                 WallTile(
                                     bound = tile,
                                     modifier = Modifier.fillMaxSize(),
+                                    radarReloadRequests = radarReloadRequests,
                                 )
                             }
                         }

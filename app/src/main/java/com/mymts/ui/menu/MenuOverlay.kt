@@ -36,9 +36,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mymts.R
 import com.mymts.data.settings.FeedSide
 
 /**
@@ -55,6 +57,10 @@ import com.mymts.data.settings.FeedSide
  * row shows "Slot N · current channel" and SELECT will open the channel
  * picker (checkpoint 2). The version footer matches a sibling TV app's
  * vocabulary so the two apps read as the same family.
+ *
+ * **Refresh all feeds** leads the menu, above the CHANNELS list, and takes
+ * focus at every opening. The row order and focus rules live in plain
+ * Kotlin ([sideMenuSections], [SideMenuFocus]) so they are unit-tested.
  */
 @Composable
 fun MenuOverlay(
@@ -66,6 +72,7 @@ fun MenuOverlay(
     onPresetSelected: () -> Unit,
     activePresetName: String,
     onResyncAll: () -> Unit,
+    onRefreshAllFeeds: () -> Unit,
     modifier: Modifier = Modifier,
     feedSide: FeedSide = FeedSide.Left,
 ) {
@@ -93,6 +100,7 @@ fun MenuOverlay(
                 exit = slideOutHorizontally(tween(140)) { if (isLeft) -it else it } + fadeOut(tween(120)),
             ) {
                 MenuPanel(
+                    openings = state.openings,
                     // When a sub-overlay (settings / picker / controls) is up,
                     // IT owns focus; when it dismisses, the side menu must
                     // reclaim focus (keyed below) rather than leave it unset.
@@ -104,6 +112,7 @@ fun MenuOverlay(
                     onPresetSelected = onPresetSelected,
                     activePresetName = activePresetName,
                     onResyncAll = onResyncAll,
+                    onRefreshAllFeeds = onRefreshAllFeeds,
                 )
             }
         }
@@ -112,6 +121,7 @@ fun MenuOverlay(
 
 @Composable
 private fun MenuPanel(
+    openings: Int,
     subOverlayActive: Boolean,
     slotRows: List<SlotRow>,
     versionLine: String,
@@ -120,18 +130,43 @@ private fun MenuPanel(
     onPresetSelected: () -> Unit,
     activePresetName: String,
     onResyncAll: () -> Unit,
+    onRefreshAllFeeds: () -> Unit,
 ) {
+    val refreshRowFocusRequester = remember { FocusRequester() }
     val firstRowFocusRequester = remember { FocusRequester() }
+    val focus = remember { SideMenuFocus() }
+    val sections = remember(slotRows) { sideMenuSections(slotRows) }
 
-    // Claim focus on first open AND whenever a sub-overlay dismisses back to
-    // the side menu (key flips false). Yield a frame first so the dismissed
-    // overlay releases focus before we reclaim it — deterministic re-home,
-    // never a dead/unset focus state on the way back from Settings/picker.
-    LaunchedEffect(subOverlayActive) {
-        if (!subOverlayActive) {
-            withFrameNanos { }
-            runCatching { firstRowFocusRequester.requestFocus() }
+    // Claim focus at every opening — on "Refresh all feeds", keyed on the opening
+    // count so a reopen during the close animation counts too — AND whenever a
+    // sub-overlay dismisses back to the side menu, on the first slot row as before
+    // (SideMenuFocus decides which). Yield a frame first so the dismissed overlay
+    // releases focus before we reclaim it — deterministic re-home, never a
+    // dead/unset focus state on the way back from Settings/picker. Keep the effect
+    // keyed on exactly these two values (see SideMenuFocus): another key would
+    // re-home focus to the first slot row whenever it changed.
+    LaunchedEffect(openings, subOverlayActive) {
+        val target = focus.targetFor(openings, subOverlayActive) ?: return@LaunchedEffect
+        withFrameNanos { }
+        val requester = when (target) {
+            SideMenuFocusTarget.RefreshAllFeeds -> refreshRowFocusRequester
+            SideMenuFocusTarget.FirstSlot -> firstRowFocusRequester
         }
+        runCatching { requester.requestFocus() }
+        focus.landed(openings)
+    }
+
+    val rowItem: @Composable (SideMenuRow, Modifier) -> Unit = { row, rowModifier ->
+        SideMenuRowItem(
+            row = row,
+            activePresetName = activePresetName,
+            onRefreshAllFeeds = onRefreshAllFeeds,
+            onSlotSelected = onSlotSelected,
+            onPresetSelected = onPresetSelected,
+            onSettingsSelected = onSettingsSelected,
+            onResyncAll = onResyncAll,
+            modifier = rowModifier,
+        )
     }
 
     Column(
@@ -140,7 +175,7 @@ private fun MenuPanel(
             .width(320.dp)
             .background(MenuColors.PanelBackground),
     ) {
-        // Scrollable content area (CHANNELS list + WALL actions). `weight(1f)` makes
+        // Scrollable content area (Refresh row + CHANNELS + WALL). `weight(1f)` makes
         // it take all space above the pinned footer; `verticalScroll` makes it react
         // to D-pad focus — a focusable row below the fold (e.g. **Resync**, the last
         // WALL row, which the operator could not reach once the preset row tipped the
@@ -153,13 +188,24 @@ private fun MenuPanel(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
         ) {
+            // "Refresh all feeds" leads the menu, above the CHANNELS list.
+            sections.top.forEach { row ->
+                rowItem(
+                    row,
+                    if (row == SideMenuRow.RefreshAllFeeds) {
+                        Modifier.focusRequester(refreshRowFocusRequester)
+                    } else {
+                        Modifier
+                    },
+                )
+            }
+            Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             PanelHeader()
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
-            slotRows.forEachIndexed { idx, row ->
-                MenuRow(
-                    row = row,
-                    onSelect = { onSlotSelected(row.slotIndex) },
-                    modifier = if (idx == 0) {
+            sections.channels.forEachIndexed { idx, row ->
+                rowItem(
+                    row,
+                    if (idx == 0) {
                         Modifier.focusRequester(firstRowFocusRequester)
                     } else {
                         Modifier
@@ -171,44 +217,81 @@ private fun MenuPanel(
             // sibling-app family: a section title + a focusable row.
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             SectionTitle("WALL")
-            // Server-authoritative wall preset (News / Nature / Space / Chill / Mixed / Ocean / Eagles).
-            // SELECT opens the picker; the detail shows the active preset so the
-            // operator sees the current set without opening it.
-            MenuRow(
-                row = SlotRow(
-                    slotIndex = -1,
-                    title = "Preset",
-                    detail = activePresetName,
-                    detailStyle = SlotRow.DetailStyle.Default,
-                ),
-                onSelect = onPresetSelected,
-            )
-            MenuRow(
-                row = SlotRow(
-                    slotIndex = -1,
-                    title = "Settings",
-                    detail = "layout · width · font · side",
-                    detailStyle = SlotRow.DetailStyle.Default,
-                ),
-                onSelect = onSettingsSelected,
-            )
-            // Quick RESYNC of every tile (Part D) — the discoverable home for the
-            // "jump to live" action (the per-tile gesture is long-press SELECT on a
-            // focused tile). Reuses the live-edge primitive; closes the menu.
-            MenuRow(
-                row = SlotRow(
-                    slotIndex = -1,
-                    title = "Resync all feeds",
-                    detail = "jump every tile to live now",
-                    detailStyle = SlotRow.DetailStyle.Default,
-                ),
-                onSelect = onResyncAll,
-            )
+            sections.wall.forEach { row -> rowItem(row, Modifier) }
         }
         Column {
             Divider(color = MenuColors.PanelDivider, thickness = 1.dp)
             FooterLine(versionLine)
         }
+    }
+}
+
+/** One side-menu row: the label, detail and action for each [SideMenuRow] kind. */
+@Composable
+private fun SideMenuRowItem(
+    row: SideMenuRow,
+    activePresetName: String,
+    onRefreshAllFeeds: () -> Unit,
+    onSlotSelected: (Int) -> Unit,
+    onPresetSelected: () -> Unit,
+    onSettingsSelected: () -> Unit,
+    onResyncAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (row) {
+        // The full reconnect of every video tile plus one reload of each radar
+        // tile, then the menu closes (WallRefreshActions.refreshAllFeeds).
+        SideMenuRow.RefreshAllFeeds -> MenuRow(
+            row = SlotRow(
+                slotIndex = -1,
+                title = stringResource(R.string.menu_refresh_all_feeds),
+                detail = stringResource(R.string.menu_refresh_all_feeds_detail),
+                detailStyle = SlotRow.DetailStyle.Default,
+            ),
+            onSelect = onRefreshAllFeeds,
+            modifier = modifier,
+        )
+        is SideMenuRow.Slot -> MenuRow(
+            row = row.slot,
+            onSelect = { onSlotSelected(row.slot.slotIndex) },
+            modifier = modifier,
+        )
+        // Server-authoritative wall preset (News / Nature / Space / Chill / Mixed / Ocean / Eagles).
+        // SELECT opens the picker; the detail shows the active preset so the
+        // operator sees the current set without opening it.
+        SideMenuRow.Preset -> MenuRow(
+            row = SlotRow(
+                slotIndex = -1,
+                title = "Preset",
+                detail = activePresetName,
+                detailStyle = SlotRow.DetailStyle.Default,
+            ),
+            onSelect = onPresetSelected,
+            modifier = modifier,
+        )
+        SideMenuRow.Settings -> MenuRow(
+            row = SlotRow(
+                slotIndex = -1,
+                title = "Settings",
+                detail = "layout · width · font · side",
+                detailStyle = SlotRow.DetailStyle.Default,
+            ),
+            onSelect = onSettingsSelected,
+            modifier = modifier,
+        )
+        // Quick RESYNC of every tile (Part D) — the discoverable home for the
+        // "jump to live" action (the per-tile gesture is long-press SELECT on a
+        // focused tile). Reuses the live-edge primitive; closes the menu.
+        SideMenuRow.ResyncAllFeeds -> MenuRow(
+            row = SlotRow(
+                slotIndex = -1,
+                title = "Resync all feeds",
+                detail = "jump every tile to live now",
+                detailStyle = SlotRow.DetailStyle.Default,
+            ),
+            onSelect = onResyncAll,
+            modifier = modifier,
+        )
     }
 }
 

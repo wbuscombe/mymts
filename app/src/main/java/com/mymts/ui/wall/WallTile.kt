@@ -61,12 +61,13 @@ import kotlinx.coroutines.delay
 internal fun WallTile(
     bound: BoundTile,
     modifier: Modifier = Modifier,
+    radarReloadRequests: Int = 0,
 ) {
     Box(modifier = modifier.background(WallColors.TileGap)) {
         when (val slot = bound.slot) {
             is TileSlotResolver.Slot.Empty -> EmptyTile()
             is TileSlotResolver.Slot.Offline -> OfflineTile(channel = slot.channel)
-            is TileSlotResolver.Slot.Radar -> RadarTile(slot)
+            is TileSlotResolver.Slot.Radar -> RadarTile(slot, radarReloadRequests)
             is TileSlotResolver.Slot.Playing -> PlayingTile(slot, bound.player)
         }
     }
@@ -132,13 +133,13 @@ private fun PlayingTile(slot: TileSlotResolver.Slot.Playing, player: StreamPlaye
  * yields a real (if stale) image rather than an error.
  */
 @Composable
-private fun RadarTile(slot: TileSlotResolver.Slot.Radar) {
+private fun RadarTile(slot: TileSlotResolver.Slot.Radar, reloadRequests: Int) {
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f).background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            RadarImage(imageUrl = slot.imageUrl, label = slot.channel.label)
+            RadarImage(imageUrl = slot.imageUrl, label = slot.channel.label, reloadRequests = reloadRequests)
         }
         LabelStrip(label = slot.channel.label, color = WallColors.LabelPrimary)
     }
@@ -147,10 +148,37 @@ private fun RadarTile(slot: TileSlotResolver.Slot.Radar) {
 /** A radar tile re-pulls a fresh NWS scan on this cadence (the loop GIF refreshes
  *  ~every 5 min; the helper cache is region-keyed so the cache-bust hits a warm cache,
  *  not NWS). Mirrors the web client's RADAR_REFRESH_MS. */
-private const val RADAR_REFRESH_MS = 5 * 60 * 1000L
+internal const val RADAR_REFRESH_MS = 5 * 60 * 1000L
+
+/**
+ * One radar tile's reload loop and its "Refresh all feeds" bookkeeping. It starts at
+ * the request count current when the tile appears, so a tile placed after a refresh
+ * does not reload for it.
+ */
+internal class RadarReloads(answeredRequests: Int) {
+    /** The "Refresh all feeds" requests this tile has answered. */
+    var answeredRequests: Int = answeredRequests
+        private set
+
+    /**
+     * Reload once now if a request is owed — any number since the last answer collapse
+     * into one — then every [intervalMs]. The tile relaunches this for each new request,
+     * which cancels the pending timer, so timed reloads never stack and the next one
+     * counts from the request.
+     */
+    suspend fun run(requestedReloads: Int, intervalMs: Long, reload: () -> Unit): Nothing {
+        val reloadNow = requestedReloads != answeredRequests
+        answeredRequests = requestedReloads
+        if (reloadNow) reload()
+        while (true) {
+            delay(intervalMs)
+            reload()
+        }
+    }
+}
 
 @Composable
-private fun RadarImage(imageUrl: String, label: String) {
+private fun RadarImage(imageUrl: String, label: String, reloadRequests: Int) {
     val context = LocalContext.current
     // The decoder + a SINGLE shared ImageLoader live in MyMtsApp (ImageLoaderFactory):
     // on API 28+ that's the platform ImageDecoderDecoder, NOT the legacy Movie-based
@@ -160,9 +188,14 @@ private fun RadarImage(imageUrl: String, label: String) {
 
     // Bump a refresh tick every RADAR_REFRESH_MS so the tile pulls the next scan.
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(imageUrl) {
-        while (true) {
-            delay(RADAR_REFRESH_MS)
+    val reloads = remember { RadarReloads(answeredRequests = reloadRequests) }
+    // A new "Refresh all feeds" request relaunches this effect: the tile reloads once
+    // now, through the same tick bump as the timer, and the timer restarts, so the next
+    // timed reload counts from it and the interval is unchanged. The tick is the tile's
+    // only request key: a reload replaces the pending image request (Coil runs one
+    // painter's requests latest-only), it never adds a second fetch.
+    LaunchedEffect(imageUrl, reloadRequests) {
+        reloads.run(requestedReloads = reloadRequests, intervalMs = RADAR_REFRESH_MS) {
             tick++
             // Forensic breadcrumb (durable, adb-pullable log): if a later native
             // crash happens, the trail shows the radar was decoding right before.
